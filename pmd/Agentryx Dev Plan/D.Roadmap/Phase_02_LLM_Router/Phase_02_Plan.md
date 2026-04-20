@@ -1,115 +1,148 @@
 # Phase 2 — LLM Router and Cost Telemetry
 
-**Goal**: Eliminate single-LLM-provider fragility (the Gemini 429 incident that killed Phase 0). Per-task model assignment. Per-call cost capture. Switchable routing backends per the configurability principle.
+**Started**: 2026-04-20
+**Status**: active — 2A in progress
 
-**Status**: sketched (executes after Phase 1 closes)
+## Goal
 
-## Why this is Phase 2 (not Phase 3)
+Kill single-provider fragility. Every LLM call goes through a router with:
+- Per-task model tier assignment (architect / worker / cheap / logic)
+- Automatic fallback chain on 429/5xx
+- Per-call cost capture
+- Switchable router backend (LiteLLM self-hosted OR OpenRouter hosted — both available per configurability principle)
 
-Phase 0 ended on a Gemini rate-limit error that took down the whole pipeline. Building anything on top (intake agent, PMD generation, etc.) on a single-provider foundation just rebuilds the same fragility. Phase 2 is the load-bearing fix.
+## Why Phase 2 and not Phase 3 (Genovi intake)
+
+Phase 0 ended on a Gemini 429 that killed the whole pipeline. Building anything else on a single-provider substrate rebuilds the same fragility. Phase 2 is load-bearing — ship it first.
 
 ## Architecture
 
-### Router (configurable backend)
+### Unified protocol: OpenAI Chat Completions shape
 
-Per Principle 1, support **both** routing backends, switchable from admin UI:
+Both LiteLLM and OpenRouter accept **OpenAI-format** `/chat/completions` requests. So our router speaks just that one protocol and swaps the base URL:
 
-| Backend | Pros | Cons |
-|---|---|---|
-| **LiteLLM** (self-hosted, in `factory-dashboard/server/router/`) | Data residency, no third-party fees, full control | One more thing to operate |
-| **OpenRouter** (hosted) | Zero ops, broadest model catalog, free tier | Third-party dependency, per-token markup |
-
-Both exposed behind a single in-house facade: `factory-dashboard/server/llm.mjs`. Agents call `llm.complete({task: 'architect', messages: [...]})` and the facade picks router based on admin config.
-
-### Per-task model assignment
-
-YAML config at `configs/llm-routing.yaml` (template — admin UI overrides at runtime):
-
-```yaml
-defaults:
-  router: litellm   # or openrouter
-  fallback_chain: [primary, fallback_1, fallback_2]
-
-tasks:
-  triage:
-    primary: gemini-2.5-flash
-    fallback_1: claude-haiku-4-5
-    fallback_2: qwen-3-7b
-
-  architect:
-    primary: claude-opus-4-7
-    fallback_1: gpt-5
-    fallback_2: gemini-2.5-pro
-
-  code:
-    primary: claude-sonnet-4-6
-    fallback_1: gpt-5-mini
-    fallback_2: gemini-2.5-flash
-
-  cheap:
-    primary: claude-haiku-4-5
-    fallback_1: gemini-2.5-flash-lite
-    fallback_2: deepseek-chat
+```
+LLM_ROUTER_BACKEND=openrouter  → https://openrouter.ai/api/v1
+LLM_ROUTER_BACKEND=litellm     → http://localhost:4000  (self-hosted container)
 ```
 
-Router catches 429 / 5xx and walks the fallback chain automatically. Logs which model actually served the request.
+Result: router code is ~200 lines of plain fetch(), no provider-specific SDKs.
 
-### Cost capture
+### Package layout
 
-Every LLM call records to Postgres `llm_calls` table:
-- `project_id`, `phase`, `agent`, `task_type`
-- `router_used`, `model_attempted` (array, in fallback order), `model_succeeded`
-- `input_tokens`, `output_tokens`, `cost_usd_estimated`
-- `latency_ms`, `ts`
-- `request_id` (for trace lookup in Langfuse)
+```
+agentryx-factory/
+├── llm-router/                        ← NEW, Phase 2A
+│   ├── package.json                   (@agentryx-factory/llm-router, ESM)
+│   ├── README.md
+│   └── src/
+│       ├── index.js                   public exports
+│       ├── router.js                  complete() / compare() — core routing + fallback
+│       ├── backends.js                HTTP clients for litellm + openrouter + direct providers
+│       ├── config.js                  loads llm-routing.yaml + llm-prices.yaml
+│       ├── cost.js                    token × price → USD
+│       └── db.js                      insert row into llm_calls Postgres table
+└── configs/
+    ├── llm-routing.yaml               per-task fallback chain
+    └── llm-prices.yaml                per-model $ per million tokens
+```
 
-Cost computed from a per-model price table in `configs/llm-prices.yaml` (manually maintained until Phase 11 cost dashboard auto-pulls from provider APIs).
+### Database
 
-### Hard caps
+One new table in the `pixel_factory` Postgres DB:
 
-`MAX_PROJECT_BUDGET_USD` and `MAX_DAILY_BUDGET_USD` env vars. Router refuses calls that would exceed; emits a `budget_exceeded` event for Hermes (Phase 10) to alert.
+```sql
+CREATE TABLE llm_calls (
+  id            BIGSERIAL PRIMARY KEY,
+  ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  project_id    TEXT,
+  phase         TEXT,
+  agent         TEXT,         -- 'picard', 'spock', etc.
+  task_type     TEXT,         -- 'architect', 'code', 'cheap', etc.
+  router_backend TEXT,        -- 'litellm' or 'openrouter'
+  model_attempted JSONB,      -- ['claude-opus-4-7', 'gpt-5']
+  model_succeeded TEXT,
+  input_tokens  INTEGER,
+  output_tokens INTEGER,
+  cost_usd      NUMERIC(10,6),
+  latency_ms    INTEGER,
+  request_id    TEXT,         -- for langfuse correlation
+  error         TEXT          -- null on success
+);
+CREATE INDEX idx_llm_calls_ts ON llm_calls(ts);
+CREATE INDEX idx_llm_calls_project ON llm_calls(project_id);
+```
 
 ## Subphases
 
-### Phase 2A — Router facade
+### 2A — Router facade package (this sub, in progress)
 
-1. Create `factory-dashboard/server/llm.mjs` — single entry point for all LLM calls.
-2. Implement `litellm` backend (self-host LiteLLM in a docker container; add to `docker-compose.yml`).
-3. Implement `openrouter` backend (HTTP client, no separate container).
-4. Backend selection from env var `LLM_ROUTER_BACKEND={litellm|openrouter}`.
-5. Health check endpoint per backend.
+- [ ] `llm-router/package.json` + directory skeleton
+- [ ] `src/router.js` — `complete({task, messages, projectId?, phase?, agent?})` function
+- [ ] `src/backends.js` — fetch-based HTTP client (OpenAI format)
+- [ ] `src/config.js` — YAML loader
+- [ ] `configs/llm-routing.yaml` — defaults mapping task → fallback chain
+- [ ] `configs/llm-prices.yaml` — price table (best-effort values, admin UI edits in Phase 12)
+- [ ] `llm-router/README.md` — usage + design
 
-### Phase 2B — Refactor cognitive-engine
+Exit criteria: `node -e "import('./llm-router/src/index.js').then(r => r.complete({task:'cheap', messages:[{role:'user',content:'hello'}]})).then(console.log)"` returns a response from a free-tier model.
 
-1. Replace direct `ChatGoogleGenerativeAI` instantiations in `factory_graph.js`, `dev_graph.js`, etc., with calls to the facade.
-2. Each agent node declares its `task_type` ('architect', 'code', 'cheap', etc.).
-3. Smoke test: same agent graph, but kill Gemini key — verify fallback to Claude / Qwen.
+### 2B — Cognitive-engine refactor
 
-### Phase 2C — Cost capture
+Replace `ChatGoogleGenerativeAI` instantiations in `cognitive-engine/factory_graph.js`, `dev_graph.js`, `pre_dev_graph.js`, `post_dev_graph.js` with calls to the router.
 
-1. Add `llm_calls` Postgres table (Prisma / direct SQL — TBD).
-2. Insert one row per LLM call.
-3. Basic cost view in dashboard: project × agent × spend × tokens.
+Two options:
+- **(a) Replace LangChain**: rewrite nodes to call `router.complete()` directly. Simpler, loses LangChain graph primitives.
+- **(b) LangChain-compatible wrapper**: make router callable via `RouterChatModel` that implements LangChain's ChatModel interface. Keeps graph topology intact.
 
-### Phase 2D — Hard caps
+Leaning (b) for smaller blast radius — LangGraph state reducers and conditional edges still work.
 
-1. Pre-call budget check in facade.
-2. Emit `budget_exceeded` event (initially logged; Hermes wires to Slack in Phase 10).
+Exit criteria: factory_graph.js can run end-to-end with Gemini key removed — router falls over to Anthropic or OpenRouter.
 
-### Phase 2E — Compare mode (configurability win)
+### 2C — Postgres table + cost capture
 
-1. Admin UI: "Run task on N models, show outputs side-by-side."
-2. Useful for evaluating which model/router serves which task best.
-3. Feeds Phase 1.0 architectural decisions.
+- [ ] Migration file: `factory-dashboard/server/migrations/001-llm-calls.sql`
+- [ ] `src/db.js` writes a row on every completion
+- [ ] Graceful degradation: if Postgres unreachable, log to stderr and continue (do NOT block the graph)
 
-## Exit criteria
+Exit criteria: after 5 router calls, `SELECT * FROM llm_calls` shows 5 rows with costs.
 
-- Same Phase 1 smoke test passes, but graph survives a forced Gemini 429 by failing over.
-- Cost panel shows real dollar spend for the test run.
-- Both `litellm` and `openrouter` backends pass health check.
-- A `compare` request returns N parallel outputs from N models.
+### 2D — Routing config + backend switcher
 
-## Dependencies
+- [ ] `configs/llm-routing.yaml` is the source of truth
+- [ ] Env var `LLM_ROUTER_BACKEND={litellm|openrouter}` picks backend at startup
+- [ ] Per-task override lets you force a specific model for debugging
+- [ ] Hot reload on SIGHUP (stretch goal; initial ship requires service restart)
 
-- Provider API keys (admin will need: Anthropic, Google, OpenAI, OpenRouter, optionally DeepSeek). Phase 12 (B7 admin module) builds the UI to manage these — until then, env vars.
-- Decision needed before start: which provider keys does the admin actually have / want to use?
+### 2E — Fallback chain + hard budget cap
+
+- [ ] `complete()` iterates the fallback_chain on 429, 5xx, timeout
+- [ ] Before each call, check: `SELECT SUM(cost_usd) FROM llm_calls WHERE project_id = $1 AND ts > $2` against configured cap
+- [ ] On exceed: emit `budget_exceeded` event (Hermes listens in Phase 10; until then log only)
+
+### 2F — Compare mode
+
+Admin utility: `router.compare({task, messages, models: ['opus', 'sonnet', 'gpt-5']})` — runs in parallel, returns all outputs. Feeds Phase 1.0 model-selection decisions.
+
+### 2G — Cost panel in dashboard
+
+SQL-backed view. Project × agent × daily spend. Read-only — hard caps edited via env var until B7 admin module (Phase 12) lands.
+
+## Exit criteria for Phase 2
+
+- Same smoke test as deferred Phase 1C passes — 10 agents run end-to-end.
+- If Gemini returns 429, pipeline auto-fails over to Anthropic or OpenRouter.
+- `llm_calls` table populates with real costs per run.
+- Both `litellm` and `openrouter` backends pass a health-check call.
+- A `compare` call returns outputs from 3 models side-by-side.
+
+## Provider keys needed
+
+Tracked in [issue #4](https://github.com/agentryx2026-hash/agentryx-factory/issues/4). Minimum viable set: Anthropic + one other (Gemini paid OR OpenRouter). Additional providers are candles on the cake.
+
+## Open architecture questions (defer resolution)
+
+1. **Langfuse correlation**: router should emit a `request_id` that ties to Langfuse traces. Depends on how cognitive-engine creates trace spans. Defer to 2B.
+2. **Streaming**: the first version does non-streaming `/chat/completions`. LangChain nodes that expect streaming may need adapter work. Flag at 2B if encountered.
+3. **Tool use / function calling**: cognitive-engine currently uses custom tools via `tools.js`. Router should pass `tools` payload through untouched. Test in 2B.
+4. **MCP integration**: deferred to Phase 5. Not a Phase 2 concern.

@@ -1,0 +1,23 @@
+{
+  "name": "@agentryx-factory/llm-router",
+  "version": "0.0.1",
+  "description": "Provider-agnostic LLM router for Agentryx Dev Factory. Routes by task tier, falls over on 429/5xx, captures per-call cost.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./router": "./src/router.js",
+    "./config": "./src/config.js"
+  },
+  "files": ["src", "README.md"],
+  "scripts": {
+    "test": "node --test tests/",
+    "health": "node -e \"import('./src/index.js').then(m => m.health()).then(console.log)\""
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {}
+}

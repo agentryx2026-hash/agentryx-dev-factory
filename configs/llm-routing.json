@@ -1,0 +1,63 @@
+{
+  "_comment": "Agentryx Dev Factory — LLM routing config. Edit via Phase 12 admin UI once it ships; direct edits here require a service restart to pick up.",
+  "_comment_format": "entries in fallbacks[] are 'backend:model' — backend ∈ {openrouter, litellm, direct-openai, direct-anthropic, direct-gemini}. Bare 'model' defaults to backend=openrouter.",
+  "_schemaVersion": 1,
+
+  "defaults": {
+    "router_backend": "openrouter",
+    "max_project_budget_usd": 10,
+    "max_daily_budget_usd": 100,
+    "default_timeout_ms": 60000
+  },
+
+  "tasks": {
+    "triage": {
+      "description": "Classification, routing, quick intent extraction. Cheap tier.",
+      "primary": "openrouter:google/gemini-2.5-flash",
+      "fallbacks": [
+        "openrouter:anthropic/claude-haiku-4-5",
+        "openrouter:deepseek/deepseek-chat"
+      ]
+    },
+    "cheap": {
+      "description": "Summarization, formatting, reformatting. Cheapest tier.",
+      "primary": "openrouter:anthropic/claude-haiku-4-5",
+      "fallbacks": [
+        "openrouter:google/gemini-2.5-flash-lite",
+        "openrouter:deepseek/deepseek-chat"
+      ]
+    },
+    "worker": {
+      "description": "Default working model — code gen, doc writing, structured output.",
+      "primary": "openrouter:anthropic/claude-sonnet-4-6",
+      "fallbacks": [
+        "openrouter:google/gemini-2.5-flash",
+        "openrouter:openai/gpt-5-mini"
+      ]
+    },
+    "code": {
+      "description": "Code generation.",
+      "primary": "openrouter:anthropic/claude-sonnet-4-6",
+      "fallbacks": [
+        "openrouter:openai/gpt-5-mini",
+        "openrouter:google/gemini-2.5-pro"
+      ]
+    },
+    "architect": {
+      "description": "Hardest reasoning — Picard, Crusher, Data.",
+      "primary": "openrouter:anthropic/claude-opus-4-7",
+      "fallbacks": [
+        "openrouter:openai/gpt-5",
+        "openrouter:google/gemini-2.5-pro",
+        "direct-anthropic:claude-opus-4-7"
+      ]
+    },
+    "research": {
+      "description": "Long-context web research (Troi). Benefits from huge context windows.",
+      "primary": "openrouter:google/gemini-2.5-pro",
+      "fallbacks": [
+        "openrouter:anthropic/claude-sonnet-4-6"
+      ]
+    }
+  }
+}

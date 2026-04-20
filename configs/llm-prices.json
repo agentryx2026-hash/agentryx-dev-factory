@@ -1,0 +1,20 @@
+{
+  "_comment": "Best-effort $ per million tokens. Values are knowledge-cutoff approximations (Jan 2026) and SHOULD BE VERIFIED against current provider pricing before relying on the cost panel for real decisions. Phase 12 admin UI will let Super Admin edit. Stale entries write a COST_WARN to stderr.",
+  "_currency": "USD",
+  "_schemaVersion": 1,
+
+  "claude-opus-4-7":         { "input_per_mtok": 15.00, "output_per_mtok": 75.00 },
+  "claude-sonnet-4-6":       { "input_per_mtok":  3.00, "output_per_mtok": 15.00 },
+  "claude-haiku-4-5":        { "input_per_mtok":  0.80, "output_per_mtok":  4.00 },
+
+  "gpt-5":                   { "input_per_mtok":  5.00, "output_per_mtok": 15.00 },
+  "gpt-5-mini":              { "input_per_mtok":  0.50, "output_per_mtok":  1.50 },
+
+  "gemini-2.5-pro":          { "input_per_mtok":  1.25, "output_per_mtok":  5.00 },
+  "gemini-2.5-flash":        { "input_per_mtok":  0.15, "output_per_mtok":  0.60 },
+  "gemini-2.5-flash-lite":   { "input_per_mtok":  0.075, "output_per_mtok": 0.30 },
+
+  "deepseek-chat":           { "input_per_mtok":  0.27, "output_per_mtok":  1.10 },
+
+  "_openrouter_note": "OpenRouter adds a small per-call markup over upstream prices (historically ~5%). Router does NOT attempt to capture that — cost_usd is the raw provider price. Set LLM_ROUTER_ACCOUNT_FOR_MARKUP=true in env to multiply by 1.05 for OpenRouter backends (Phase 2E)."
+}
