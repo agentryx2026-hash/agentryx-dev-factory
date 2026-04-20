@@ -1,0 +1,106 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════
+#  PIXEL FACTORY — Infrastructure Stack
+#  Run with: docker compose up -d
+#  Stop with: docker compose down
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  # ─── Layer 6: Message Queue (Conveyor Belt) ───
+  redis:
+    image: redis:7-alpine
+    container_name: factory-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ─── Layer 5: Persistent Memory ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: factory-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: factory
+      POSTGRES_PASSWORD: factory_dev_2026
+      POSTGRES_DB: pixel_factory
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factory"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ─── Layer 5: Vector DB / RAG Engine ───
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: factory-chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+
+  # ─── Layer 1: Webhook Automation Hub ───
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: factory-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=factory2026
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - N8N_SECURE_COOKIE=false
+      # Subpath hosting. n8n v2.13+ uses N8N_PATH (N8N_PATH_PREFIX is deprecated).
+      # Must include trailing slash; makes n8n generate asset URLs prefixed with /n8n/.
+      - N8N_PATH=/n8n/
+      - N8N_HOST=dev-hub.agentryx.dev
+      - N8N_PROTOCOL=https
+      - N8N_EDITOR_BASE_URL=https://dev-hub.agentryx.dev/n8n/
+      - WEBHOOK_URL=https://dev-hub.agentryx.dev/n8n/
+    volumes:
+      - n8n-data:/home/node/.n8n
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # ─── Layer 9: Observability / Agent Tracing ───
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: factory-langfuse
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://factory:factory_dev_2026@postgres:5432/pixel_factory
+      - NEXTAUTH_URL=https://dev-hub.agentryx.dev/langfuse
+      - NEXTAUTH_SECRET=pixel-factory-secret-2026
+      - SALT=pixel-factory-salt-2026
+      - TELEMETRY_ENABLED=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+  postgres-data:
+  chroma-data:
+  n8n-data:

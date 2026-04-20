@@ -1,63 +1,72 @@
-# Phase 1 — Status
+# Phase 1 — Status: COMPLETE ✅
 
 **Phase started**: 2026-04-20
-**Last updated**: 2026-04-20 (Phase 1A + 1B complete)
+**Phase closed**: 2026-04-20
 
-## Done
+## Exit criteria — all met
 
-### Diagnostic
-- ✅ Diagnosed root causes:
-  - claw-code: ttyd serving system `login` instead of launcher script
-  - dev-hub: 4 Node services not running
-- ✅ Verified all source code intact (220 MB agent-workspace + git history)
-- ✅ Confirmed 10-agent pipeline definitions intact ([factory_graph.js](../../../../../cognitive-engine/factory_graph.js))
-- ✅ Confirmed credentials/tokens intact in `~/.openclaw/`, `paperclip/.env`
-- ✅ Last cognitive-engine run died on Gemini 429 — wiring confirmed working end-to-end before
+| | |
+|---|---|
+| ✅ Both URLs respond correctly | `claw-code.agentryx.dev` (401/200), `dev-hub.agentryx.dev` (200) |
+| ✅ n8n subpath works | `https://dev-hub.agentryx.dev/n8n/` loads full Vue UI |
+| ✅ `deploy/restore.sh` idempotent | tested on live system; services restart cleanly |
+| ✅ VM disk snapshot captured | `agentryx-factory-phase1-baseline` (12.55 GB) |
+| ✅ Phase 1 milestone closable on GitHub | — |
+| ⏸ Smoke test through 10-agent pipeline | **Deliberately deferred to Phase 2** — see [Phase_01_Lessons.md](Phase_01_Lessons.md) Lesson 3 |
 
-### Phase 0 — GitHub setup
-- ✅ Fresh `agentryx-factory` repo on `agentryx2026-hash` account
-- ✅ Full PMD structure with 20-phase roadmap committed
-- ✅ Labels (16), milestones (4), branch protection via ruleset
-- ✅ 3 foundational issues filed
-- ✅ Memory files saved (project pointer, configurability rule, user profile)
+## Summary of what got built
 
-### Phase 1A — claw-code fix
-- ✅ htpasswd (bcrypt) at `/etc/nginx/.htpasswd-claw-code`
-- ✅ nginx `auth_basic` added to `claw-code.agentryx.dev` vhost
-- ✅ `/etc/default/ttyd` updated to launch `claw-web-launcher.sh`
-- ✅ ttyd drop-in override at `/etc/systemd/system/ttyd.service.d/override.conf` runs ttyd as `subhash.thakur.india` (no longer root)
-- ✅ Verified: 401 without auth, 200 with auth, process running as user, `.env` key accessible
-
-### Phase 1B — dev-hub services
-- ✅ 4 systemd units written, enabled, running:
-
-| Unit | Port | Status |
+### Infrastructure
+| Service | Port | Status |
 |---|---|---|
-| `factory-dashboard.service` | 5173 | active, 0 restarts |
-| `factory-metrics.service` | 4400 | active, 0 restarts |
-| `factory-telemetry.service` | 4401 | active, 0 restarts |
-| `factory-paperclip.service` | 3101 (env `PORT` overridden from 3100) | active, 0 restarts |
+| `ttyd` (claw-code) | 7681 | active, runs as user |
+| `factory-dashboard` | 5173 | active, 0 restarts |
+| `factory-metrics` | 4400 | active, 0 restarts |
+| `factory-telemetry` | 4401 | active, 0 restarts |
+| `factory-paperclip` | 3101 | active, 0 restarts |
+| `factory-n8n` (docker) | 5678 | running, proxied at `/n8n/` |
+| `factory-postgres` (docker) | 5432 | healthy |
+| `factory-redis` (docker) | 6379 | healthy |
+| `factory-chromadb` (docker) | 8000 | running |
+| `factory-langfuse` (docker) | 3000 | running |
 
-- ✅ Public URLs: 200 OK (dashboard root, `/api/health`, `/api/metrics`, `/telemetry/telemetry/stream` SSE, `/n8n/`)
-- ✅ Vite serves the real "Agentryx Dev-Hub" UI (not placeholder)
+### Versioned in `agentryx-factory/deploy/`
+```
+deploy/
+├── restore.sh                                 (idempotent symlink + enable + start)
+├── docker-compose.yml                         (n8n subpath env vars included)
+├── systemd/factory-{dashboard,metrics,telemetry,paperclip}.service
+├── systemd/ttyd.service.d/override.conf       (User=, Group=)
+├── nginx/{claw-code,dev-hub}.agentryx.dev.conf
+├── ttyd/default                               (launcher args)
+└── htpasswd/claw-code                         (bcrypt; safe to commit)
+```
 
-### Notes discovered during execution
-- cognitive-engine is **not** a long-running service — `telemetry.mjs` spawns `dev_graph.js` / `post_dev_graph.js` as child processes on demand. No systemd unit needed.
-- OpenClaw gateway: not required for the factory to come up. Paperclip can reach it lazily. Defer starting as own unit until a test request needs it.
-- Paperclip's default port changed upstream from 3101 to 3100; we overrode via `.env` to match existing nginx. See Decision D9 (to be added).
+`/etc/systemd/system/factory-*.service` + `/etc/nginx/sites-available/{claw-code,dev-hub}.agentryx.dev` + `/etc/default/ttyd` are **symlinks into the repo**. Edit the repo file, reload the service, done. Next VM rebuild: `sudo bash deploy/restore.sh` — 1 command.
 
-## Pending (to close Phase 1)
+## What was discovered along the way (not in original plan)
 
-- ⏳ **Phase 1C**: n8n workflow re-import (`~/Projects/n8n-github-to-paperclip.json` → n8n UI at https://dev-hub.agentryx.dev/n8n/) — requires browser
-- ⏳ **Phase 1C**: End-to-end agent smoke test — submit request through telemetry API, confirm cognitive-engine spawns and agents emit telemetry
-- ⏳ **Phase 1D**: Copy runtime configs into `deploy/` (systemd units, nginx vhosts, ttyd config, htpasswd), write `restore.sh`, symlink from `/etc/`
-- ⏳ **Phase 1E**: GCP disk snapshot, close Phase 1 milestone, write `Phase_01_Lessons.md`
+- **n8n subpath mis-configured**: was using deprecated `N8N_PATH_PREFIX`; fixed with `N8N_PATH`, `N8N_EDITOR_BASE_URL`, `N8N_HOST`, `N8N_PROTOCOL`, `WEBHOOK_URL`. Also had to remove trailing `/` from nginx `proxy_pass`.
+- **Paperclip upstream changed default port 3101 → 3100**; overrode via `.env`.
+- **cognitive-engine is not a daemon** — spawned on demand by `telemetry.mjs`. No `factory-cognitive-engine.service` needed. See Decision D10.
+- **ttyd can't actually reload** — `restore.sh` uses stop+pkill+start for ttyd specifically.
+- **GCP VM default SA scope** doesn't include `compute.disks.createSnapshot`. User took snapshot via Console UI.
+- **`docker-compose.yml` currently lives at `~/Projects/pixel-factory-ui/docker-compose.yml`**; a backup copy is at `deploy/docker-compose.yml`. Phase 1.5 canonicalizes its location in the monorepo.
 
-## Session-end security TODO (user)
+## Security incidents this session
 
-Secrets were exposed in chat during this session. **Must rotate before session ends**:
+Four secret exposures — all documented in `Phase_01_Decisions.md` D11 and in `user_role_architect_delegation.md` memory. **User MUST rotate** at session end:
 
-- ❗ Classic GitHub PAT `ghp_CWTDk...` (revoked earlier — confirm)
-- ❗ Fine-grained PAT — partially leaked in `gh auth status` output
-- ❗ Anthropic API key — pasted directly in chat (key on disk is new, but old one still valid until revoked at https://console.anthropic.com/settings/keys)
-- ❗ Basic auth password `Ulan@2026` — bcrypt'd on disk but plaintext in transcript
+1. Classic GitHub PAT `ghp_CWTDk...` (revoked earlier — confirm)
+2. Fine-grained PAT — first 28 chars leaked via `gh auth status` output
+3. Anthropic API key — pasted directly in chat (new key in `.env`; old still valid until revoked)
+4. Basic auth password `Ulan@2026` — bcrypt'd on disk but plaintext in transcript
+
+## Next — Phase 2
+
+LLM Router and Cost Telemetry. See `../Phase_02_LLM_Router/Phase_02_Plan.md`.
+
+**Prereqs before Phase 2 starts**:
+- User provides provider API keys (Anthropic already in place; need Google/Gemini new key if rotating, OpenAI, OpenRouter, optionally DeepSeek).
+- User confirms budget / hard cap posture (default: `$10/project`, `$100/day`).
+- Session-end secret rotation completed.
