@@ -65,6 +65,34 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
             <span className="nav-label">{item.label}</span>
           </div>
         ))}
+
+        {/* ─── Tools & Portals (external links) ─── */}
+        <div style={{ marginTop: '1.5rem', marginBottom: '0.5rem', padding: '0 16px' }}>
+          <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Tools & Portals
+          </div>
+        </div>
+        {[
+          { href: '/n8n/',                                                icon: '🔗', label: 'n8n Workflows' },
+          { href: '/langfuse/',                                            icon: '🔍', label: 'Langfuse Traces' },
+          { href: '/paperclip/api/health',                                 icon: '📎', label: 'Paperclip (health)' },
+          { href: '/chromadb/api/v2/heartbeat',                            icon: '🧮', label: 'ChromaDB' },
+          { href: 'https://claw-code.agentryx.dev/',                       icon: '🦞', label: 'Claw Code (terminal)' },
+          { href: 'https://github.com/agentryx2026-hash/agentryx-factory', icon: '🐙', label: 'GitHub Repo' },
+          { href: 'https://console.cloud.google.com/compute',              icon: '☁️', label: 'GCP Console' },
+        ].map(tool => (
+          <a
+            key={tool.href}
+            href={tool.href}
+            target="_blank"
+            rel="noreferrer"
+            className="nav-item"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            <span className="nav-icon">{tool.icon}</span>
+            <span className="nav-label">{tool.label}</span>
+          </a>
+        ))}
       </nav>
 
       {/* Mini Activity Trail */}
