@@ -12,7 +12,8 @@
   "files": ["src", "README.md"],
   "scripts": {
     "test": "node --test tests/",
-    "health": "node -e \"import('./src/index.js').then(m => m.health()).then(console.log)\""
+    "health": "node -e \"import('./src/index.js').then(m => m.health()).then(console.log)\"",
+    "compare": "node src/compare-cli.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -153,8 +153,11 @@ export async function complete({
   });
 }
 
-export async function compare({ messages, models, signal = null }) {
+export async function compare({ messages, models, signal = null, projectId = '__compare__', phase = 'compare', agent = 'compare-cli' }) {
   // Run N models in parallel on the same input. Surface whichever succeeds/fails.
+  // Each call writes to llm_calls with project_id='__compare__' by default so
+  // evaluation costs are tracked but distinguishable from real project spend.
+  // Phase 2G dashboard should filter out '__compare__' in project views.
   if (!Array.isArray(models) || models.length === 0) {
     throw new Error('compare(): models must be a non-empty array');
   }
@@ -163,19 +166,50 @@ export async function compare({ messages, models, signal = null }) {
     const t0 = Date.now();
     try {
       const result = await callBackend({ backend, model, messages, signal });
+      const latency_ms = Date.now() - t0;
+      const cost_usd = computeCost(model, result.usage);
+      emitCallRow({
+        ts: new Date().toISOString(),
+        project_id: projectId,
+        phase,
+        agent,
+        task_type: 'compare',
+        router_backend: backend,
+        model_attempted: [entry],
+        model_succeeded: entry,
+        input_tokens: result.usage?.prompt_tokens ?? null,
+        output_tokens: result.usage?.completion_tokens ?? null,
+        cost_usd,
+        latency_ms,
+        request_id: result.id ?? null,
+        error: null,
+      });
       return {
         model: entry,
         content: result.content,
-        latency_ms: Date.now() - t0,
-        cost_usd: computeCost(model, result.usage),
+        latency_ms,
+        cost_usd,
         usage: result.usage,
         error: null,
       };
     } catch (err) {
+      const latency_ms = Date.now() - t0;
+      emitCallRow({
+        ts: new Date().toISOString(),
+        project_id: projectId,
+        phase,
+        agent,
+        task_type: 'compare',
+        router_backend: backend,
+        model_attempted: [entry],
+        model_succeeded: null,
+        latency_ms,
+        error: err.message,
+      });
       return {
         model: entry,
         content: null,
-        latency_ms: Date.now() - t0,
+        latency_ms,
         cost_usd: 0,
         usage: null,
         error: err.message,
