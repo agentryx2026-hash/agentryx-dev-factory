@@ -6,6 +6,7 @@
 import { callBackend } from './backends.js';
 import { loadConfig } from './config.js';
 import { computeCost } from './cost.js';
+import { insertCallRow } from './db.js';
 
 // Errors that clearly indicate a malformed *payload* (same payload would fail
 // on any provider) — these break the chain. Everything else (auth, billing,
@@ -170,10 +171,13 @@ function parseEntry(entry) {
   return [entry.slice(0, colon), entry.slice(colon + 1)];
 }
 
-// Phase 2C wires this to a Postgres INSERT. For 2A scaffold, write to stderr
-// as structured JSON so logs can be post-processed. Fail-open.
+// Phase 2C: try Postgres INSERT first; on any error, fall back to stderr. Both
+// are non-blocking — this function returns void synchronously (the await on db
+// happens but the caller already has its result by the time we get here).
 function emitCallRow(row) {
-  try {
-    process.stderr.write(`LLM_CALL ${JSON.stringify(row)}\n`);
-  } catch { /* don't block on telemetry */ }
+  insertCallRow(row).catch(err => {
+    try {
+      process.stderr.write(`LLM_CALL_FATAL emit failed entirely :: ${err.message} :: ${JSON.stringify(row)}\n`);
+    } catch { /* nothing more we can do */ }
+  });
 }

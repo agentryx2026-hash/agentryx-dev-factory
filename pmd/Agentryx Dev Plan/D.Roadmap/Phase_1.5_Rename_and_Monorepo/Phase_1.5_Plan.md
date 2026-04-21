@@ -1,6 +1,13 @@
 # Phase 1.5 — Rename and Monorepo Migration
 
-**Goal**: Rename `pixel-factory-ui` → `factory-dashboard` and physically move working directories into the `agentryx-factory/` mono-repo without losing data.
+**Goal**: Three coordinated renames + the physical move into the mono-repo, all without losing data.
+
+| Was | After |
+|---|---|
+| Repo: `agentryx-factory` | **`agentryx-dev-factory`** (brand match — "Agentryx Dev Factory" product) |
+| Local dir: `~/Projects/agentryx-factory/` | `~/Projects/agentryx-dev-factory/` (symlink old → new for compat) |
+| Dashboard subdir: `pixel-factory-ui/` | `factory-dashboard/` (descriptive; sibling to cognitive-engine, llm-router) |
+| `~/Projects/cognitive-engine/` | folds into `agentryx-dev-factory/cognitive-engine/` (snapshot dir gets removed) |
 
 **Status**: sketched (executes after Phase 1 closes)
 
