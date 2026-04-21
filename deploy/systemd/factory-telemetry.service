@@ -8,6 +8,14 @@ User=subhash.thakur.india
 Group=subhash.thakur.india
 WorkingDirectory=/home/subhash.thakur.india/Projects/pixel-factory-ui
 Environment=PATH=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Phase 2D — activate the LLM router for spawned cognitive-engine children.
+# Default backend is openrouter; flip to litellm by changing LLM_ROUTER_BACKEND.
+# Provider keys are sourced from claw-code-parity/.env (already chmod 600).
+Environment=USE_ROUTER=true
+Environment=LLM_ROUTER_BACKEND=openrouter
+EnvironmentFile=-/home/subhash.thakur.india/Projects/claw-code-parity/.env
+
 ExecStart=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin/node server/telemetry.mjs
 Restart=on-failure
 RestartSec=10

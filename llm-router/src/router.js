@@ -158,17 +158,32 @@ export async function compare({ messages, models, signal = null }) {
   return Promise.all(calls);
 }
 
-// Parse "backend:model" or bare "model" (defaults to openrouter for convenience).
-// Backend-qualified examples:
-//   openrouter:anthropic/claude-opus-4-7
-//   direct-anthropic:claude-opus-4-7
-//   litellm:claude-sonnet-4-6
+// Parse "backend:model" or bare "model".
+//
+// For bare model names, the default backend is taken from the env var
+// LLM_ROUTER_BACKEND (Phase 2D — admin-flippable). Falls back to 'openrouter'
+// if the env var is unset, which is the safest default (works without any
+// self-hosted infra).
+//
+// Examples (all valid):
+//   openrouter:anthropic/claude-opus-4-7   ← explicit backend
+//   direct-anthropic:claude-opus-4-7       ← bypass any router proxy
+//   litellm:claude-sonnet-4-6              ← go via self-hosted LiteLLM
+//   anthropic/claude-opus-4-7              ← bare; uses LLM_ROUTER_BACKEND env
+const KNOWN_BACKENDS = new Set(['openrouter', 'litellm', 'direct-anthropic', 'direct-gemini', 'direct-openai']);
+
 function parseEntry(entry) {
   const colon = entry.indexOf(':');
-  if (colon === -1) {
-    return ['openrouter', entry];
+  if (colon !== -1) {
+    const candidate = entry.slice(0, colon);
+    // Only treat the prefix as a backend if we recognize it. Otherwise the colon
+    // is part of the model name (e.g. "groq:llama-3.1" if we add Groq later).
+    if (KNOWN_BACKENDS.has(candidate)) {
+      return [candidate, entry.slice(colon + 1)];
+    }
   }
-  return [entry.slice(0, colon), entry.slice(colon + 1)];
+  const defaultBackend = process.env.LLM_ROUTER_BACKEND || 'openrouter';
+  return [defaultBackend, entry];
 }
 
 // Phase 2C: try Postgres INSERT first; on any error, fall back to stderr. Both

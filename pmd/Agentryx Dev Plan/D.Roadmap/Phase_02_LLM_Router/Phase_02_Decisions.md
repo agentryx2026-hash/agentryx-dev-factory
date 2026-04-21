@@ -137,3 +137,64 @@
 **What**: View created in `001-llm-calls.sql` aggregates project × day → cost / calls / tokens / latency.
 
 **Why**: The Phase 2G dashboard panel reads from this view, not from `llm_calls` directly. Adding the view in the same migration keeps schema cohesive — anyone who has the table also has the view. Dashboard doesn't need to know how the aggregation works.
+
+---
+
+## Phase 2D Decisions
+
+### D26 — LiteLLM ships as a docker-compose service in `deploy/`
+
+**What**: `factory-litellm` container added to `deploy/docker-compose.yml`. Image `ghcr.io/berriai/litellm:main-stable`. Listens on port 4000. Config mounted read-only from `deploy/litellm/config.yaml`.
+
+**Why**: LiteLLM is the configurability principle in action — admin can flip `LLM_ROUTER_BACKEND=litellm` and route through self-hosted instead of OpenRouter. Self-hosting wins on:
+- Data residency (provider calls go from our IP, not OpenRouter's).
+- Zero markup (we pay providers directly).
+- Visibility (LiteLLM logs every call locally).
+
+OpenRouter remains the default because it works without any local infra.
+
+**Operational cost**: 1 extra container, ~150 MB image, no persistent volume.
+
+### D27 — LiteLLM model aliases match OpenRouter naming
+
+**What**: `model_list[].model_name` in `deploy/litellm/config.yaml` uses the same names as OpenRouter (`anthropic/claude-haiku-4-5`, `google/gemini-2.5-flash`, etc.).
+
+**Why**: Lets `configs/llm-routing.json` stay backend-agnostic. The same fallback chain entry `anthropic/claude-haiku-4-5` works whether `LLM_ROUTER_BACKEND` is `litellm` or `openrouter` — only the base URL changes. Switching backends becomes a one-env-var operation; no config rewrite.
+
+### D28 — `parseEntry` recognizes only known backend prefixes
+
+**What**: `KNOWN_BACKENDS = {openrouter, litellm, direct-anthropic, direct-gemini, direct-openai}`. A bare model entry (no colon, or colon prefix not in this set) defaults to `process.env.LLM_ROUTER_BACKEND`.
+
+**Why**: Original code treated ANY colon as a backend separator. That broke once we needed model names containing colons (rare, but happens — e.g. some Groq names). Now the parser is explicit about which prefixes are routing instructions vs part of the model name.
+
+### D29 — Router env activated on factory-telemetry via systemd `Environment=` + `EnvironmentFile=`
+
+**What**: `factory-telemetry.service` now sets `USE_ROUTER=true`, `LLM_ROUTER_BACKEND=openrouter`, and reads provider keys from `~/Projects/claw-code-parity/.env` via `EnvironmentFile=-`.
+
+**Why**: When telemetry spawns dev_graph.js / pre_dev_graph.js / post_dev_graph.js as child processes, the child inherits the parent's environment. So setting `USE_ROUTER=true` on the telemetry service activates the router for every spawned graph — no per-spawn argument needed.
+
+The `-` prefix on `EnvironmentFile=-` makes a missing file non-fatal (graceful degradation if .env is gone for some reason).
+
+### D30 — `.env` files for systemd MUST use plain `KEY=value`, not `export KEY=value`
+
+**What**: Reverted `~/Projects/claw-code-parity/.env` to plain `KEY=value` syntax. Patched `claw-web-launcher.sh` to wrap its source with `set -a; source .env; set +a` so plain assignments still get exported into the launcher's child shell (claw).
+
+**Why**: Discovered the hard way — systemd's `EnvironmentFile=` doesn't accept `export` prefix and silently rejects those lines BUT logs the full rejected-line content (including secret values) to the journal as "Ignoring invalid environment assignment". This caused the 6th secret leak in this session. Mitigation: `KEY=value` everywhere; `set -a` in the bash launcher to compensate.
+
+### D31 — Smoke test surfaced two operational gaps to revisit
+
+**What**: First live router smoke test through `/api/factory/pre-dev` succeeded (HTTP 200) but produced no `llm_calls` rows. Investigation revealed:
+1. `/api/factory/pre-dev` does template substitution only — no LLM calls. Real LLM activity is via `/api/factory/dev` (which spawns `dev_graph.js`).
+2. `RouterChatModel` constructor in cognitive-engine graphs doesn't yet receive `projectId` / `phase` / `agent` — so cost rows have null attribution.
+
+**Action items captured for later**:
+- Phase 2B follow-up: pass project context into RouterChatModel from each graph node. Defer.
+- Document all factory API endpoints + their actual behavior (pre-dev = template, dev = LLM, etc.). Open issue for `docs/runbooks/factory_api.md`.
+
+### D32 — `journalctl --vacuum-time=Ns` purges leaked secrets from disk
+
+**What**: After D30's leak was discovered, ran `sudo journalctl --rotate && sudo journalctl --vacuum-time=10s` to drop ALL journal entries older than 10s — including the leaked lines. Freed 252 MB of archived journal data.
+
+**Tradeoff**: Lost ~all historical journal for ALL services on the box. Acceptable in v0.0.1 R&D where journal isn't load-bearing. In production, vacuum a NARROWER time window or use a per-service strategy (`journalctl --rotate -u factory-telemetry` then vacuum) to preserve other services' history.
+
+**Don't be clever next time**: Validate `EnvironmentFile=` with a test syntax-only file BEFORE pointing it at one with secrets. systemd does not have a "dry-run validate" mode for env files, so the test file should mimic the structure with dummy values.

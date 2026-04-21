@@ -1,0 +1,77 @@
+# LiteLLM proxy config (Phase 2D).
+#
+# This file is mounted READ-ONLY into the litellm container. NEVER put plaintext
+# API keys here — they are read from the host environment via `os.environ/<NAME>`.
+# The host environment is populated from .env files referenced by the
+# docker-compose.yml host shell context.
+#
+# Model name aliases below are what the router sends in the `model` field. We
+# alias them to OpenRouter-style names (provider/model) so the same routing
+# config (configs/llm-routing.json) works whether the chosen backend is
+# litellm or openrouter — only LLM_ROUTER_BACKEND env var changes.
+#
+# Health endpoint: GET /health/liveliness  → 200 OK
+# OpenAI-compatible API: POST /chat/completions
+# Master key (for /chat/completions Authorization): LITELLM_MASTER_KEY env var.
+
+model_list:
+
+  # ─── Anthropic ──────────────────────────────────────────────
+  - model_name: anthropic/claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: anthropic/claude-opus-4-7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ─── Google ─────────────────────────────────────────────────
+  - model_name: google/gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: google/gemini-2.5-flash-lite
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: google/gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ─── OpenAI ─────────────────────────────────────────────────
+  - model_name: openai/gpt-5
+    litellm_params:
+      model: openai/gpt-5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: openai/gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ─── DeepSeek (cheap tier candidate) ────────────────────────
+  - model_name: deepseek/deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+# General settings
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: null    # No DB needed for v0.0.1; LiteLLM is stateless. Phase 2C handles cost in our own llm_calls table.
+
+litellm_settings:
+  drop_params: true     # silently strip provider-unsupported params instead of erroring
+  set_verbose: false
+  num_retries: 0        # Our router does fallback chain — let it own retries to avoid double-counting
+  request_timeout: 60
