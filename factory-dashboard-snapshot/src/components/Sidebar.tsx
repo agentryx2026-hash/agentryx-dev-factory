@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-type Page = 'pre-dev' | 'factory' | 'post-dev' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys';
+type Page = 'pre-dev' | 'factory' | 'post-dev' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
 
 interface SidebarProps {
   activePage: Page;
@@ -16,6 +16,7 @@ const navItems: { page: Page; icon: string; label: string }[] = [
   { page: 'system', icon: '📊', label: 'System Resources' },
   { page: 'settings', icon: '⚙️', label: 'Configuration' },
   { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
+  { page: 'cost-panel', icon: '💰', label: 'Cost Panel' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {

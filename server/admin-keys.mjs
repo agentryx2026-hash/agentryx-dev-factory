@@ -16,6 +16,9 @@ import { dirname, resolve } from 'node:path';
 import {
   getKey, setKey, listKeys, toggleKey, deleteKey, getAuditLog,
 } from '../llm-router/src/keys.js';
+import {
+  costSummary, costByProjectDay, costByModelToday,
+} from '../llm-router/src/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -168,6 +171,23 @@ async function handle(req, res) {
     const provider = url.searchParams.get('provider');
     const limit = Math.min(Number(url.searchParams.get('limit') || '100'), 500);
     return sendJSON(res, 200, { entries: await getAuditLog({ provider, limit }) });
+  }
+
+  // ─── Cost panel (Phase 2G) ─────────────────
+  if (path === '/api/admin/cost/summary' && method === 'GET') {
+    const includeCompare = url.searchParams.get('include_compare') === 'true';
+    return sendJSON(res, 200, { summary: await costSummary({ includeCompare }) });
+  }
+
+  if (path === '/api/admin/cost/by-project-day' && method === 'GET') {
+    const includeCompare = url.searchParams.get('include_compare') === 'true';
+    const days = Math.min(Math.max(Number(url.searchParams.get('days') || '30'), 1), 180);
+    return sendJSON(res, 200, { rows: await costByProjectDay({ includeCompare, days }) });
+  }
+
+  if (path === '/api/admin/cost/by-model-today' && method === 'GET') {
+    const includeCompare = url.searchParams.get('include_compare') === 'true';
+    return sendJSON(res, 200, { rows: await costByModelToday({ includeCompare }) });
   }
 
   // ─── Test a stored key against the provider ──

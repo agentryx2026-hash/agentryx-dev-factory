@@ -140,3 +140,69 @@ export async function dailySpendTotal() {
     return null;
   }
 }
+
+// ─── Phase 2G: cost panel queries ───────────────────────────────────────
+// These are read-only, called by the admin HTTP API. Not security-sensitive
+// beyond what auth enforces at the nginx layer.
+
+export async function costSummary({ includeCompare = false } = {}) {
+  const pool = getPool();
+  if (!pool) throw new Error('DB unreachable');
+  const exclude = includeCompare ? '' : "AND (project_id IS NULL OR project_id != '__compare__')";
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN ts >= date_trunc('day',   now()) THEN cost_usd END), 0)::float8 AS today_usd,
+       COALESCE(SUM(CASE WHEN ts >= date_trunc('week',  now()) THEN cost_usd END), 0)::float8 AS week_usd,
+       COALESCE(SUM(CASE WHEN ts >= date_trunc('month', now()) THEN cost_usd END), 0)::float8 AS month_usd,
+       COUNT(*) FILTER (WHERE ts >= date_trunc('day', now())) AS calls_today,
+       COUNT(*) FILTER (WHERE ts >= date_trunc('day', now()) AND error LIKE 'budget_exceeded%') AS budget_refusals_today
+     FROM llm_calls
+     WHERE 1=1 ${exclude}`
+  );
+  return rows[0];
+}
+
+export async function costByProjectDay({ includeCompare = false, days = 30 } = {}) {
+  const pool = getPool();
+  if (!pool) throw new Error('DB unreachable');
+  const exclude = includeCompare ? '' : "AND (project_id IS NULL OR project_id != '__compare__')";
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(project_id, '<no-project>') AS project_id,
+       date_trunc('day', ts)                AS day,
+       COUNT(*)                              AS calls,
+       COALESCE(SUM(cost_usd), 0)::float8    AS cost_usd,
+       COALESCE(SUM(input_tokens), 0)        AS input_tokens,
+       COALESCE(SUM(output_tokens), 0)       AS output_tokens,
+       ROUND(AVG(latency_ms))::int           AS avg_latency_ms,
+       COUNT(*) FILTER (WHERE error IS NOT NULL) AS errors
+     FROM llm_calls
+     WHERE ts >= now() - make_interval(days => $1)
+       ${exclude}
+     GROUP BY project_id, day
+     ORDER BY day DESC, cost_usd DESC`,
+    [days]
+  );
+  return rows;
+}
+
+export async function costByModelToday({ includeCompare = false } = {}) {
+  const pool = getPool();
+  if (!pool) throw new Error('DB unreachable');
+  const exclude = includeCompare ? '' : "AND (project_id IS NULL OR project_id != '__compare__')";
+  const { rows } = await pool.query(
+    `SELECT
+       model_succeeded AS model,
+       COUNT(*) AS calls,
+       COALESCE(SUM(cost_usd), 0)::float8 AS cost_usd,
+       COALESCE(SUM(input_tokens), 0)     AS input_tokens,
+       COALESCE(SUM(output_tokens), 0)    AS output_tokens
+     FROM llm_calls
+     WHERE ts >= date_trunc('day', now())
+       AND model_succeeded IS NOT NULL
+       ${exclude}
+     GROUP BY model_succeeded
+     ORDER BY cost_usd DESC`
+  );
+  return rows;
+}

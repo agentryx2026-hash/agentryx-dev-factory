@@ -9,8 +9,9 @@ import SystemResources from './components/SystemResources';
 import AdminConfig from './components/AdminConfig';
 import AnalyticsInsights from './components/AnalyticsInsights';
 import AdminKeys from './components/AdminKeys';
+import CostPanel from './components/CostPanel';
 
-type Page = 'pre-dev' | 'factory' | 'post-dev' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys';
+type Page = 'pre-dev' | 'factory' | 'post-dev' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('pre-dev');
@@ -33,6 +34,8 @@ function App() {
         return <AdminConfig />;
       case 'admin-keys':
         return <AdminKeys />;
+      case 'cost-panel':
+        return <CostPanel />;
       default:
         return <PreDev />;
     }

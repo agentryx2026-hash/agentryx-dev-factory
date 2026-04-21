@@ -236,6 +236,54 @@ Both are needed; they complement each other.
 
 ---
 
+## Phase 2F decisions (compare mode CLI)
+
+### D56 — Compare calls write to `llm_calls` with `project_id='__compare__'`
+
+**What**: `compare()` in router.js emits a cost row per model, tagged with a sentinel `project_id` so Phase 2G dashboard can filter compare runs out of real project totals (or opt in via `?include_compare=true`).
+
+**Why**: Evaluation runs ARE real cost — admin needs to account for them in daily totals. But they're not "work for a specific project." Separate project_id keeps both needs addressable without a new column.
+
+**Alternative rejected**: a `call_kind TEXT` column on llm_calls. Adds schema surface. The sentinel project_id is cheaper.
+
+### D57 — Compare CLI is a single-file, no-deps tool (no argparse libs)
+
+**What**: `compare-cli.mjs` hand-rolls `--foo=bar` parsing with 10 lines of regex. No `commander`, `yargs`, `minimist`.
+
+**Why**: One user, R&D mode. The CLI has 4 args. A dep would be cargo-cult.
+
+**Ergonomics tradeoff**: no `--help`, no shell completion. If we find this annoying in practice, upgrade to `commander` at minimum cost.
+
+---
+
+## Phase 2G decisions (cost panel)
+
+### D58 — Cost queries live in `llm-router/src/db.js`, not in `server/admin-keys.mjs`
+
+**What**: The three new functions (`costSummary`, `costByProjectDay`, `costByModelToday`) were added to `db.js` alongside `projectSpendSinceMidnight` / `dailySpendTotal`. The HTTP service is thin glue.
+
+**Why**: Same reason as D24 — Postgres interaction stays inside the router package. Any future UI (Phase 12 full B7, customer portal in Phase 19) reuses the same query functions. No duplicate SQL across services.
+
+### D59 — Default excludes `__compare__` rows; opt-in via `?include_compare=true`
+
+**What**: Cost panel shows "real work" by default. A toggle lets admin include compare evaluation runs.
+
+**Why**: Default view matches the common operational question: "what did the factory spend this month?" — which is about project work, not evaluations. Dev / analyst questions like "how much have we burned on model benchmarking?" are secondary and opt-in.
+
+### D60 — Panel is read-only; budget caps edited via config file only (at v0.0.1)
+
+**What**: No buttons to change `max_project_budget_usd` or `max_daily_budget_usd` from the UI. Admin edits `configs/llm-routing.json` and restarts the relevant service.
+
+**Why**: Those caps are load-bearing — a typo could disable all cost protection. Phase 12 (full B7 admin module) will build the full form with bcrypt-style confirmation flow and audit log. Until then, version-controlled config file keeps changes traceable.
+
+### D61 — Cost bars are CSS-only, no chart library
+
+**What**: Per-project cost shown as a green bar whose width is proportional to `r.cost_usd / maxProjectSpend`. Single `<div>`, no Chart.js / Recharts dep.
+
+**Why**: For v0.0.1 this conveys the same information ("which project is costly?") with zero build-size cost. Phase 11 (full cost dashboard) can upgrade to real charts when we need multi-dimensional breakdowns.
+
+---
+
 ## Process-discipline addendum (captured 2026-04-21 late session)
 
 ### D32 — `journalctl --vacuum-time=Ns` purges leaked secrets from disk
