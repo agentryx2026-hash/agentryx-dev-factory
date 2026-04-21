@@ -1,0 +1,38 @@
+{
+  "_comment": "MCP server catalog. Launch config per server. Enable via USE_MCP_TOOLS=true + per-server 'enabled' flag. Paths use placeholders: ${PROJECT_DIR}, ${WORKSPACE_ROOT}.",
+  "servers": {
+    "filesystem": {
+      "enabled": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${PROJECT_DIR}"],
+      "description": "Reference filesystem MCP server from @modelcontextprotocol. Scoped to current project dir.",
+      "maps_to_tools": ["file_read", "file_write", "file_list"]
+    },
+    "git": {
+      "enabled": false,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-git", "--repository", "${PROJECT_DIR}"],
+      "description": "Reference git MCP server. Enable once we have repo-inside-project-dir pattern.",
+      "maps_to_tools": ["git_operation"]
+    },
+    "github": {
+      "enabled": false,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "description": "GitHub MCP server. Needs GITHUB_PERSONAL_ACCESS_TOKEN env. For Phase 10 Courier.",
+      "env": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+      "maps_to_tools": ["github_*"]
+    },
+    "postgres": {
+      "enabled": false,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/factory"],
+      "description": "Postgres MCP for Phase 7 memory layer and Phase 12 admin.",
+      "maps_to_tools": ["postgres_query"]
+    }
+  }
+}
