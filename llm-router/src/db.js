@@ -102,11 +102,14 @@ export async function closePool() {
   }
 }
 
-// Phase 2E reads from this. Keep it here so the budget logic stays inside the
-// router package and downstream code never talks to Postgres directly.
+// Phase 2E reads from these. Keeps budget logic inside the router package.
+// Fail-closed contract: on DB error return `null`, caller treats that as
+// "cannot verify spend, refuse the call" unless admin set
+// LLM_ROUTER_ALLOW_UNCHECKED=true.
+
 export async function projectSpendSinceMidnight(projectId) {
   const pool = getPool();
-  if (!pool) return null; // fail-open: missing DB → no cap enforced
+  if (!pool) return null;
   try {
     const { rows } = await pool.query(
       `SELECT COALESCE(SUM(cost_usd), 0)::float8 AS spend_usd
@@ -118,6 +121,22 @@ export async function projectSpendSinceMidnight(projectId) {
     return rows[0]?.spend_usd ?? 0;
   } catch (err) {
     process.stderr.write(`LLM_DB_QUERY_ERR projectSpendSinceMidnight ${err.message}\n`);
+    return null;
+  }
+}
+
+export async function dailySpendTotal() {
+  const pool = getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT COALESCE(SUM(cost_usd), 0)::float8 AS spend_usd
+         FROM llm_calls
+        WHERE ts >= date_trunc('day', now())`
+    );
+    return rows[0]?.spend_usd ?? 0;
+  } catch (err) {
+    process.stderr.write(`LLM_DB_QUERY_ERR dailySpendTotal ${err.message}\n`);
     return null;
   }
 }

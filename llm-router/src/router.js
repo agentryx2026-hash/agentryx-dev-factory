@@ -6,7 +6,7 @@
 import { callBackend } from './backends.js';
 import { loadConfig } from './config.js';
 import { computeCost } from './cost.js';
-import { insertCallRow } from './db.js';
+import { insertCallRow, projectSpendSinceMidnight, dailySpendTotal } from './db.js';
 
 // Errors that clearly indicate a malformed *payload* (same payload would fail
 // on any provider) — these break the chain. Everything else (auth, billing,
@@ -40,6 +40,33 @@ export async function complete({
 
   if (chain.length === 0) {
     throw new Error(`complete(): no models configured for task "${task}"`);
+  }
+
+  // ─── Phase 2E: pre-call budget cap ────────────────────────────────────
+  // Fail-CLOSED (unlike cost capture which is fail-open): if we can't verify
+  // spend, we refuse the call unless LLM_ROUTER_ALLOW_UNCHECKED=true.
+  const allowUnchecked = process.env.LLM_ROUTER_ALLOW_UNCHECKED === 'true';
+  const projectCap = cfg.defaults?.max_project_budget_usd ?? Infinity;
+  const dailyCap   = cfg.defaults?.max_daily_budget_usd   ?? Infinity;
+
+  const budgetReject = await checkBudget({
+    projectId, projectCap, dailyCap, allowUnchecked,
+  });
+  if (budgetReject) {
+    emitCallRow({
+      ts: new Date().toISOString(),
+      project_id: projectId,
+      phase,
+      agent,
+      task_type: task,
+      model_attempted: chain,
+      model_succeeded: null,
+      error: `budget_exceeded: ${budgetReject.reason}`,
+    });
+    throw Object.assign(new Error(`complete(): ${budgetReject.reason}`), {
+      budgetExceeded: true,
+      ...budgetReject,
+    });
   }
 
   const attempts = [];
@@ -195,4 +222,44 @@ function emitCallRow(row) {
       process.stderr.write(`LLM_CALL_FATAL emit failed entirely :: ${err.message} :: ${JSON.stringify(row)}\n`);
     } catch { /* nothing more we can do */ }
   });
+}
+
+// Phase 2E: return null if allowed, or {reason, projectSpend?, dailySpend?, cap?}
+// if rejected. Fail-CLOSED by default — a null from the DB means "unknown spend"
+// which we treat as "refuse" unless allowUnchecked is on.
+async function checkBudget({ projectId, projectCap, dailyCap, allowUnchecked }) {
+  // Unbounded caps — skip the DB round-trips entirely.
+  if (!isFinite(projectCap) && !isFinite(dailyCap)) return null;
+
+  const [projectSpend, dailySpend] = await Promise.all([
+    projectId && isFinite(projectCap) ? projectSpendSinceMidnight(projectId) : Promise.resolve(0),
+    isFinite(dailyCap) ? dailySpendTotal() : Promise.resolve(0),
+  ]);
+
+  // DB unreachable or error → projectSpendSinceMidnight/dailySpendTotal returned null.
+  if (projectSpend === null || dailySpend === null) {
+    if (allowUnchecked) return null;
+    return {
+      reason: 'cannot verify spend — DB unreachable and LLM_ROUTER_ALLOW_UNCHECKED not set',
+      cap: 'unknown',
+    };
+  }
+
+  if (projectId && isFinite(projectCap) && projectSpend >= projectCap) {
+    return {
+      reason: `project "${projectId}" spent $${projectSpend.toFixed(4)} today; cap is $${projectCap}`,
+      projectSpend,
+      cap: projectCap,
+      scope: 'project',
+    };
+  }
+  if (isFinite(dailyCap) && dailySpend >= dailyCap) {
+    return {
+      reason: `daily factory total spent $${dailySpend.toFixed(4)} today; cap is $${dailyCap}`,
+      dailySpend,
+      cap: dailyCap,
+      scope: 'daily',
+    };
+  }
+  return null;
 }

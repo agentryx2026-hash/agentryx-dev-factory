@@ -191,6 +191,53 @@ The `-` prefix on `EnvironmentFile=-` makes a missing file non-fatal (graceful d
 - Phase 2B follow-up: pass project context into RouterChatModel from each graph node. Defer.
 - Document all factory API endpoints + their actual behavior (pre-dev = template, dev = LLM, etc.). Open issue for `docs/runbooks/factory_api.md`.
 
+## Phase 2E Decisions
+
+### D51 — Budget cap is fail-CLOSED (not fail-open like cost capture)
+
+**What**: `checkBudget()` in `router.js` calls `projectSpendSinceMidnight()` and `dailySpendTotal()` BEFORE the chain walk. If either returns `null` (DB unreachable), the call is **refused** unless `LLM_ROUTER_ALLOW_UNCHECKED=true`.
+
+**Why**:
+- Cost capture (D17) is fail-open because a lost row is just an observability gap — harmless.
+- Budget cap fail-open would mean a DB outage becomes a cost-unbounded window where runaway agents can drain credit. That's the exact scenario caps exist to prevent.
+- Default-deny is the safe posture; admin can explicitly loosen it.
+
+**Operator experience**: if DB goes down, calls fail with "cannot verify spend" until DB recovers or admin sets `ALLOW_UNCHECKED=true`. Clear, loud, self-explanatory error.
+
+### D52 — `LLM_ROUTER_ALLOW_UNCHECKED=true` escape hatch
+
+**What**: Env var that bypasses the fail-closed behavior above. Never set in `deploy/systemd/*.service` files; operator sets it ad-hoc via `systemctl edit` when they know what they're doing.
+
+**Why**: Disaster recovery. If Postgres is down for an hour and you need the factory to keep running on whatever budget the admin set manually, this lets you skip the check.
+
+**Audit**: every call made with `ALLOW_UNCHECKED=true` still writes to `llm_calls` with its actual cost — so a post-hoc audit shows exactly what happened during the outage window.
+
+### D53 — Both caps checked; more-restrictive wins
+
+**What**: If a call would violate EITHER the project cap OR the daily total cap, it's refused. Error message names which scope blocked it (`project` vs `daily`).
+
+**Why**: Two different risk postures served by one function:
+- **Project cap** — bounds a single project's cost even if the admin forgets to monitor daily total (e.g., 100 projects × $10 each = $1000, still under $100 daily cap if none cross $10).
+- **Daily cap** — bounds total factory spend even if many projects are running (e.g., 1000 projects × $0.50 each would blow past the $100 daily cap well before any single project hit its $10).
+
+Both are needed; they complement each other.
+
+### D54 — `budget_exceeded` errors are tagged with `budgetExceeded: true`
+
+**What**: The thrown `Error` has `.budgetExceeded === true`, `.scope`, `.cap`, `.projectSpend` or `.dailySpend`. Distinguishes from provider errors (`.httpStatus`, `.cause`) and from payload errors.
+
+**Why**: Lets cognitive-engine and the UI handle budget-related failures differently — e.g., show "💰 Budget limit reached" instead of "❌ All fallbacks exhausted". Phase 2G dashboard can count these separately. Hermes (Phase 10) can page the admin when one fires.
+
+### D55 — Budget check is skipped entirely when both caps are `Infinity`
+
+**What**: If `max_project_budget_usd` and `max_daily_budget_usd` are both unset (or `Infinity`), `checkBudget()` returns `null` immediately without making any DB queries.
+
+**Why**: Zero-cost when caps aren't configured. Useful for local dev / test environments where the operator explicitly wants no bounds.
+
+---
+
+## Process-discipline addendum (captured 2026-04-21 late session)
+
 ### D32 — `journalctl --vacuum-time=Ns` purges leaked secrets from disk
 
 **What**: After D30's leak was discovered, ran `sudo journalctl --rotate && sudo journalctl --vacuum-time=10s` to drop ALL journal entries older than 10s — including the leaked lines. Freed 252 MB of archived journal data.

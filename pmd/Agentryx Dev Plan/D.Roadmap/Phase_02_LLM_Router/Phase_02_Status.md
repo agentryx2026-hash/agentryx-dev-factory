@@ -10,8 +10,8 @@
 | 2A — Router facade package | ✅ COMPLETE | `dc6546b`, `54efec9` |
 | 2B — LangChain adapter + cognitive-engine swap | ✅ COMPLETE | `c482248`, `50be3f2` |
 | 2C — Postgres cost capture | ✅ COMPLETE | `d2a8430` |
-| 2D — LiteLLM container + activate router on telemetry | 🟡 in progress | — |
-| 2E — Pre-call budget caps | ⏳ pending | — |
+| 2D — LiteLLM container + activate router on telemetry | ✅ COMPLETE | `19932f6` |
+| 2E — Pre-call budget caps | ✅ COMPLETE | *(this commit)* |
 | 2F — Compare mode CLI | ⏳ pending | — |
 | 2G — Cost panel in dashboard | ⏳ pending | — |
 
