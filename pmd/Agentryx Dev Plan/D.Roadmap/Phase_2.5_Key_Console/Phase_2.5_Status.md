@@ -4,13 +4,13 @@
 
 ## Progress
 
-| Sub | What | Status |
-|---|---|---|
-| 2.5-A | Backend (DB + crypto + CRUD module) | 🟡 in progress |
-| 2.5-B | HTTP admin API (factory-admin service) | ⏳ pending |
-| 2.5-C | React UI page | ⏳ pending |
-| 2.5-D | Router cutover (read keys from DB) | ⏳ pending |
-| 2.5-E | User rotates leaked keys via UI | ⏳ pending (depends on B/C/D) |
+| Sub | What | Status | Commit |
+|---|---|---|---|
+| 2.5-A | Backend (DB + crypto + CRUD module) | ✅ done | `8e966d4` |
+| 2.5-B | HTTP admin API (factory-admin on :4402) | ✅ done | `aa81cec` |
+| 2.5-C | React UI page + sidebar nav | ✅ done | `cf315e3` |
+| 2.5-D | Router cutover (keys from DB) | ✅ done | *(this commit)* |
+| 2.5-E | User rotates leaked keys via UI | ⏳ **ready for user** |
 
 ## Active blockers
 

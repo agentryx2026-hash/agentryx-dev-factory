@@ -78,3 +78,89 @@ The prefix lets us validate user input before storing — catches "I pasted the 
 **Why**: True usage signal — if a key shows "last used: 3 weeks ago" with `enabled=true`, admin knows it's stale and can clean up. Tells operational story without needing a separate analytics layer.
 
 **Performance**: One UPDATE per LLM call adds <2ms; non-blocking via fire-and-forget pattern (same as `insertCallRow`).
+
+---
+
+## Phase 2.5-B decisions (captured during execution)
+
+### D41 — Separate systemd service (`factory-admin` on :4402) rather than extending telemetry.mjs
+
+**What**: New service `factory-admin.service` running `server/admin-keys.mjs` on port 4402. Lives in the mono-repo at `agentryx-factory/server/`.
+
+**Why**:
+- telemetry.mjs is in `pixel-factory-ui/` (outside mono-repo until Phase 1.5) — adding admin routes there creates a snapshot-tracking problem for every change.
+- Keeps admin concerns isolated from factory-flow concerns. If admin service crashes, factory keeps running (and vice versa).
+- Simpler restart semantics — `systemctl restart factory-admin` doesn't interrupt in-flight cognitive-engine spawns.
+
+**Tradeoff**: One more port + one more unit + one more systemd dependency. Acceptable.
+
+### D42 — nginx strips `/admin/` before forwarding; admin-keys.mjs sees `/api/admin/keys/...`
+
+**What**: The nginx `location /admin/api/` block has `rewrite ^/admin/(.*) /$1 break;` so the backend sees `/api/admin/keys/...` without the admin prefix. Backend routes match that shape.
+
+**Why**: Keeps the backend path-naming aligned with the conventional `/api/admin/*` pattern (which is what the UI fetches). nginx just makes the public URL work.
+
+### D43 — Admin service health check uses `/health` (unauthenticated)
+
+**What**: `GET /health` returns `{status:'ok',service,port}` without any auth. Used by systemd + docker + anything monitoring for liveness.
+
+**Why**: Health checks must not require auth or they become noisy 401s. The endpoint reveals only the service name + port, not any config or data.
+
+---
+
+## Phase 2.5-C decisions
+
+### D44 — UI is duck-typed state-based page (not React Router)
+
+**What**: AdminKeys tab added to the existing state-based `activePage` switch in App.tsx. No URL routing, no react-router-dom added.
+
+**Why**: Consistent with existing pattern (PreDev, FactoryFloor, PostDev, Analytics, SkillMemory, SystemResources, AdminConfig are all state-switched). Adding React Router now would require a sweeping refactor outside this phase's scope. Page is accessible via the sidebar click — sufficient.
+
+### D45 — Admin UI auth is triggered on first fetch, not page load
+
+**What**: No separate auth gate on the dashboard page itself. Browser asks for Basic Auth the FIRST time any `/admin/api/*` call runs (i.e., when the AdminKeys page fetches its data).
+
+**Why**: UX: non-admin users never see an auth prompt when browsing the rest of the dashboard. The prompt appears only when they click "API Keys", which is a signal they intend to authenticate.
+
+**Alternative rejected**: gating `/admin/` as a URL at nginx → too aggressive; broke the state-based UI model.
+
+### D46 — "Test" button pings provider's `/models` endpoint
+
+**What**: UI has a "Test" button per key that calls `POST /api/admin/keys/:provider/test` which fetches the provider's `/models` endpoint with the stored key.
+
+**Why**: Quick way to verify a newly-entered key is valid before trusting it in production. Uses provider's cheapest read endpoint (5-second timeout). Non-destructive.
+
+---
+
+## Phase 2.5-D decisions
+
+### D47 — Keys resolution order: DB → env var → null (401)
+
+**What**: `resolveKey(backend, envVarName)` in `backends.js` checks DB first via `getKey(provider)`. If no enabled DB key, reads `process.env[envVarName]`. If neither, returns null → 401 error.
+
+**Why**:
+- DB-first ensures the Admin UI is the source of truth once a key is set there.
+- Env-var fallback preserves the bootstrap experience — on a fresh VM with no DB keys yet, the router still works if `.env` has keys. Smooth migration path.
+- Explicit null return (not "undefined") makes downstream 401 logic deterministic.
+
+### D48 — LiteLLM master key stays in env, not DB
+
+**What**: `LITELLM_MASTER_KEY` is still read from `process.env`. Only the 4 provider backends (openrouter, direct-anthropic, direct-openai, direct-gemini) go through the DB.
+
+**Why**: LiteLLM's master key is **infrastructure config**, not a provider secret. It gates a local proxy, not a cloud provider. Storing it in the admin-UI DB would be category confusion — and the UI wouldn't know what to do with it.
+
+### D49 — Router fire-and-forgets `touchLastUsed(provider)` on success
+
+**What**: On successful backend call, router calls `touchLastUsed(provider)` which launches a `pool.query(UPDATE)` without awaiting it.
+
+**Why**: Admin UI's `last_used_at` is a UX nicety, not critical. Making the router await an UPDATE adds ~2ms latency to every LLM call for no user benefit. Fire-and-forget pattern also matches `insertCallRow` (D17 fail-open policy).
+
+**Observed**: verified end-to-end — post-cutover test showed `last_used_at` jumped from `null` to a timestamp within 1 second of the first call. Good enough.
+
+### D50 — Env var names kept for fallback even after DB has keys
+
+**What**: Even when DB has keys, router never removes env-var support. Admin can deliberately unset env vars if they want to force DB-only mode.
+
+**Why**: Operators may have an emergency recovery scenario — DB down, need to bring router back up with a quick `.env` update. Preserving env fallback means no redeploy needed in that scenario.
+
+**Documentation**: Will add a deploy/README note once Phase 2.5-E closes: "After admin UI is live and you've added keys, you may delete `.env` values or keep them as disaster-recovery backup."
