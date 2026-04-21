@@ -1,0 +1,75 @@
+{
+  "_comment": "Static catalog of LLM providers the factory supports. Adding a new provider = one entry here. The router and the admin UI both read from this file.",
+  "_schemaVersion": 1,
+
+  "providers": {
+
+    "anthropic": {
+      "label": "Anthropic",
+      "key_env_var": "ANTHROPIC_API_KEY",
+      "key_prefix": "sk-ant-",
+      "expected_length": [60, 120],
+      "test_endpoint": "https://api.anthropic.com/v1/models",
+      "test_auth_header": "x-api-key",
+      "docs_url": "https://docs.anthropic.com/en/api/getting-started"
+    },
+
+    "openrouter": {
+      "label": "OpenRouter",
+      "key_env_var": "OPENROUTER_API_KEY",
+      "key_prefix": "sk-or-v1-",
+      "expected_length": [60, 90],
+      "test_endpoint": "https://openrouter.ai/api/v1/models",
+      "test_auth_header": "Authorization",
+      "docs_url": "https://openrouter.ai/docs"
+    },
+
+    "openai": {
+      "label": "OpenAI",
+      "key_env_var": "OPENAI_API_KEY",
+      "key_prefix": "sk-",
+      "expected_length": [40, 200],
+      "test_endpoint": "https://api.openai.com/v1/models",
+      "test_auth_header": "Authorization",
+      "docs_url": "https://platform.openai.com/docs/api-reference"
+    },
+
+    "gemini": {
+      "label": "Google Gemini",
+      "key_env_var": "GEMINI_API_KEY",
+      "key_prefix": "AIza",
+      "expected_length": [35, 60],
+      "test_endpoint": null,
+      "docs_url": "https://ai.google.dev/gemini-api/docs"
+    },
+
+    "deepseek": {
+      "label": "DeepSeek",
+      "key_env_var": "DEEPSEEK_API_KEY",
+      "key_prefix": "sk-",
+      "expected_length": [30, 80],
+      "test_endpoint": "https://api.deepseek.com/v1/models",
+      "test_auth_header": "Authorization",
+      "docs_url": "https://api-docs.deepseek.com/"
+    },
+
+    "qwen": {
+      "label": "Qwen (Alibaba DashScope)",
+      "key_env_var": "DASHSCOPE_API_KEY",
+      "key_prefix": "sk-",
+      "expected_length": [30, 80],
+      "test_endpoint": null,
+      "docs_url": "https://help.aliyun.com/zh/dashscope/"
+    },
+
+    "mistral": {
+      "label": "Mistral",
+      "key_env_var": "MISTRAL_API_KEY",
+      "key_prefix": null,
+      "expected_length": [30, 80],
+      "test_endpoint": "https://api.mistral.ai/v1/models",
+      "test_auth_header": "Authorization",
+      "docs_url": "https://docs.mistral.ai/api/"
+    }
+  }
+}
