@@ -12,4 +12,13 @@ Hermes's memory stack (FTS5 session search + LLM summarization across sessions +
 
 Goal: ship a memory service that cognitive-engine agents can call for "what did we learn about this project in previous sessions?" — answered via FTS5 + summarization.
 
+**Configurability hook** (per `Master_Factory_Architect.md` §6): the memory layer ships behind a `MemoryService` interface. Implementations:
+- `hermes-pattern-sqlite` — R1 default, our own code implementing Hermes's proven pattern
+- `letta-managed` — swap-in option (Letta framework for stateful agents)
+- `graphiti-temporal` — swap-in option (Zep/Graphiti temporal knowledge graph)
+- `custom-graph` — R4 evolution; artifact-aware graph memory
+- `null` — disable memory for a project entirely
+
+Admin UI at Phase 12 sets the `memory_backend` per project. Default is factory-wide. Hot-swap supported: changing the row means the NEXT task uses the new backend; in-flight tasks finish with their original backend.
+
 *(sketch — expanded when phase becomes active)*

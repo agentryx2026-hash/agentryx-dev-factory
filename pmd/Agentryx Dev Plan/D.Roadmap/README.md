@@ -10,6 +10,10 @@ See [00_Architectural_Principles.md](00_Architectural_Principles.md) for the ful
 2. **Agile, sketch-then-detail** — only the next 1-2 phases are detailed. Future phases are one-liners until ratified.
 3. **Verify portal and Documentation are separate modules** — factory integrates with them, doesn't subsume them.
 4. **Right model for the right task** — multi-tier LLM routing from day one (Phase 2).
+5. **Tool-swap flexibility** — every external dep sits behind an interface; R3/R4 replacements are hot-swap config changes.
+6. **Release-band discipline** — v0.0.1 → R1 → R2 → R3 → R4 → R5, no band-skipping.
+
+For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — written by Claude Opus 4.7 as the target architecture this roadmap converges toward.
 
 ## Roadmap (20 phases)
 

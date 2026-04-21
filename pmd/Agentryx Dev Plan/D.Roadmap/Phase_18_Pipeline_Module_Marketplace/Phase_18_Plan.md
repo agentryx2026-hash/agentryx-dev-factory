@@ -13,4 +13,11 @@ Saves ~1-2 weeks vs custom marketplace build.
 
 Integration question: can we consume an agentskills "skill" from cognitive-engine's LangGraph directly, or does it require Hermes runtime? Investigate during Phase 18.
 
+**Configurability hook** (per `Master_Factory_Architect.md` §6): the skills catalog ships behind a `SkillsCatalog` interface. Implementations:
+- `agentskills-community` — R1 default, community catalog via agentskills.io
+- `agentryx-private` — R3 addition, our own curated catalog
+- Federation mode (R5): ordered list of catalogs, resolution left-to-right
+
+Admin UI sets `skills_catalog` as an ordered list per project. First catalog with a matching skill wins.
+
 *(sketch — expanded when phase becomes active)*

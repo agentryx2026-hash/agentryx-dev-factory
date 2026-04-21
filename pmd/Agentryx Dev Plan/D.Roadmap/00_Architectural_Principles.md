@@ -63,8 +63,34 @@ Anything NOT in this repo dies on VM rebuild. Audit periodically.
 ## 7. Secrets never in repo, never in chat
 
 - `.env` files — `.gitignore`'d, never committed.
-- API keys — admin UI manages them (Phase 12).
+- API keys — admin UI manages them (Phase 12; Phase 2.5-lite already ships it).
 - GitHub PATs — `gh auth login` credential helper, never embedded in `.git/config`.
 - For chat: paste tokens directly into terminal prompts, not into chat messages.
 
-This rule has been violated twice in setup. Don't normalize it.
+This rule has been violated 7 times during the first session, each via a different mechanism (chat paste, awk redaction bug, systemd journal echo of malformed `export` lines, `gh auth status` partial leak, docker env dump, etc.). Mitigations are now architectural (Phase 2.5 Key Console) rather than procedural.
+
+## 8. Tool-swap flexibility (every external dep sits behind an interface)
+
+Every external tool we adopt — Hermes (gateway mode, Phase 10), agentskills.io (Phase 18), Letta / Graphiti / Honcho (evaluated in Phase 7), MCP servers (Phase 5), LiteLLM / OpenRouter (Phase 2) — **must have a well-defined interface in our factory code**. Direct coupling is never acceptable.
+
+**Concrete mechanics**:
+- Every slot has a `getActiveImpl(slot, project_id)` resolver that reads the current implementation choice from Postgres (see `Master_Factory_Architect.md` §6).
+- Default is factory-wide; per-project overrides allowed.
+- Hot-swap: change the row, next task uses the new implementation. No redeploy.
+- A/B compare: an admin mode runs the same task through two implementations and surfaces differences (Phase 2F compare-mode principle, generalized).
+
+**Why**: at R3/R4/R5 we expect to replace some external tools with our own. The swap should be a *config change* and *passing the interface tests*, not a rewrite of caller code. This is the configurability principle (P1) at the code-architecture level.
+
+**Applies retroactively**: any tool already adopted (Hermes, Paperclip, LangGraph, n8n) gets an adapter layer added before it ships to R1 if one doesn't exist.
+
+## 9. Release-band versioning discipline
+
+Factory evolves through named release bands (see `Master_Factory_Architect.md` §1):
+- **v0.0.1** (current) — R&D, comparison mode
+- **R1** (week 10 target) — first shippable factory, uses external tools heavily
+- **R2** (month 4-6) — production hardening, same deps
+- **R3** (month 7-9) — selective replacement of painful deps
+- **R4** (month 10-12) — vertical integration, most brain-layer deps are ours
+- **R5** (year 2+) — self-hostable, zero-mandatory-external stack
+
+We do NOT skip bands. We earn the right to replace an external tool by having suffered its failure modes. This is *the* principle that keeps us honest about what we can and can't build.
