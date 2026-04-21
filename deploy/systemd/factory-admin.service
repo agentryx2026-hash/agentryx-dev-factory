@@ -1,0 +1,22 @@
+[Unit]
+Description=Agentryx Dev Factory - Admin API (Key Console — Phase 2.5)
+After=network.target factory-postgres.service
+Documentation=https://github.com/agentryx2026-hash/agentryx-factory/tree/main/server
+
+[Service]
+Type=simple
+User=subhash.thakur.india
+Group=subhash.thakur.india
+WorkingDirectory=/home/subhash.thakur.india/Projects/agentryx-factory
+Environment=PATH=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=ADMIN_PORT=4402
+Environment=ADMIN_HOST=127.0.0.1
+EnvironmentFile=-/home/subhash.thakur.india/Projects/claw-code-parity/.env
+ExecStart=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin/node server/admin-keys.mjs
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
