@@ -15,10 +15,12 @@ See [00_Architectural_Principles.md](00_Architectural_Principles.md) for the ful
 
 | # | Phase | One-line goal | Status |
 |---|---|---|---|
-| 0 | **GitHub setup** | Fresh `agentryx-factory` repo, structure, labels, milestones, Project board | in progress |
-| 1 | [Restore and Observe](Phase_01_Restore_and_Observe/Phase_01_Plan.md) | Get current pipeline alive, instrumented, repeatable on any VM | blocked on user inputs |
-| 1.5 | [Rename and Monorepo](Phase_1.5_Rename_and_Monorepo/Phase_1.5_Plan.md) | Rename `pixel-factory-ui` → `factory-dashboard`, migrate working dirs into mono-repo (carefully — docker volumes!) | sketched |
-| 2 | [LLM Router and Cost Telemetry](Phase_02_LLM_Router/Phase_02_Plan.md) | LiteLLM + OpenRouter, switchable; per-task model assignment; per-call $ captured | sketched |
+| 0 | **GitHub setup** | Fresh `agentryx-factory` repo, structure, labels, milestones, Project board | ✅ done |
+| 1 | [Restore and Observe](Phase_01_Restore_and_Observe/Phase_01_Plan.md) | Get current pipeline alive, instrumented, repeatable on any VM | ✅ done |
+| 1.5 | [Rename and Monorepo](Phase_1.5_Rename_and_Monorepo/Phase_1.5_Plan.md) | Rename repo to `agentryx-dev-factory`, migrate `pixel-factory-ui` → `factory-dashboard`, fold cognitive-engine into monorepo, + tool links in sidebar + Paperclip UI exposed | sketched |
+| 2 | [LLM Router and Cost Telemetry](Phase_02_LLM_Router/Phase_02_Plan.md) | LiteLLM + OpenRouter, switchable; per-task model assignment; per-call $ captured; Key Console (2.5) inserted mid-phase; fallback chain; compare mode; cost panel | ✅ done |
+| 2.5 | [Key Console (B7-lite)](Phase_2.5_Key_Console/Phase_2.5_Plan.md) | Inserted mid-Phase-2 after 6 secret-leak incidents. Browser-based provider-key management, AES-256-GCM at rest, audit log. | ✅ done |
+| **2.75** | **[Hermes Agent Evaluation](Phase_2.75_Hermes_Evaluation/Phase_2.75_Plan.md)** | **NEW — inserted 2026-04-21**. Evaluate [Nous Research Hermes](https://github.com/nousresearch/hermes-agent) (memory + subagents + MCP + RL self-improvement) as potential backend for Phases 5/7/10/15/18. Timeboxed 2 sessions. | sketched |
 | 3 | [Intake Stage (Genovi)](Phase_03_Intake_Genovi/Phase_03_Plan.md) | New first agent. SRS/FRS/PRD → structured requirement extraction | one-liner |
 | 4 | [PMD Template Registry](Phase_04_PMD_Template_Registry/Phase_04_Plan.md) | Formalize 25-30 standard docs as versioned templates with dependency graph | one-liner |
 | 5 | [MCP Tool Plane](Phase_05_MCP_Tool_Plane/Phase_05_Plan.md) | Replace custom `tools.js` with MCP servers (fs, git, github, postgres, browser) | one-liner |
@@ -26,7 +28,7 @@ See [00_Architectural_Principles.md](00_Architectural_Principles.md) for the ful
 | 7 | [Memory Layer v1](Phase_07_Memory_Layer/Phase_07_Plan.md) | Obsidian vault (human-curated) + vector index (auto) hybrid | one-liner |
 | 8 | [Parallel Artifacts](Phase_08_Parallel_Artifacts/Phase_08_Plan.md) | Restructure graph: code/tests/docs as concurrent branches under fan-out/join | one-liner |
 | 9 | [Verification Queue (Verify integration)](Phase_09_Verification_Queue/Phase_09_Plan.md) | Stand up Verify portal; factory pushes test cases; humans approve/reject; feedback loops back | one-liner |
-| 10 | [Hermes — External Comms](Phase_10_Hermes_External_Comms/Phase_10_Plan.md) | New agent. GitHub PR open/comment, Slack, email reports | one-liner |
+| 10 | [Courier — External Comms](Phase_10_Courier_External_Comms/Phase_10_Plan.md) | New agent. GitHub PR open/comment, Slack, email reports. *Renamed from "Hermes" 2026-04-21 to avoid collision with Nous Research Hermes framework; if Phase 2.75 adopts Hermes, Courier becomes "Hermes-configured-for-factory-comms" rather than a separate build* | one-liner |
 | 11 | [Cost + Quota Dashboard](Phase_11_Cost_Quota_Dashboard/Phase_11_Plan.md) | Per-project, per-agent, per-model spend. Hard caps + alerts | one-liner |
 | 12 | [B7 Admin Module v1](Phase_12_B7_Admin_Module/Phase_12_Plan.md) | Key manager + feature flags + role-gated UI (per existing PMD `B7` spec) | one-liner |
 | 13 | [Pipeline Replay / Debug](Phase_13_Pipeline_Replay/Phase_13_Plan.md) | Time-travel any past run; re-execute from any node | one-liner |
