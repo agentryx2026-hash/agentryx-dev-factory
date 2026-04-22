@@ -44,9 +44,9 @@ As of 2026-04-21:
 
 | Band | Closed phases | In progress | Deferred |
 |---|---|---|---|
-| Foundation | 0, 1, 1.5, 2, 2.5, 2.75, 3, 4, 5-A, 6-A, 7-A | Phase 8 (Parallel Artifacts) or Phase 10 (Courier) next | 5-B, 6-B, 7-E (need OpenRouter credit for E2E); 7-B/C/D (scale-dependent) |
+| Foundation | 0, 1, 1.5, 2, 2.5, 2.75, 3, 4, 5-A, 6-A, 7-A, 8-A | Phase 9 (Verify), Phase 10 (Courier), or Phase 11 (Cost dashboard) next | 5-B, 6-B, 7-E, 8-B (need OpenRouter credit for E2E); 7-B/C/D (scale-dependent) |
 
-Phase tags on main (rollback anchors): `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`.
+Phase tags on main (rollback anchors): `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`.
 
 See [pmd/Agentryx Dev Plan/D.Roadmap/README.md](pmd/Agentryx%20Dev%20Plan/D.Roadmap/README.md) for the full roadmap and per-phase status.
 
