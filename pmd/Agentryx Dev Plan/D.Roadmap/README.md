@@ -29,7 +29,7 @@ For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Archi
 | 4 | [PMD Template Registry](Phase_04_PMD_Template_Registry/Phase_04_Plan.md) | Formalize 25-30 standard docs as versioned templates with dependency graph | ✅ done |
 | 5 | [MCP Tool Plane](Phase_05_MCP_Tool_Plane/Phase_05_Plan.md) | Replace custom `tools.js` with MCP servers (fs, git, github, postgres, browser) | 🟡 5-A done (scaffolding); 5-B deferred (graph integration, needs OpenRouter credit) |
 | 6 | [Artifact-First State](Phase_06_Artifact_First_State/Phase_06_Plan.md) | Typed outputs (PMD/code/test/doc) to versioned artifact store | 🟡 6-A done (scaffolding); 6-B deferred (graph dual-write, needs OpenRouter credit) |
-| 7 | [Memory Layer v1](Phase_07_Memory_Layer/Phase_07_Plan.md) | Obsidian vault (human-curated) + vector index (auto) hybrid | one-liner |
+| 7 | [Memory Layer v1](Phase_07_Memory_Layer/Phase_07_Plan.md) | Obsidian vault (human-curated) + pluggable backends (sqlite/postgres/vector) behind MemoryService interface | 🟡 7-A done (scaffolding + fs backend + artifact walker); 7-B/C/D/E deferred |
 | 8 | [Parallel Artifacts](Phase_08_Parallel_Artifacts/Phase_08_Plan.md) | Restructure graph: code/tests/docs as concurrent branches under fan-out/join | one-liner |
 | 9 | [Verification Queue (Verify integration)](Phase_09_Verification_Queue/Phase_09_Plan.md) | Stand up Verify portal; factory pushes test cases; humans approve/reject; feedback loops back | one-liner |
 | 10 | [Courier — External Comms](Phase_10_Courier_External_Comms/Phase_10_Plan.md) | New agent. GitHub PR open/comment, Slack, email reports. *Renamed from "Hermes" 2026-04-21 to avoid collision with Nous Research Hermes framework; if Phase 2.75 adopts Hermes, Courier becomes "Hermes-configured-for-factory-comms" rather than a separate build* | one-liner |
@@ -87,4 +87,4 @@ Every phase from 5-A onwards uses PR flow, not direct-to-main.
 
 **Why**: Review gate + rollback discipline + parallel experimentation. Aligns with Master_Factory_Architect.md P9 (release-band versioning).
 
-**Phase tags (8 retroactive + 2 new)**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`.
+**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`.
