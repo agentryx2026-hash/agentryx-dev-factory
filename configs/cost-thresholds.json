@@ -1,0 +1,34 @@
+{
+  "_comment": "Cost thresholds consumed by Phase 11 cost-tracker. 11-A defines the shape; 11-B implements warn alerting + hard-cap refusal. Schema documented in cognitive-engine/cost-tracker/README.md.",
+  "schema_version": 1,
+  "thresholds": [
+    {
+      "key": "global",
+      "window": "daily",
+      "warn_usd": 5.00,
+      "hard_cap_usd": 20.00,
+      "description": "Factory-wide daily spending ceiling while in v0.0.1 R&D"
+    },
+    {
+      "key": "global",
+      "window": "monthly",
+      "warn_usd": 50.00,
+      "hard_cap_usd": 200.00,
+      "description": "Monthly budget ceiling"
+    },
+    {
+      "key": "agent:troi",
+      "window": "daily",
+      "warn_usd": 2.00,
+      "hard_cap_usd": 8.00,
+      "description": "Troi (code agent) tends to consume the most — tighter cap"
+    },
+    {
+      "key": "agent:picard",
+      "window": "daily",
+      "warn_usd": 1.00,
+      "hard_cap_usd": 4.00,
+      "description": "Picard runs on Opus tier"
+    }
+  ]
+}
