@@ -44,9 +44,9 @@ As of 2026-04-21:
 
 | Band | Closed phases | In progress | Deferred |
 |---|---|---|---|
-| Foundation | 0, 1, 1.5, 2, 2.5, 2.75, 3, 4, 5-A, 6-A, 7-A, 8-A, 9-A, 11-A | Phase 10 (Courier) next (unblocks 9-B + 11-B) | 5-B, 6-B, 7-E, 8-B (need OpenRouter credit); 9-B (needs Verify multi-app + OpenRouter); 11-B (needs Phase 10); 7-B/C/D (scale-dependent) |
+| Foundation | 0, 1, 1.5, 2, 2.5, 2.75, 3, 4, 5-A, 6-A, 7-A, 8-A, 9-A, 10-A, 11-A | Phase 12 (B7 Admin) or Phase 13 (Replay) next | 5-B, 6-B, 7-E, 8-B (need OpenRouter credit); 9-B, 10-B, 11-B (need user creds + Hermes deploy); 7-B/C/D (scale-dependent) |
 
-Phase tags on main (rollback anchors): `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-11a-closed`.
+Phase tags on main (rollback anchors): `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`.
 
 See [pmd/Agentryx Dev Plan/D.Roadmap/README.md](pmd/Agentryx%20Dev%20Plan/D.Roadmap/README.md) for the full roadmap and per-phase status.
 
