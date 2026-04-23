@@ -146,6 +146,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 11",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_SELF_IMPROVEMENT",
+    display_name: "Self-improvement proposer",
+    description: "Proposer runs on cadence; proposals flow through evaluator + Super Admin gate. Requires Phase 15-B.",
+    owning_phase: "Phase 15",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
