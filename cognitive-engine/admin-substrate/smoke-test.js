@@ -13,7 +13,7 @@ function assert(c, m) { if (!c) throw new Error(`ASSERT: ${m}`); console.log(`  
 async function testRegistry() {
   console.log("[registry]");
   assert(CONFIG_ENTRIES.length === 7, `7 configs catalogued (got ${CONFIG_ENTRIES.length})`);
-  assert(FEATURE_FLAGS.length === 9, `9 feature flags catalogued (got ${FEATURE_FLAGS.length})`);
+  assert(FEATURE_FLAGS.length === 10, `10 feature flags catalogued (got ${FEATURE_FLAGS.length})`);
   assert(getConfigEntry("cost_thresholds") != null, "cost_thresholds entry exists");
   assert(getConfigEntry("nonexistent") == null, "unknown id returns null");
   assert(getFeatureFlag("USE_MCP_TOOLS") != null, "USE_MCP_TOOLS flag exists");
@@ -54,7 +54,7 @@ async function testRoleConfigGates() {
 async function testFeatureFlags() {
   console.log("[feature flags]");
   const all = snapshotAllFlags();
-  assert(all.length === 9, `snapshot returns all 9 flags`);
+  assert(all.length === 10, `snapshot returns all 10 flags`);
   const mcp = all.find(s => s.flag.env_var === "USE_MCP_TOOLS");
   assert(mcp != null, "USE_MCP_TOOLS in snapshot");
   assert(mcp.effective === "off" || mcp.effective === "on", "effective is on or off");

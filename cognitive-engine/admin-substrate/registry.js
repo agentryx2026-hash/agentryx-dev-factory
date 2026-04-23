@@ -153,6 +153,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 15",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_TRAINING_GEN",
+    display_name: "Training generation post-dev",
+    description: "post_dev_graph enqueues training_gen jobs; produces voiceover scripts + storyboards + written guides. Requires Phase 16-B.",
+    owning_phase: "Phase 16",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
