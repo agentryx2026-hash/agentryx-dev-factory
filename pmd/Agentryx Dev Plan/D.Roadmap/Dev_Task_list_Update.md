@@ -13,12 +13,12 @@
 |---|---|
 | Total phase entries (incl. 1.5, 2.5, 2.75) | 24 |
 | Fully closed | **11** (0, 1, 1.5, 2, 2.5, 2.75, 3, 4) — foundation band |
-| A-tier scaffolding shipped | **11** (5-A, 6-A, 7-A, 8-A, 9-A, 10-A, 11-A, 12-A, 13-A, 14-A, 15-A) |
-| Sketch only (not started) | **5** (16, 17, 18, 19, 20) |
-| B-tier deferred (production wiring) | 12 subphases pending across phases 5-15 |
-| Smoke-test assertions passing | **373** across 11 scaffolded modules |
+| A-tier scaffolding shipped | **12** (5-A, 6-A, 7-A, 8-A, 9-A, 10-A, 11-A, 12-A, 13-A, 14-A, 15-A, 16-A) |
+| Sketch only (not started) | **4** (17, 18, 19, 20) |
+| B-tier deferred (production wiring) | 13 subphases pending across phases 5-16 |
+| Smoke-test assertions passing | **475** across 12 scaffolded modules |
 | LLM spend across all scaffolding | **$0.00** |
-| Phase tags on origin (rollback anchors) | 19 |
+| Phase tags on origin (rollback anchors) | 20 |
 
 **Net release-band position**: still in v0.0.1 (R&D / experimentation). All scaffolding phases shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close.
 
@@ -56,7 +56,7 @@
 | **13** | Pipeline Replay | 🟡 partial (13-A) | `cognitive-engine/replay/`: collector, planner, executor; replay-from-any-node + substitution mode + cross-snapshot artifact resolution | 13-B: default LLM stub re-invokes original agent, HTTP endpoint, React timeline UI, cross-pipeline replay | OpenRouter credit + UI work |
 | **14** | Multi-Project Concurrency | 🟡 partial (14-A) | `cognitive-engine/concurrency/`: filesystem-backed queue + worker pool + atomic POSIX rename leasing + round-robin fairness across N projects/workers | 14-B: real factory handlers (pre_dev/dev/post_dev), HTTP submission, React UI, per-project quotas, crash recovery | UI work + handler implementations |
 | **15** | Self-Improvement Loop | 🟡 partial (15-A) | `cognitive-engine/self-improvement/`: types + proposal store (state machine + audit) + heuristic proposer (3 rules) + replay-driven evaluator harness + applier (config/model/prompt, graph_change refused); 87 smoke assertions; `USE_SELF_IMPROVEMENT` flag | 15-B: LLM proposer, real comparators, scheduled via Phase 14 queue, React UI via Phase 12-B, prompt hot-swap consumer in graph, auto-apply mode | OpenRouter credit (LLM proposer + real comparators) + Phase 6-B graph dual-write (for artifact-level cost/latency) |
-| **16** | Training Scripts Generation | 📝 sketched | One-liner plan only | All | — |
+| **16** | Training Scripts Generation | 🟡 partial (16-A) | `cognitive-engine/training-gen/`: 6 template generators (user_guide/quick_start/how_to/reference_doc/voiceover_script/video_storyboard) + filesystem store with sha-verified integrity + pipeline (voiceover→storyboard ordering, failure isolation) + renderer with Phase 17 payload (narration/capture_plan/transitions/SRT captions); 102 assertions; `USE_TRAINING_GEN` flag | 16-B: LLM generators, post-dev graph wiring via Phase 14 queue, PMD registry integration, memory personalization, Phase 6-A dual-write, Phase 9 Verify reviewer feedback | OpenRouter credit + Phase 14-B handler registration |
 | **17** | Training Videos | 📝 sketched | One-liner plan only | All | — |
 | **18** | Pipeline Module Marketplace | 📝 sketched | One-liner plan only | All | — |
 | **19** | Customer Portal | 📝 sketched | One-liner plan only | All | — |
@@ -68,7 +68,7 @@
 
 The 11 deferred B-subphases group into 3 clear blockers. Once a blocker clears, the cohort can ship together.
 
-### Cohort 1 — needs OpenRouter credit (5 phases)
+### Cohort 1 — needs OpenRouter credit (6 phases)
 Each requires running real LLM pipelines end-to-end to validate.
 
 - **5-B** MCP graph integration (rewire 5 graph files under `USE_MCP_TOOLS`)
@@ -76,8 +76,9 @@ Each requires running real LLM pipelines end-to-end to validate.
 - **7-E** Memory-layer graph integration (post-LLM observation writes)
 - **8-B** Parallel `dev_graph.js` (replace sequential edges with fan-out/join)
 - **15-B** LLM proposer + real outcome comparators (depends on 6-B for artifact-level cost/latency signals)
+- **16-B** LLM generators for training outputs (voiceover/storyboard prose quality; written guides); depends on 14-B for post-dev handler registration
 
-**Cost estimate to clear all 5**: ~$5–20 in LLM spend on Haiku/Sonnet validation runs (or ~$25–50 on Opus).
+**Cost estimate to clear all 6**: ~$10–30 in LLM spend on Haiku/Sonnet validation runs (or ~$40–75 on Opus).
 
 ### Cohort 2 — needs user creds + UI work (6 phases)
 Each requires ops setup and React UI development.
@@ -102,10 +103,10 @@ Won't matter until factory operates at higher volume.
 
 ## What's next
 
-Phase 15-A is shipped (same session arc that closed 14-A). Options branch:
+Phase 16-A is shipped (same session arc that closed 14-A and 15-A). Options branch:
 
-- **Continue scaffolding 16 → 20** — all greenfield, all $0 cost. Mirrors Phases 5-A through 15-A discipline. Phase 16 (Training Scripts) is the natural next (artifact-producer; no brain required).
-- **Ship a B-tier cohort** when one of the blockers clears (OpenRouter top-up → 5 phases unlock including 15-B; UI sprint → 6 phases unlock).
+- **Continue scaffolding 17 → 20** — still greenfield, still $0 cost. Mirrors Phases 5-A through 16-A discipline. Phase 17 (Training Videos) is the natural next — it already has a firm 16-A handoff contract via `renderVoiceoverForPhase17`.
+- **Ship a B-tier cohort** when one of the blockers clears (OpenRouter top-up → 6 phases unlock including 15-B + 16-B; UI sprint → 6 phases unlock).
 - **Pause + use the factory** — every A-tier scaffolding is feature-flagged off. Real factory pipeline is unchanged. Could productize the foundation band.
 
 ---
@@ -114,7 +115,7 @@ Phase 15-A is shipped (same session arc that closed 14-A). Options branch:
 
 - **PR flow** for every change since 5-A. No direct push to `main`. Squash-merge via `gh pr merge --squash --delete-branch`. Branch + tag every phase close. (See `D.Roadmap/README.md` "Git workflow" section for the 7-step sequence.)
 - **Pre-phase code survey** is mandatory before scoping any phase (Phase 4 Lesson #1). Catches `memory.js` already exists, `llm_calls` table already exists, etc. Saves rewrites.
-- **Scaffolding pattern** (proven 11× across 5-A → 15-A):
+- **Scaffolding pattern** (proven 12× across 5-A → 16-A):
   - `types.js` → `store/service` → `backend(s)` → `smoke-test` → `README` → 4 phase docs
   - Library lives alongside existing code, never replaces it
   - Feature flag with default off — zero regression
@@ -132,8 +133,8 @@ Phase 15-A is shipped (same session arc that closed 14-A). Options branch:
 - **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir)
 - **Code modules** (in `agentryx-factory` repo, mirrored from this PMD as needed):
   - Foundation: `cognitive-engine/{tools,memory,graph,*_graph}.js`, `llm-router/`, `factory-dashboard/`, `server/admin-keys.mjs`
-  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement}/`
-- **Phase tags on origin**: `git tag -l | grep phase-` (19 anchors)
+  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen}/`
+- **Phase tags on origin**: `git tag -l | grep phase-` (20 anchors)
 - **GitHub milestones**: 18 milestones, 8 closed (foundation), 10 open (scaffolded but partial)
 
 ---
