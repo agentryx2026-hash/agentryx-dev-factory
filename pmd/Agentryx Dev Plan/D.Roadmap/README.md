@@ -37,7 +37,7 @@ For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Archi
 | 12 | [B7 Admin Module v1](Phase_12_B7_Admin_Module/Phase_12_Plan.md) | Substrate: 7 configs + 8 flags catalogued, atomic CRUD, 4-level roles, audit log | 🟡 12-A done (substrate library, 39 assertions); 12-B deferred (HTTP routes + React UI + Postgres) |
 | 13 | [Pipeline Replay / Debug](Phase_13_Pipeline_Replay/Phase_13_Plan.md) | Time-travel any past run; re-execute from any node with frozen or substituted inputs | 🟡 13-A done (replay engine, 36 assertions); 13-B deferred (LLM stub + UI + HTTP) |
 | 14 | [Multi-Project Concurrency](Phase_14_Multi_Project_Concurrency/Phase_14_Plan.md) | Queue + scheduler; N projects in factory at once with isolation | 🟡 14-A done (engine + round-robin fairness, 28 assertions); 14-B deferred (real handlers + UI + quotas) |
-| 15 | [Self-Improvement Loop](Phase_15_Self_Improvement_Loop/Phase_15_Plan.md) | Agents propose graph changes; gated by Super Admin approval | one-liner |
+| 15 | [Self-Improvement Loop](Phase_15_Self_Improvement_Loop/Phase_15_Plan.md) | Agents propose changes (prompts/models/configs); gated by Super Admin approval | 🟡 15-A done (substrate: state-machine store + heuristic proposer + replay-driven evaluator + applier, 87 assertions); 15-B deferred (LLM proposer + real comparators + UI + prompt hot-swap, needs OpenRouter credit) |
 | 16 | [Training Scripts Generation](Phase_16_Training_Scripts_Gen/Phase_16_Plan.md) | Output written user guides + voiceover scripts as artifacts | one-liner |
 | 17 | [Training Videos](Phase_17_Training_Videos/Phase_17_Plan.md) | ElevenLabs voiceover + headless browser screen capture stitched | one-liner |
 | 18 | [Pipeline Module Marketplace](Phase_18_Pipeline_Module_Marketplace/Phase_18_Plan.md) | Install/swap agents as packages with manifest | one-liner |
@@ -87,4 +87,4 @@ Every phase from 5-A onwards uses PR flow, not direct-to-main.
 
 **Why**: Review gate + rollback discipline + parallel experimentation. Aligns with Master_Factory_Architect.md P9 (release-band versioning).
 
-**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`.
+**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`, `phase-15a-closed`.
