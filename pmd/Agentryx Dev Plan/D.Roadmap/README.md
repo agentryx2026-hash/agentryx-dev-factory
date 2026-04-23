@@ -32,7 +32,7 @@ For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Archi
 | 7 | [Memory Layer v1](Phase_07_Memory_Layer/Phase_07_Plan.md) | Obsidian vault (human-curated) + pluggable backends (sqlite/postgres/vector) behind MemoryService interface | 🟡 7-A done (scaffolding + fs backend + artifact walker); 7-B/C/D/E deferred |
 | 8 | [Parallel Artifacts](Phase_08_Parallel_Artifacts/Phase_08_Plan.md) | Restructure graph: code/tests/docs as concurrent branches under fan-out/join | 🟡 8-A done (proof + reducers, 1061ms vs 3000ms sequential); 8-B deferred (dev_graph rewire, needs OpenRouter credit) |
 | 9 | [Verification Queue (Verify integration)](Phase_09_Verification_Queue/Phase_09_Plan.md) | Stand up Verify portal; factory pushes test cases; humans approve/reject; feedback loops back | 🟡 9-A done (contract + mock client + feedback cycle, 30 assertions pass); 9-B deferred (Verify multi-app + OpenRouter) |
-| 10 | [Courier — External Comms](Phase_10_Courier_External_Comms/Phase_10_Plan.md) | New agent. GitHub PR open/comment, Slack, email reports. *Renamed from "Hermes" 2026-04-21 to avoid collision with Nous Research Hermes framework; if Phase 2.75 adopts Hermes, Courier becomes "Hermes-configured-for-factory-comms" rather than a separate build* | one-liner |
+| 10 | [Courier — External Comms](Phase_10_Courier_External_Comms/Phase_10_Plan.md) | Factory-side producer API; per D74 **Courier IS Hermes in gateway mode** | 🟡 10-A done (types + 3 backends + routing, 33 assertions); 10-B deferred (Hermes deploy + producer wiring) |
 | 11 | [Cost + Quota Dashboard](Phase_11_Cost_Quota_Dashboard/Phase_11_Plan.md) | Per-project, per-agent, per-model spend. Hard caps + alerts | 🟡 11-A done (rollup library, 22 assertions pass); 11-B deferred (UI + alerts, needs Phase 10 Courier) |
 | 12 | [B7 Admin Module v1](Phase_12_B7_Admin_Module/Phase_12_Plan.md) | Key manager + feature flags + role-gated UI (per existing PMD `B7` spec) | one-liner |
 | 13 | [Pipeline Replay / Debug](Phase_13_Pipeline_Replay/Phase_13_Plan.md) | Time-travel any past run; re-execute from any node | one-liner |
@@ -87,4 +87,4 @@ Every phase from 5-A onwards uses PR flow, not direct-to-main.
 
 **Why**: Review gate + rollback discipline + parallel experimentation. Aligns with Master_Factory_Architect.md P9 (release-band versioning).
 
-**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-11a-closed`.
+**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`.
