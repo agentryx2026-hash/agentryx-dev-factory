@@ -1,0 +1,51 @@
+{
+  "_comment": "Courier event → channel routing. Phase 10-A defines the shape; Phase 10-B wires Hermes gateway to deliver per these rules. Schema documented in cognitive-engine/courier/README.md.",
+  "schema_version": 1,
+  "default_targets": {
+    "slack": "#factory-ops",
+    "email": "ops@agentryx.dev",
+    "github": ""
+  },
+  "rules": [
+    {
+      "event_type": "project.pr_opened",
+      "channels": ["github"],
+      "targets": { "github": "$project_id" }
+    },
+    {
+      "event_type": "project.deployment_ready",
+      "channels": ["slack"],
+      "targets": { "slack": "#factory-ops" },
+      "min_severity": "info"
+    },
+    {
+      "event_type": "project.delivery_ready",
+      "channels": ["email", "slack"],
+      "targets": { "slack": "#factory-ops" }
+    },
+    {
+      "event_type": "verify.feedback_received",
+      "channels": ["slack"],
+      "targets": { "slack": "#factory-ops" }
+    },
+    {
+      "event_type": "cost.budget_exceeded",
+      "channels": ["slack", "email"],
+      "min_severity": "error"
+    },
+    {
+      "event_type": "cost.threshold_warn",
+      "channels": ["slack"],
+      "min_severity": "warn"
+    },
+    {
+      "event_type": "agent.error_rate_spike",
+      "channels": ["slack"],
+      "min_severity": "warn"
+    },
+    {
+      "event_type": "factory.smoke_test",
+      "channels": ["stdout"]
+    }
+  ]
+}
