@@ -12,15 +12,15 @@
 | Metric | Value |
 |---|---|
 | Total phase entries (incl. 1.5, 2.5, 2.75) | 24 |
-| Fully closed | **11** (0, 1, 1.5, 2, 2.5, 2.75, 3, 4) — foundation band |
-| A-tier scaffolding shipped | **15** (5-A, 6-A, 7-A, 8-A, 9-A, 10-A, 11-A, 12-A, 13-A, 14-A, 15-A, 16-A, 17-A, 18-A, 19-A) |
-| Sketch only (not started) | **1** (20) |
-| B-tier deferred (production wiring) | 16 subphases pending across phases 5-19 |
-| Smoke-test assertions passing | **821** across 15 scaffolded modules |
+| Fully closed (foundation band) | **11** (0, 1, 1.5, 2, 2.5, 2.75, 3, 4) |
+| A-tier scaffolding shipped | **16** — 100% coverage (5-A through 20-A) ✅ |
+| Sketch only (not started) | **0** (roadmap complete) |
+| B-tier deferred (production wiring) | 17 subphases pending across phases 5-20 |
+| Smoke-test assertions passing | **947** across 16 scaffolded modules |
 | LLM spend across all scaffolding | **$0.00** |
-| Phase tags on origin (rollback anchors) | 23 |
+| Phase tags on origin (rollback anchors) | 24 |
 
-**Net release-band position**: still in v0.0.1 (R&D / experimentation). All scaffolding phases shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close.
+**Net release-band position**: v0.0.1 **A-tier complete**. All 20 phase slots have substrate; all scaffolding shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close. Next band (R1) arrives by resolving the 17 deferred B-subphases, not by scaffolding new modules.
 
 ---
 
@@ -60,7 +60,7 @@
 | **17** | Training Videos | 🟡 partial (17-A) | `cognitive-engine/training-videos/`: 3 provider categories (tts/capture/stitcher) × null+stub backends (8 total); reserve/commit video store with atomic manifest + append-only render log; renderer with beat-level failure isolation + progress events; pipeline with E2E through Phase 16-A training-gen; 91 assertions; `USE_TRAINING_VIDEOS` flag | 17-B: real ElevenLabs/OpenAI TTS + real Puppeteer/Playwright + real ffmpeg + Phase 14 handler + Phase 9 Verify + cloud upload + retries + Phase 11 budget gate | OpenRouter credit + TTS credentials + Phase 14-B handler registration |
 | **18** | Pipeline Module Marketplace | 🟡 partial (18-A) | `cognitive-engine/marketplace/`: ModuleManifest schema (9 categories × 3 statuses); installer with 3-kind dependency resolution (module/env/registry); catalogue of 15 built-in manifests covering Phases 5-A through 17-A; store with atomic manifests.jsonl + append-only audit log; query by category / capability / id; 117 assertions; `USE_MODULE_MARKETPLACE` flag | 18-B: remote fetch + signature verification + version resolution + live swap + admin UI (Phase 12-B) + boot-time install + Phase 3/4 catalogue entries | Hosting contract + signature verification story |
 | **19** | Customer Portal | 🟡 partial (19-A) | `cognitive-engine/customer-portal/`: CustomerAccount + 3-tier SLA policies + opaque bearer tokens (SHA-256 hashed) + per-customer sandbox dirs; 9-state-kind append-only timeline; state-machine-gated submissions (6 statuses); typed error codes (UNAUTHORIZED/FORBIDDEN/QUOTA_EXCEEDED/VALIDATION); 138 assertions; `USE_CUSTOMER_PORTAL` flag | 19-B: Fastify/Express HTTP API, React customer UI, Phase 14 queue handler, Phase 10 Courier notifications, Phase 11 budget gate, Phase 9 Verify linkage, SLA scanner, password auth, rate limiting | UI work + credentials (email/password/Stripe) |
-| **20** | Public Release | 📝 sketched | One-liner plan only | All | — |
+| **20** | Public Release | 🟡 partial (20-A) | `cognitive-engine/release/`: 5-capability consolidation substrate — per-tenant usage metering (day/week/month rollups); retention engine with 7 default policies + dry-run-first apply; GDPR compliance (export/delete/audit) with cross-tenant isolation; readiness aggregator via DI probe registry with 3 statuses + worst-case fold; backup manifests with sha256 tamper detection; 126 assertions; `USE_PUBLIC_RELEASE` flag. **This phase closes 100% A-tier coverage.** | 20-B: Stripe billing, systemd/k8s health probes, cron retention, nightly backup + offsite, security review, load tests, v1.0 release ceremony | UI + credentials (Stripe, S3/R2) + external security review |
 
 ---
 
@@ -80,6 +80,9 @@ Each requires running real LLM or TTS pipelines end-to-end to validate.
 - **17-B** Real ElevenLabs/OpenAI TTS + Puppeteer/Playwright + ffmpeg for training videos (needs ElevenLabs/OpenAI credentials + ffmpeg binary on VM; depends on 14-B for handler)
 
 **Cost estimate to clear all 7**: ~$15–40 in LLM + TTS spend on validation runs (or ~$50–100 if using Opus + ElevenLabs Pro tier).
+
+### Cohort 4 — v1.0 release ops (1 phase, new)
+- **20-B** Stripe billing + systemd/k8s health probes + cron retention + nightly backup + security review + load tests + v1.0 release ceremony (needs Stripe + S3/R2 creds + external pen-test budget)
 
 ### Cohort 2 — needs user creds + UI work (6 phases)
 Each requires ops setup and React UI development.
@@ -104,11 +107,22 @@ Won't matter until factory operates at higher volume.
 
 ## What's next
 
-Phase 19-A is shipped. Only Phase 20 (Public Release) remains sketched; it's the capstone band closer to R1 cutover territory than a standard A-tier scaffold.
+**🎉 100% A-tier coverage achieved.** All 20 phase slots have substrate. No more greenfield scaffolding — R1 cutover is a B-tier marathon.
 
-- **Scaffold 20-A** — Public Release substrate probably covers multi-tenancy hardening, billing (Stripe), compliance (GDPR/SOC2 audit trails), and observability packaging. Distinct from prior A-tiers in that it's a consolidation + ops-discipline phase; may produce shorter code footprint but denser Decisions + Lessons.
-- **Ship a B-tier cohort** when one of the blockers clears (OpenRouter top-up + TTS credentials → 7 phases unlock including 15-B + 16-B + 17-B; UI sprint → 8 phases unlock including 12-B admin UI + 18-B marketplace UI + 19-B customer portal UI).
-- **Pause + use the factory** — every A-tier scaffolding is feature-flagged off. Real factory pipeline is unchanged. Could productize the foundation band.
+The remaining work lives in 17 deferred B-subphases across 4 cohorts:
+
+- **C1 — OpenRouter + TTS credentials (7 phases, ~\$15-40 LLM spend)**: 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B
+- **C2 — UI + user creds (8 phases)**: 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B
+- **C3 — Scale-dependent (3 phases)**: 7-B, 7-C, 7-D memory backends (activate at 100+ observations / multi-host / semantic-search load)
+- **C4 — v1.0 release ops (1 phase)**: 20-B (Stripe + health endpoints + cron + backup + security/load/release ceremony)
+
+Best next moves, depending on available inputs:
+
+- **OpenRouter top-up** → Cohort 1 unlocks. Enables the first real end-to-end factory run with real LLM calls, which is the gate for R1.
+- **UI sprint** → Cohort 2 unlocks. Admin UI (12-B) is the highest-leverage because it's the surface for every other B-tier's config knobs.
+- **Stripe + S3/R2 + pen-test** → Cohort 4 unlocks 20-B and starts v1.0 release-band work.
+
+**Or pause and ship what's built.** All 16 modules are independently consumable as libraries today. Anyone can `import { createCustomerPortal } from "./customer-portal/portal.js"` and use the substrate. The factory pipeline itself is unchanged from Phase 4 close; scaffolds are feature-flagged off.
 
 ---
 
@@ -116,7 +130,7 @@ Phase 19-A is shipped. Only Phase 20 (Public Release) remains sketched; it's the
 
 - **PR flow** for every change since 5-A. No direct push to `main`. Squash-merge via `gh pr merge --squash --delete-branch`. Branch + tag every phase close. (See `D.Roadmap/README.md` "Git workflow" section for the 7-step sequence.)
 - **Pre-phase code survey** is mandatory before scoping any phase (Phase 4 Lesson #1). Catches `memory.js` already exists, `llm_calls` table already exists, etc. Saves rewrites.
-- **Scaffolding pattern** (proven 15× across 5-A → 19-A, now codified in `03_Scaffolding_Pattern.md`):
+- **Scaffolding pattern** (proven 16× across 5-A → 20-A, codified in `03_Scaffolding_Pattern.md`):
   - `types.js` → `store/service` → `backend(s)` → `smoke-test` → `README` → 4 phase docs
   - Library lives alongside existing code, never replaces it
   - Feature flag with default off — zero regression
@@ -137,8 +151,8 @@ Phase 19-A is shipped. Only Phase 20 (Public Release) remains sketched; it's the
 - **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir; r0.2 at 2026-04-24, §11 has v0.0.1 scaffolding checkpoint)
 - **Code modules** (in `agentryx-factory` repo, mirrored from this PMD as needed):
   - Foundation: `cognitive-engine/{tools,memory,graph,*_graph}.js`, `llm-router/`, `factory-dashboard/`, `server/admin-keys.mjs`
-  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace,customer-portal}/`
-- **Phase tags on origin**: `git tag -l | grep phase-` (23 anchors)
+  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace,customer-portal,release}/`
+- **Phase tags on origin**: `git tag -l | grep phase-` (24 anchors)
 - **GitHub milestones**: 18 milestones, 8 closed (foundation), 10 open (scaffolded but partial)
 
 ---
