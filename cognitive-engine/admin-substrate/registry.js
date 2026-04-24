@@ -181,6 +181,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 19",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_PUBLIC_RELEASE",
+    display_name: "Public Release ops surface",
+    description: "Cron retention + nightly backup + health endpoints + Stripe reporter active. Requires Phase 20-B.",
+    owning_phase: "Phase 20",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
