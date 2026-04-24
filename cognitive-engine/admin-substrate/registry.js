@@ -167,6 +167,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 17",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_MODULE_MARKETPLACE",
+    display_name: "Module marketplace boot-install",
+    description: "Factory startup runs installAllBuiltins + any configured external modules; modules become swappable via manifest. Requires Phase 18-B.",
+    owning_phase: "Phase 18",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
