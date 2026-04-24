@@ -131,7 +131,10 @@ Phase 18-A is shipped. Options branch:
 - **Roadmap doc**: `D.Roadmap/README.md` (master 20-phase table + git workflow + per-phase folder convention)
 - **Per-phase artifacts**: `D.Roadmap/Phase_NN_*/Phase_NN_{Plan,Status,Decisions,Lessons}.md`
 - **Architectural principles**: `D.Roadmap/00_Architectural_Principles.md` (P1-P9)
-- **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir)
+- **Agent delegation model**: `D.Roadmap/01_Agent_Delegation_Model.md` (pipeline + meta agents, cost-tier map)
+- **Current architecture (v0.0.1 snapshot)**: `D.Roadmap/02_Current_Architecture.md` — "YOU ARE HERE" narrative of 14 modules, composition, flags, cost posture
+- **Scaffolding pattern (14×-proven recipe)**: `D.Roadmap/03_Scaffolding_Pattern.md` — apply to Phase 19 and beyond
+- **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir; r0.2 at 2026-04-24, §11 has v0.0.1 scaffolding checkpoint)
 - **Code modules** (in `agentryx-factory` repo, mirrored from this PMD as needed):
   - Foundation: `cognitive-engine/{tools,memory,graph,*_graph}.js`, `llm-router/`, `factory-dashboard/`, `server/admin-keys.mjs`
   - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace}/`

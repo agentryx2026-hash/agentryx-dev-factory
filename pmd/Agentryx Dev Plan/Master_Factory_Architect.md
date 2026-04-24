@@ -261,10 +261,85 @@ Future revisions expected at:
 ## 10. Relationship to other docs
 
 - **`D.Roadmap/README.md`** — the tactical 20-phase plan that gets us to R1. This doc assumes that roadmap executes roughly as planned.
+- **`D.Roadmap/02_Current_Architecture.md`** — the **"YOU ARE HERE"** snapshot of what v0.0.1 actually IS (vs. this doc, which describes what it will BECOME). Read it for present-tense state.
+- **`D.Roadmap/03_Scaffolding_Pattern.md`** — codifies the 14×-proven A-tier recipe. How new modules are added consistently.
 - **`D.Roadmap/00_Architectural_Principles.md`** — the principles list for R&D / v0.0.1. Principles P1-P8 above extend and harden those for all R-bands.
 - **`D.Roadmap/01_Agent_Delegation_Model.md`** — cost-tier routing patterns. Complementary; this doc sets the slot-level architecture, that doc sets per-agent model assignments.
 - **`B.Agentryx Edge/B7_Admin_Operations_Module.md`** — the mandated admin module spec. Phase 12 builds it. This doc's §6 (the configurability escape hatch) is its architectural justification.
 - **`A.Solution Scope/A2_Solution_Architecture.md`** — point-in-time architecture. This doc is the *target* architecture that A2 converges toward.
+
+---
+
+## 11. v0.0.1 Scaffolding Checkpoint — what we actually built (2026-04-24)
+
+Since r0.1 was drafted (2026-04-21), **10 additional A-tier modules shipped**: Phases 9-A through 18-A. The factory at this checkpoint:
+
+| Metric | Value |
+|---|---|
+| Phases fully closed (foundation) | 0, 1, 1.5, 2, 2.5, 2.75, 3, 4 |
+| A-tier scaffolds shipped | 14 (5-A through 18-A) |
+| Smoke-test assertions across scaffolds | 683 |
+| LLM spend across all scaffolding | $0 (A-tier discipline) |
+| Feature flags registered | 12, all default OFF |
+| Phase rollback tags on origin | 22 |
+
+The full chronicle lives in `D.Roadmap/02_Current_Architecture.md` (composition diagram, per-module one-liner index, flag catalog, blocker cohorts). This section lists the five architectural insights R1 data will extend.
+
+### 11.1 Phase 18-A marketplace IS the R1/R2 version of §6's configurability escape hatch
+
+§6 described a Postgres `slot_configurations` table as the runtime swap mechanism. Phase 18-A shipped `marketplace/` — the code-layer predecessor: `ModuleManifest` schema + installer + catalogue of 15 built-in manifests. The marketplace **wraps** (never replaces) existing DI registries, so swapping an implementation is a marketplace install + uninstall rather than a caller-code rewrite.
+
+**R2 evolution**: 18-B adds remote fetch + signature verification + boot-time install from `configs/enabled_modules.json`. The table §6 described becomes a projection of the marketplace store (or the store is replaced by a Postgres-backed registry). Either way, the interface is stable.
+
+### 11.2 "Beat-level failure isolation" is a cross-phase convention now
+
+What started as a Phase 14-A property (one bad job doesn't kill others) became a discipline: Phase 15-A (proposals don't cascade failures), Phase 16-A (generators isolated per kind), Phase 17-A (per-beat TTS/capture failures → `degraded` status, not aborted render).
+
+**R1/R4 implication**: the P3 (per-call cost visibility) and P4 (audit trail) principles work naturally because every failure is a typed state, not a thrown exception. No silent success paths.
+
+### 11.3 DI registry pattern is now the house style
+
+Phases 9-A, 13-A, 14-A, 15-A, 16-A, 17-A, and 18-A all ship a `createXRegistry({defaults})` constructor. Marketplace formalises this as the meta-registry. At R1, this convention is the mechanism by which external tool adoption (Hermes, LangGraph, MCP servers) stays swappable — they all sit behind registries that the marketplace can enumerate.
+
+**Update to §5 question 2** ("Which slot is operationally painful?"): the marketplace pattern means painful slots can be swapped without the caller-code rewrite cost that §1 predicted for R3. Swap becomes a marketplace uninstall + install.
+
+### 11.4 Zero-LLM A-tier / LLM B-tier is the right discipline
+
+Every A-tier shipped at $0 with stub / template / heuristic variants. Real LLM backends ship in the B-tier of each phase behind the same interface. This kept v0.0.1's scaffold phase deterministic, offline-capable, and reproducible — smoke tests never require credentials.
+
+**R1 implication**: when B-tiers unlock (OpenRouter credit, TTS creds, UI work), the interfaces are already tested. B-tier = swap the factory behind the interface, not rewrite the caller. Matches principle P1 mechanics.
+
+### 11.5 Filesystem-backed everything is unexpectedly sufficient
+
+We scaffolded 14 modules without a single new external service (no Redis, no sqlite, no Postgres). Atomic POSIX rename + JSONL manifests + sha-256 indices have carried the entire substrate. Debuggable with `ls + cat + jq`; reviewable by anyone who can read JSON.
+
+**R1/R2 implication**: external services (Postgres for B7 admin, Redis for concurrency at scale) are still planned — but the substrate proves they're *optional* at small scale. v0.0.1 → R1 can ship on a single VM + single Postgres + single LLM key (the R5 north-star from §8, already plausible).
+
+### 11.6 Research questions from §5 — partial early answers
+
+The R1 research questions now have partial pre-data insight from scaffolding:
+
+1. **Cost bottleneck** — unknown until B-tiers run real LLM calls. Cohort C1 (7 phases) unblocks this.
+2. **Operationally painful slot** — pre-data, the painful slots during scaffolding were **admin UI** (everything queued in C2 cohort, 7 phases) and **credentials management** (Phase 2.5 shipped early for exactly this reason).
+3. **Real distribution of tasks** — still unknown. Needs R1 real-project runs.
+4. **Verify rejection pattern** — Phase 9-A mock proves the contract; real data waits on 9-B.
+5. **Project end-to-end time** — unknown. A-tier is substrate only; pipeline latency is a B-tier property.
+
+No re-writes of r0.1's answers needed; the data question list stands. The *pattern* of how we'll read the answer is now clear: each B-tier instruments itself into the Phase 11-A cost rollup automatically.
+
+---
+
+## 12. Document revision log
+
+| Rev | Date | Author (model id) | Trigger | Sections touched |
+|---|---|---|---|---|
+| r0.1 | 2026-04-21 | claude-opus-4-7 | Initial draft — first architectural vision document after Phase 2.75 verdict | all |
+| r0.2 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 18-A close — 10 additional A-tier modules shipped since r0.1; chronicle checkpoint added | §10, §11 (new), §12 (was §9 renumbered) |
+
+Future revisions expected at:
+- End of Phase 20 (R1 close) — will rewrite §5 with actual data
+- Every 6-month boundary — architectural drift check
+- On any external-ecosystem shift that changes slot options (new Hermes competitor, MCP supersession, etc.)
 
 ---
 

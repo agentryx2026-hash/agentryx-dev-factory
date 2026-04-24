@@ -58,7 +58,12 @@ These are not phases — they're standards / interfaces that span multiple phase
 
 ## Reference
 
+- [00_Architectural_Principles.md](00_Architectural_Principles.md) — 9 principles. Change deliberately, not casually.
 - [01_Agent_Delegation_Model.md](01_Agent_Delegation_Model.md) — which model (Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / Gemini / cheap-tier) does what task type, with cost rationale.
+- [02_Current_Architecture.md](02_Current_Architecture.md) — **YOU ARE HERE**: what v0.0.1 actually is today (14 modules, composition graph, flag catalog, cost posture). Read first when joining mid-flight.
+- [03_Scaffolding_Pattern.md](03_Scaffolding_Pattern.md) — codifies the 14×-proven A-tier recipe. Apply to every new phase from Phase 19 onwards.
+- [Dev_Task_list_Update.md](Dev_Task_list_Update.md) — single-page ops dashboard (synced to the current tag). Read before planning the next phase.
+- **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — the R1/R4/R5 vision. What we're building toward (§11 has the v0.0.1 scaffolding checkpoint).
 
 ## Per-phase folder structure
 
