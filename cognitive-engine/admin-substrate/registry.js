@@ -174,6 +174,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 18",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_CUSTOMER_PORTAL",
+    display_name: "Customer portal HTTP + UI",
+    description: "HTTP API + React UI accept customer submissions; queue handler + Courier notifications active. Requires Phase 19-B.",
+    owning_phase: "Phase 19",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
