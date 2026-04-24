@@ -160,6 +160,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 16",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_TRAINING_VIDEOS",
+    display_name: "Training video rendering",
+    description: "training_video_render jobs consume Phase 16 voiceover scripts and produce narrated mp4 via TTS + capture + stitcher providers. Requires Phase 17-B.",
+    owning_phase: "Phase 17",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {
