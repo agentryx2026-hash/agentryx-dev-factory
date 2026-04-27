@@ -184,6 +184,8 @@ From `cognitive-engine/admin-substrate/registry.js`:
 | `USE_TRAINING_GEN` | Phase 16 | post_dev enqueues training_gen jobs |
 | `USE_TRAINING_VIDEOS` | Phase 17 | training_video_render jobs dispatch |
 | `USE_MODULE_MARKETPLACE` | Phase 18 | Factory boot runs installAllBuiltins |
+| `USE_CUSTOMER_PORTAL` | Phase 19 | HTTP API + UI accept customer submissions; queue handler + Courier active |
+| `USE_PUBLIC_RELEASE` | Phase 20 | Cron retention + nightly backup + health endpoints + Stripe reporter |
 
 **Flag-gating discipline**: turning ON any of the above should be a one-line change with no code edits elsewhere. Turning OFF reverts to pre-flag behavior exactly. This is enforced by keeping B-tier wiring modular — when B-tier writes a graph edge, it's wrapped in a flag check at the edge.
 
@@ -219,9 +221,10 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - "What's left before R1?" → `Dev_Task_list_Update.md` → "What's next" + cohort tables
 
 **By git**:
-- Every phase close is a PR + tag. `git show phase-17a-closed` is the authoritative state snapshot.
+- Every phase close is a PR + tag. `git show phase-20a-closed` is the authoritative state snapshot at A-tier completion.
 - Every module's smoke test can be rerun: `node cognitive-engine/<module>/smoke-test.js`.
-- Full regression: `for m in <list>; do node cognitive-engine/$m/smoke-test.js || exit 1; done`.
+- Full per-module regression: `for m in <list>; do node cognitive-engine/$m/smoke-test.js || exit 1; done`.
+- **Cross-phase composition smoke**: `node cognitive-engine/integration/composition-smoke.js` — exercises all 16 A-tier modules in one workspace end-to-end (73 assertions). Run after any change to a shared boundary.
 
 ---
 
