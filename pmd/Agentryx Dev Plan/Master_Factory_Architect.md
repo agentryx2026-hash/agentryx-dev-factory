@@ -262,7 +262,8 @@ Future revisions expected at:
 
 - **`D.Roadmap/README.md`** — the tactical 20-phase plan that gets us to R1. This doc assumes that roadmap executes roughly as planned.
 - **`D.Roadmap/02_Current_Architecture.md`** — the **"YOU ARE HERE"** snapshot of what v0.0.1 actually IS (vs. this doc, which describes what it will BECOME). Read it for present-tense state.
-- **`D.Roadmap/03_Scaffolding_Pattern.md`** — codifies the 14×-proven A-tier recipe. How new modules are added consistently.
+- **`D.Roadmap/03_Scaffolding_Pattern.md`** — codifies the 16×-proven A-tier recipe. How new modules are added consistently.
+- **`D.Roadmap/04_B_Tier_Marathon.md`** — the path from v0.0.1 to R1: 17 deferred B-subphases across 4 cohorts, with prerequisites, sequencing, effort, costs, and going-public checklist. Read this when planning the next B-tier sprint.
 - **`D.Roadmap/00_Architectural_Principles.md`** — the principles list for R&D / v0.0.1. Principles P1-P8 above extend and harden those for all R-bands.
 - **`D.Roadmap/01_Agent_Delegation_Model.md`** — cost-tier routing patterns. Complementary; this doc sets the slot-level architecture, that doc sets per-agent model assignments.
 - **`B.Agentryx Edge/B7_Admin_Operations_Module.md`** — the mandated admin module spec. Phase 12 builds it. This doc's §6 (the configurability escape hatch) is its architectural justification.
@@ -315,6 +316,26 @@ We scaffolded 14 modules without a single new external service (no Redis, no sql
 
 **R1/R2 implication**: external services (Postgres for B7 admin, Redis for concurrency at scale) are still planned — but the substrate proves they're *optional* at small scale. v0.0.1 → R1 can ship on a single VM + single Postgres + single LLM key (the R5 north-star from §8, already plausible).
 
+### 11.6a Phase 19-A and 20-A insights (added in r0.3)
+
+After r0.2 was written, Phases 19-A (Customer Portal) and 20-A (Public Release) shipped, completing 100% A-tier coverage. Two further insights worth recording:
+
+**Per-tenant sandboxing as access control** (Phase 19-A D167 → Phase 20-A D174). Phase 19-A introduced `_customer-portal/customers/<customer_id>/` as the per-tenant directory. Phase 20-A inherited it: metering keys off `customer_id`; compliance walks per-tenant dirs by `customer_id`; retention extracts `tenant_id` from path segments. The pattern is now: **file paths are the access control**. Cross-tenant reads are impossible by construction; no ACL evaluation needed. This generalises to R2/R3 multi-tenant infrastructure — when the factory deploys per-tenant namespaces / per-tenant Postgres schemas, the directory-based discipline maps cleanly to those structures.
+
+**Consolidation phases work under the same A-tier recipe** (Phase 20-A D173). Phase 20-A was the first consolidation phase — it aggregates over stores built by 15 prior phases and invents no new storage primitive. The hypothesis going in: would the 7-artifact recipe + 8 conventions from `03_Scaffolding_Pattern.md` (designed during greenfield phases) generalise to integration work? Answer: yes, with no modification. Same file count (types + 5 capabilities + orchestrator + smoke + README), same line budgets (~1000 LOC excluding smoke), same decision-doc format. The pattern is **content-agnostic**: it shapes the artifacts produced, not the problem domain. This means R1+ B-tier phases that wire existing A-tier substrate to external APIs (Stripe, ElevenLabs, ffmpeg) can also use the recipe as a checklist — the recipe doesn't care whether the work is greenfield or integration.
+
+### 11.7 Cross-phase composition smoke validates the integration story
+
+After A-tier 100% coverage, a `cognitive-engine/integration/composition-smoke.js` was added — a 73-assertion end-to-end smoke that walks one customer journey through all 16 A-tier modules in one workspace. It validates what per-module smokes don't:
+
+1. **Data flow correctness across module boundaries** — `customer_id` from 19-A flows into 20-A's metering/retention/compliance; voiceover TART id from 16-A flows into 17-A renderer; etc.
+2. **Storage layout coexistence** — every `_*` dir lives in one workspace without collisions
+3. **Decoupling preservation** — modules talk through declared interfaces only (e.g., 17-A receives 16-A's `renderVoiceoverForPhase17` via dependency injection, not direct import)
+4. **Lineage preservation** — Phase 6-A artifact `parent_ids` survive through Phase 13-A snapshot views
+5. **Cross-store filter joins** — Phase 20-A compliance walks 5 per-tenant stores by `customer_id`
+
+**The smoke ships as the regression net for B-tier**. Every B-tier PR that touches a shared boundary (artifact-store dual-write, queue handler registration, customer portal HTTP) re-runs the smoke before merge. With 1020 total passing assertions (947 per-module + 73 composition) at $0 cumulative LLM spend, the v0.0.1 substrate is the firmest foundation we can build before real LLM data starts shaping decisions.
+
 ### 11.6 Research questions from §5 — partial early answers
 
 The R1 research questions now have partial pre-data insight from scaffolding:
@@ -329,12 +350,21 @@ No re-writes of r0.1's answers needed; the data question list stands. The *patte
 
 ---
 
+## 13. Bridge to the B-tier marathon
+
+This document describes the *target* state. `D.Roadmap/04_B_Tier_Marathon.md` describes the *route* from v0.0.1 to R1 — 17 deferred B-subphases across 4 cohorts (OpenRouter+TTS / UI sprint / scale-dependent / v1.0 ops). Read the marathon doc when planning the next sprint; read this doc when revisiting whether the destination still makes sense.
+
+The marathon doc identifies **6-B (artifact-store dual-write) and 14-B (queue handler registration)** as the critical path: those two unlocks together enable 10 of the 17 B-subphases. R1 is closer than the 17-subphase count suggests if those two land first.
+
+---
+
 ## 12. Document revision log
 
 | Rev | Date | Author (model id) | Trigger | Sections touched |
 |---|---|---|---|---|
 | r0.1 | 2026-04-21 | claude-opus-4-7 | Initial draft — first architectural vision document after Phase 2.75 verdict | all |
 | r0.2 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 18-A close — 10 additional A-tier modules shipped since r0.1; chronicle checkpoint added | §10, §11 (new), §12 (was §9 renumbered) |
+| r0.3 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 20-A close — A-tier 100% coverage achieved; cross-phase composition smoke shipped (1020 total assertions); B-tier marathon path documented | §10 (cross-ref to 04_B_Tier_Marathon), §11.7 (new — 19-A and 20-A insights), §13 (new — bridge to marathon doc) |
 
 Future revisions expected at:
 - End of Phase 20 (R1 close) — will rewrite §5 with actual data

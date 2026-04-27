@@ -32,7 +32,7 @@ Read this first when joining the project mid-flight.
     (intake)    (Phase 3)    Tuvok, Data, Crusher, O'Brien) via pre_dev + dev graphs    (integration = Phase 9-B)
                                │ (Phase 4 registry drives graph construction)
                                │
-                               │    ┌── cross-cutting A-tier scaffolds (Phases 5-A → 18-A) ──┐
+                               │    ┌── cross-cutting A-tier scaffolds (Phases 5-A → 20-A) ──┐
                                │    │                                                        │
                                ▼    ▼                                                        │
                           │  Phase 5-A   mcp/                 — MCP tool plane substrate     │
@@ -49,27 +49,32 @@ Read this first when joining the project mid-flight.
                           │  Phase 16-A  training-gen/        — 6 template generators        │
                           │  Phase 17-A  training-videos/     — TTS + capture + stitch       │
                           │  Phase 18-A  marketplace/         — meta-registry of all modules │
-                          │                                                        (wraps above 13) │
+                          │  Phase 19-A  customer-portal/     — accounts + submissions + SLA  │
+                          │  Phase 20-A  release/             — metering + retention + GDPR   │
+                          │                                       compliance + readiness +    │
+                          │                                       backup (consolidation phase)│
                           │                                                                │
                           └────────────────────────────────────────────────────────────────┘
+                          + cognitive-engine/integration/composition-smoke.js (cross-phase regression net, 73 assertions)
 ```
 
-**Numbers** (as of Phase 18-A close):
+**Numbers** (as of Phase 20-A close + cross-phase composition smoke):
 
 | Metric | Value |
 |---|---|
-| A-tier scaffolds shipped | **14** |
-| Phases fully closed (Plan+Status+Decisions+Lessons) | 18 of 20 |
-| Smoke-test assertions across scaffolds | **683** |
+| A-tier scaffolds shipped | **16** — 100% coverage ✅ |
+| Phases fully closed (Plan+Status+Decisions+Lessons) | 20 of 20 |
+| Smoke-test assertions across scaffolds | **947** per-module + **73** cross-phase = **1020 total** |
 | LLM spend across all scaffolding | **$0.00** |
-| Phase rollback tags on origin | **22** |
-| Feature flags registered | **12** (all default off) |
+| Phase rollback tags on origin | **24** |
+| Feature flags registered | **14** (all default off) |
+| Decisions logged | D1–D180 |
 
-**Numbers matter** because every claim in this document is backed by an assertion. When a module's README says "91 assertions pass," running that smoke test is the verification.
+**Numbers matter** because every claim in this document is backed by an assertion. When a module's README says "138 assertions pass," running that smoke test is the verification. The cross-phase composition smoke at `cognitive-engine/integration/` proves they all work together.
 
 ---
 
-## 3. The 14 modules — one-line each + composition
+## 3. The 16 modules — one-line each + composition
 
 | # | Module (path) | Phase | Category | What it is | Consumed by |
 |---|---|---|---|---|---|
@@ -80,13 +85,15 @@ Read this first when joining the project mid-flight.
 | 5 | `verify-integration/` | 9 | handler | BuildBundle + FeedbackPayload + fix-router | post_dev_graph (9-B) |
 | 6 | `courier/` | 10 | handler | 8 event × 6 channel dispatch + routing config | every phase that needs to notify (10-B) |
 | 7 | `cost-tracker/` | 11 | handler | CostRollup from artifacts + llm_calls + thresholds | dashboard (11-B); pre-flight gates |
-| 8 | `admin-substrate/` | 12 | handler | 7 configs + 12 flags + 4 roles + audit log | every other module's flag lookup |
+| 8 | `admin-substrate/` | 12 | handler | 7 configs + 14 flags + 4 roles + audit log | every other module's flag lookup |
 | 9 | `replay/` | 13 | handler | RunSnapshot + plan builder + executor | self-improvement (15-A evaluator); debugging |
 | 10 | `concurrency/` | 14 | handler | FS queue + worker pool + round-robin fairness | every async job (14-B real handlers) |
 | 11 | `self-improvement/` | 15 | proposer | proposal state machine + heuristic proposer + applier | factory evolution (15-B LLM proposer) |
 | 12 | `training-gen/` | 16 | generator | 6 template generators (incl. voiceover_script) | Verify portal; Phase 17 |
 | 13 | `training-videos/` | 17 | provider | TTS × capture × stitcher; beat-level failure isolation | post-project delivery (17-B real backends) |
-| 14 | `marketplace/` | 18 | meta | ModuleManifest + installer + catalogue of all 13 above | admin UI (18-B); self-improvement swap |
+| 14 | `marketplace/` | 18 | meta | ModuleManifest + installer + catalogue of all 15 above | admin UI (18-B); self-improvement swap |
+| 15 | `customer-portal/` | 19 | handler | accounts + submissions + timeline + SLA + portal facade; per-tenant sandbox | factory intake (19-B HTTP+UI); customer billing (20-A metering) |
+| 16 | `release/` | 20 | handler | 5-capability consolidation: metering + retention + GDPR compliance + readiness + backup | v1.0 ops cutover (20-B) |
 
 ---
 
@@ -196,10 +203,13 @@ From `cognitive-engine/admin-substrate/registry.js`:
 | Cohort | Phases | Blocker | Cost estimate |
 |---|---|---|---|
 | C1 — OpenRouter credit / TTS credentials | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B | Need OpenRouter top-up + ElevenLabs/OpenAI creds | ~$15–40 Haiku/Sonnet validation runs |
-| C2 — UI work + user credentials | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B | React admin panel + Slack/GitHub/SMTP creds | 2-3 dev-weeks |
+| C2 — UI work + user credentials | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | React admin panel + customer UI + Slack/GitHub/SMTP creds | 2-3 dev-weeks |
 | C3 — Scale-dependent | 7-B, 7-C, 7-D | Needs 100+ observations or multi-host factory | emerges with load |
+| C4 — v1.0 release ops | 20-B | Stripe + S3/R2 + external pen-test budget | ~$5-15K (pen test) + ongoing infra |
 
-15 B-subphases total. Each unlock is independent — can ship C1 without C2, etc.
+**17 B-subphases total** across 4 cohorts. Each unlock is independent — can ship C1 without C2, etc.
+
+**Critical path within cohorts**: 6-B and 14-B together unlock 10 of the 17 B-subphases. See [04_B_Tier_Marathon.md](04_B_Tier_Marathon.md) for full sequencing analysis.
 
 ---
 
@@ -210,7 +220,8 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - Tactical planning → `D.Roadmap/README.md` (20-phase table) + per-phase Plan.md
 - Ops status → `D.Roadmap/Dev_Task_list_Update.md` (single-page dashboard)
 - Current state → this file
-- Decision archaeology → every phase has `Decisions.md` (D1-D165 so far)
+- **B-tier marathon plan → `D.Roadmap/04_B_Tier_Marathon.md` (path from v0.0.1 to R1)**
+- Decision archaeology → every phase has `Decisions.md` (D1-D180 so far)
 - Post-mortem learnings → every phase has `Lessons.md`
 
 **By question**:
