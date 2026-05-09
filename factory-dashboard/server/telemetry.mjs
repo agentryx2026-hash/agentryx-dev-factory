@@ -2,10 +2,69 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const PORT = 4401;
+const PORT = Number(process.env.TELEMETRY_PORT) || 4401;
 const clients = new Set();
 let mockInterval = null;
+
+// ─── Phase 21-A: Master Architect endpoints ──────────────────────────────
+// The architect's Knowledge Base lives at <repo>/_kb/. Modules are loaded
+// lazily (first request) so the dev-hub can boot even if architect/ is
+// missing or broken.
+const REPO_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..');
+const ARCHITECT_KB_ROOT = REPO_ROOT;
+const ARCHITECT_DIR = path.join(REPO_ROOT, 'cognitive-engine', 'architect');
+
+let architectModules = null;
+async function loadArchitect() {
+  if (architectModules) return architectModules;
+  const [kbMod, researcherMod, proposerMod, architectMod] = await Promise.all([
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'kb.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'researcher.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'proposer.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'architect.js')).href),
+  ]);
+  // Phase 15-A proposal store (architect emits proposals into it)
+  const storeMod = await import(
+    pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'self-improvement', 'store.js')).href
+  );
+  architectModules = {
+    createKnowledgeBase: kbMod.createKnowledgeBase,
+    createResearcher: researcherMod.createResearcher,
+    createStubDispatcher: researcherMod.createStubDispatcher,
+    createArchitectProposer: proposerMod.createArchitectProposer,
+    createArchitect: architectMod.createArchitect,
+    createProposalStore: storeMod.createProposalStore,
+  };
+  return architectModules;
+}
+
+function jsonResponse(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+async function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (err) { reject(err); }
+    });
+    req.on('error', reject);
+  });
+}
+
+// Seeding Standing Orders from example: the architect ships a hand-edited
+// `standing_orders.example.yaml` (schema source-of-truth, comments preserved
+// for the human reader), and a sibling `standing_orders.example.json` (same
+// content, JSON-shaped, for runtime). The seed endpoint copies the JSON
+// version directly — no YAML parser needed.
+const SEED_JSON_PATH = path.join(ARCHITECT_DIR, 'standing_orders.example.json');
 
 function getInitialState() {
   return {
@@ -708,6 +767,161 @@ const server = http.createServer((req, res) => {
         res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
       }
     }); return;
+  }
+
+  // ─── Phase 21-A: Master Architect ─────────────────────────────────────
+  // All routes are namespaced under /api/architect/* and read/write the
+  // factory's KB at <repo>/_kb/. The architect ships with a stub
+  // dispatcher (= $0 cost), so "Run a pass" is safe to invoke from the UI.
+
+  if (req.url === '/api/architect/state' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { createKnowledgeBase, createProposalStore } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const store = createProposalStore(ARCHITECT_KB_ROOT);
+        const [standing_orders, summary, passes, findings, allProposals] = await Promise.all([
+          kb.readStandingOrders(),
+          kb.summary(),
+          kb.listPasses({ limit: 5 }),
+          kb.listFindings({ limit: 30 }),
+          store.list(),
+        ]);
+        // Architect-owned proposal kinds only — keep the surface focused
+        const ARCH_KINDS = new Set(['tool_adoption', 'kb_update', 'research_finding']);
+        const proposals = allProposals
+          .filter(p => ARCH_KINDS.has(p.kind))
+          .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+          .slice(0, 25);
+        return jsonResponse(res, 200, {
+          standing_orders,
+          summary,
+          passes,
+          findings,
+          proposals,
+          kb_root: ARCHITECT_KB_ROOT,
+          has_seed: fs.existsSync(SEED_JSON_PATH),
+        });
+      } catch (err) {
+        console.error('[architect/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/architect/seed' && req.method === 'POST') {
+    (async () => {
+      try {
+        if (!fs.existsSync(SEED_JSON_PATH)) {
+          return jsonResponse(res, 404, { error: `seed not found: ${SEED_JSON_PATH}` });
+        }
+        const seed = JSON.parse(fs.readFileSync(SEED_JSON_PATH, 'utf-8'));
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const existing = await kb.readStandingOrders();
+        if (existing) {
+          return jsonResponse(res, 409, {
+            error: 'Standing Orders already exist; refusing to overwrite. Edit _kb/standing_orders.json directly or delete it first.',
+          });
+        }
+        await kb.writeStandingOrders(seed);
+        addLog('system', '👑 Architect: Standing Orders seeded from example (v1).');
+        broadcast();
+        return jsonResponse(res, 200, { success: true, seeded: true, version: seed.version });
+      } catch (err) {
+        console.error('[architect/seed]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/architect/run_pass' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const passKind = body.passKind || 'manual';
+        const {
+          createKnowledgeBase, createResearcher, createStubDispatcher,
+          createArchitectProposer, createArchitect, createProposalStore,
+        } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const so = await kb.readStandingOrders();
+        if (!so) {
+          return jsonResponse(res, 412, {
+            error: 'No Standing Orders configured. Click "Seed from example" first, or write _kb/standing_orders.json directly.',
+          });
+        }
+        const proposalStore = createProposalStore(ARCHITECT_KB_ROOT);
+        const proposer = createArchitectProposer({ proposalStore, kb });
+        const researcher = createResearcher({
+          dispatchSubagent: createStubDispatcher(),
+          budget_usd_per_pass: so.baseline?.daily_budget_usd ?? 1.5,
+        });
+        const architect = createArchitect({ kb, researcher, proposer });
+
+        addLog('system', `👑 Architect: launching ${passKind} research pass (stub dispatcher, $0)…`);
+        broadcast();
+        const result = await architect.runPass(passKind);
+        const findingsCount = result.findings_count ?? 0;
+        const proposalsCount = result.proposals_count ?? 0;
+        addLog(
+          'system',
+          `👑 Architect: pass ${result.pass?.id || ''} done — ${findingsCount} findings, ${proposalsCount} proposals.`,
+        );
+        broadcast();
+        return jsonResponse(res, 200, result);
+      } catch (err) {
+        console.error('[architect/run_pass]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.startsWith('/api/architect/proposal/') && req.method === 'POST') {
+    // /api/architect/proposal/:id/:action  where action is approve|reject
+    (async () => {
+      try {
+        const m = req.url.match(/^\/api\/architect\/proposal\/([^/]+)\/(approve|reject)$/);
+        if (!m) return jsonResponse(res, 400, { error: 'expected /proposal/:id/:action' });
+        const [, id, action] = m;
+        const body = await readRequestBody(req);
+        const { createProposalStore } = await loadArchitect();
+        const store = createProposalStore(ARCHITECT_KB_ROOT);
+        const reviewer = body.reviewer || 'founder';
+        const note = body.note;
+        let updated;
+        if (action === 'reject') {
+          // reject is allowed from any non-terminal state
+          updated = await store.reject(id, { reviewer, note });
+        } else {
+          // The architect ships proposals in `draft`. Per Phase 21-A design
+          // (D190 + README), research_finding and kb_update fast-track since
+          // they're low-stakes / informational; tool_adoption is the only
+          // founder-gated kind. Walk the chain explicitly so the audit log
+          // captures every transition.
+          const proposal = await store.get(id);
+          if (!proposal) return jsonResponse(res, 404, { error: `proposal ${id} not found` });
+          const chain = ['evaluating', 'ready', 'approved'];
+          let cur = proposal;
+          for (const next of chain) {
+            if (cur.state === next) continue;
+            if (cur.state === 'approved') break;
+            cur = await store.transition(id, next, { actor: reviewer, note });
+          }
+          updated = cur;
+        }
+        addLog('system', `👑 Architect: proposal ${id} ${action}d.`);
+        broadcast();
+        return jsonResponse(res, 200, updated);
+      } catch (err) {
+        console.error('[architect/proposal]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
   }
 
   res.writeHead(404); res.end();
