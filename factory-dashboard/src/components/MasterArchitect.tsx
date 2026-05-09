@@ -686,10 +686,54 @@ const MasterArchitect: React.FC = () => {
           <div className="glass-panel">
             <div className="panel-header">
               <h3 className="panel-title">📨 Architect proposals ({(state?.proposals || []).length})</h3>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={async () => {
+                    setBusy('proposer-heuristic');
+                    try {
+                      const r = await fetch('/telemetry/factory-admin/self-improvement/propose', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ proposer: 'heuristic' }),
+                      });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || `failed: ${r.status}`);
+                      flash(`✅ Heuristic proposer emitted ${d.created_count} proposal(s).`);
+                      await refresh();
+                    } catch (e: any) { setError(e?.message || 'failed'); }
+                    finally { setBusy(null); }
+                  }}
+                  disabled={!!busy}
+                  style={{ padding: '4px 10px', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.5)', color: '#c4b5fd', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  🪶 Heuristic
+                </button>
+                <button
+                  onClick={async () => {
+                    setBusy('proposer-llm');
+                    try {
+                      const r = await fetch('/telemetry/factory-admin/self-improvement/propose', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ proposer: 'llm', task: 'architect' }),
+                      });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || `failed: ${r.status}`);
+                      flash(`✅ LLM proposer (${d.proposer}) emitted ${d.created_count} proposal(s).`);
+                      await refresh();
+                    } catch (e: any) { setError(e?.message || 'failed'); }
+                    finally { setBusy(null); }
+                  }}
+                  disabled={!!busy}
+                  style={{ padding: '4px 10px', background: 'linear-gradient(135deg, #3b82f6, #06b6d4)', border: 'none', color: '#fff', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  {busy === 'proposer-llm' ? '⏳ LLM…' : '🧠 LLM (Opus)'}
+                </button>
+              </div>
             </div>
             <div className="panel-body">
               {(!state?.proposals || state.proposals.length === 0) && (
-                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: 20 }}>No proposals yet.</p>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: 20 }}>No proposals yet. Run the heuristic proposer (free) or LLM proposer (Opus) to draft proposals from memory observations.</p>
               )}
               {(state?.proposals || []).slice(0, 20).map(p => {
                 const kind = KIND_BADGE[p.kind] || { color: '#64748b', label: p.kind };

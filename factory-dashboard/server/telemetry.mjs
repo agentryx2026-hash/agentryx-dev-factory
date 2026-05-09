@@ -1174,6 +1174,63 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Phase 15-B Tier B — Run self-improvement proposer ──────────────
+  // Founder-triggered. Reads memory observations + emits ProposalDrafts
+  // through Phase 15-A's runProposerIntoStore (with dedupe). Body:
+  //   { proposer: 'heuristic' | 'llm', scope?, since?, min_support? }
+  // Default = heuristic (always works, $0). LLM opt-in fires real LLM
+  // calls (cost depends on observation pool size).
+  if (req.url === '/api/factory-admin/self-improvement/propose' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const proposerKind = body.proposer || 'heuristic';
+
+        const [{ getMemoryService }, { createHeuristicProposer, runProposerIntoStore }] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'self-improvement', 'proposer.js')).href),
+        ]);
+        const A = await loadArchitect();
+        const proposalStore = A.createProposalStore(REPO_ROOT);
+        const memoryService = getMemoryService();
+
+        let proposer;
+        if (proposerKind === 'llm') {
+          try {
+            const { createLLMProposer } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'self-improvement', 'llm-proposer.js')).href);
+            proposer = createLLMProposer({ task: body.task || 'architect' });
+          } catch (err) {
+            console.warn('[self-improvement.propose] LLM proposer unavailable, falling back to heuristic:', err?.message);
+            proposer = createHeuristicProposer({ minSupport: body.min_support ?? 2 });
+          }
+        } else {
+          proposer = createHeuristicProposer({ minSupport: body.min_support ?? 2 });
+        }
+
+        addLog('system', `🪶 Self-improvement proposer (${proposer.id}) running…`);
+        broadcast();
+
+        const created = await runProposerIntoStore({
+          proposer,
+          store: proposalStore,
+          ctx: {
+            memory: memoryService,
+            scope: body.scope,
+            since: body.since,
+          },
+        });
+
+        addLog('system', `🪶 Proposer (${proposer.id}) emitted ${created.length} proposal(s).`);
+        broadcast();
+        return jsonResponse(res, 200, { proposer: proposer.id, created_count: created.length, proposals: created });
+      } catch (err) {
+        console.error('[factory-admin/self-improvement/propose]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 7-E — Sync memory observations from artifacts ─────────────
   // Founder-triggered. Walks <agent-workspace>/<project>/_artifacts/ via
   // walkArtifacts(), groups by run_id, writes one `lesson` observation per
