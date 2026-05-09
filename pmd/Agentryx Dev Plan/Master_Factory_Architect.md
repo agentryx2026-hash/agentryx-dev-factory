@@ -264,6 +264,7 @@ Future revisions expected at:
 - **`D.Roadmap/02_Current_Architecture.md`** — the **"YOU ARE HERE"** snapshot of what v0.0.1 actually IS (vs. this doc, which describes what it will BECOME). Read it for present-tense state.
 - **`D.Roadmap/03_Scaffolding_Pattern.md`** — codifies the 16×-proven A-tier recipe. How new modules are added consistently.
 - **`D.Roadmap/04_B_Tier_Marathon.md`** — the path from v0.0.1 to R1: 17 deferred B-subphases across 4 cohorts, with prerequisites, sequencing, effort, costs, and going-public checklist. Read this when planning the next B-tier sprint.
+- **`Research/`** — dated landscape scans + focused research dossiers (e.g. [`Research/2026-05_Landscape_Scan.md`](Research/2026-05_Landscape_Scan.md) for the 2026 orchestrator landscape + Hermes deep dive). Evidence, not action — adopted recommendations land as `Phase_NN_Decisions.md` entries.
 - **`D.Roadmap/00_Architectural_Principles.md`** — the principles list for R&D / v0.0.1. Principles P1-P8 above extend and harden those for all R-bands.
 - **`D.Roadmap/01_Agent_Delegation_Model.md`** — cost-tier routing patterns. Complementary; this doc sets the slot-level architecture, that doc sets per-agent model assignments.
 - **`B.Agentryx Edge/B7_Admin_Operations_Module.md`** — the mandated admin module spec. Phase 12 builds it. This doc's §6 (the configurability escape hatch) is its architectural justification.

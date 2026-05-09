@@ -65,6 +65,7 @@ These are not phases — they're standards / interfaces that span multiple phase
 - [04_B_Tier_Marathon.md](04_B_Tier_Marathon.md) — **PATH TO R1**: 17 deferred B-subphases across 4 cohorts; per-subphase punch list with prerequisites, effort, sequencing, costs; critical-path callouts; going-public checklist. Read before planning the next sprint.
 - [Dev_Task_list_Update.md](Dev_Task_list_Update.md) — single-page ops dashboard (synced to the current tag). Read before planning the next phase.
 - **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — the R1/R4/R5 vision. What we're building toward (§11 has the v0.0.1 scaffolding checkpoint; §13 bridges to the marathon doc).
+- **[../Research/](../Research/)** — dated landscape scans + focused research dossiers ([2026-05 orchestrator landscape + Hermes deep dive](../Research/2026-05_Landscape_Scan.md) is the most recent). Evidence, not action.
 
 ## Per-phase folder structure
 
