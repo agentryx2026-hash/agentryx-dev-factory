@@ -44,9 +44,10 @@ function minimalManifest(overrides = {}) {
 async function testTypes() {
   console.log("[types]");
   assert(SCHEMA_VERSION === 1, "schema_version is 1");
-  assert(MODULE_CATEGORIES.length === 9, "9 module categories");
+  assert(MODULE_CATEGORIES.length === 10, "10 module categories (9 stable + 1 experimental)");
   assert(MODULE_STATUSES.length === 3, "3 module statuses");
   assert(isValidCategory("provider"), "provider is valid category");
+  assert(isValidCategory("experimental"), "experimental is a valid category (Beta Playground, D188)");
   assert(!isValidCategory("plugin"), "plugin is not a valid category");
   assert(isValidStatus("installed") && isValidStatus("failed"), "installed/failed are valid statuses");
   assert(!isValidStatus("broken"), "broken is not a valid status");

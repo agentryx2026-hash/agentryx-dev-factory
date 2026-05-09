@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-05-09T08:29:07.401Z",
+  "scenario": {
+    "label": "composition-smoke",
+    "path": "cognitive-engine/integration/composition-smoke.js"
+  },
+  "variant_count": 1,
+  "runs": [
+    {
+      "variant_id": "baseline",
+      "profile": null,
+      "notes": null,
+      "env_overrides": {},
+      "ok": true,
+      "exit_code": 0,
+      "duration_ms": 355,
+      "assertion_count": 73,
+      "stdout_tail": "\n[15/16] release: compliance audit + backup snapshot + readiness (Phase 20-A)\n  ✓ compliance audit succeeded\n  ✓ at least 1 tenant file found\n  ✓ all probes healthy → overall healthy\n  ✓ 5 probes registered\n  ✓ first backup snapshot\n  ✓ backup includes ≥10 entries (got 47) — covers all _* dirs\n  ✓ backup includes customer-portal\n  ✓ backup includes videos\n  ✓ backup includes proposals\n  ✓ backup includes training\n  ✓ backup includes marketplace\n  ✓ backup includes memory layer\n  ✓ backup includes release dir\n  ✓ backup excludes its own backups subdir\n  ✓ backup verifies clean (no drift)\n\n[16/16] replay: collect run snapshot from artifacts (Phase 13-A)\n  ✓ snapshot run_id matches\n  ✓ snapshot enumerates both artifacts\n  ✓ snapshot tracks agents\n  ✓ 14 feature flags catalogued\n  ✓ all 14 flags default OFF (production behavior unchanged)\n  ✓ ≥7 admin config entries catalogued\n\n[final] cross-module data-flow assertions\n  ✓ submission delivered\n  ✓ timeline spans full lifecycle\n  ✓ metering tenant_id matches portal customer_id\n  ✓ video → voiceover lineage preserved (16-A/17-A boundary)\n  ✓ artifact lineage preserved via 13-A snapshot view\n  ✓ marketplace lists 3 provider modules (Phase 17-A tts/capture/stitcher packs)\n  ✓ export request succeeds\n  ✓ export found tenant files\n  ✓ verify bundle includes review item for pmd_doc artifact (9-A ← 6-A boundary)\n  ✓ no jobs left in flight (queue fully drained)\n\n[smoke] OK — all 16 A-tier modules compose end-to-end\n",
+      "stderr": null
+    }
+  ],
+  "summary": {
+    "baseline_ok": true,
+    "baseline_assertions": 73,
+    "baseline_duration_ms": 355,
+    "delta_vs_baseline": []
+  }
+}

@@ -25,6 +25,7 @@ For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Archi
 | 2 | [LLM Router and Cost Telemetry](Phase_02_LLM_Router/Phase_02_Plan.md) | LiteLLM + OpenRouter, switchable; per-task model assignment; per-call $ captured; Key Console (2.5) inserted mid-phase; fallback chain; compare mode; cost panel | ✅ done |
 | 2.5 | [Key Console (B7-lite)](Phase_2.5_Key_Console/Phase_2.5_Plan.md) | Inserted mid-Phase-2 after 6 secret-leak incidents. Browser-based provider-key management, AES-256-GCM at rest, audit log. | ✅ done |
 | 2.75 | [Hermes Agent Evaluation](Phase_2.75_Hermes_Evaluation/Phase_2.75_Plan.md) | Evaluated [Nous Research Hermes](https://github.com/nousresearch/hermes-agent). **Verdict: hybrid adoption** — Hermes for Courier (Ph10) + agentskills (Ph18); Hermes patterns for Memory (Ph7) + Self-improve (Ph15); LangGraph stays as primary agent runtime. Saves ~4 weeks across downstream phases. | ✅ done |
+| 2.76 | [Beta Playground + Strategy Update 2026-05](Phase_2.76_Lab_and_Strategy_Update_2026_05/Phase_2.76_Plan.md) | After 2026-05 landscape scan + founder pause review: established Beta Playground as permanent capability (D181), expanded Hermes footprint (D182), added Honcho/Deep-Agents/Anthropic Agent Teams/Tinker as Lab profiles (D183-D186), set monthly + release-band Lab cadence (D187), extended marketplace `experimental` category (D188), revised release-band schedule v0.0.1 → v3 production at ~5-6 months (D189). 5 profiles seeded; 9 decisions. | ✅ done |
 | 3 | [Intake Stage (Genovi)](Phase_03_Intake_Genovi/Phase_03_Plan.md) | New first agent. SRS/FRS/PRD → structured requirement extraction | ✅ done |
 | 4 | [PMD Template Registry](Phase_04_PMD_Template_Registry/Phase_04_Plan.md) | Formalize 25-30 standard docs as versioned templates with dependency graph | ✅ done |
 | 5 | [MCP Tool Plane](Phase_05_MCP_Tool_Plane/Phase_05_Plan.md) | Replace custom `tools.js` with MCP servers (fs, git, github, postgres, browser) | 🟡 5-A done (scaffolding); 5-B deferred (graph integration, needs OpenRouter credit) |
@@ -64,8 +65,9 @@ These are not phases — they're standards / interfaces that span multiple phase
 - [03_Scaffolding_Pattern.md](03_Scaffolding_Pattern.md) — codifies the 16×-proven A-tier recipe. Apply to every new phase.
 - [04_B_Tier_Marathon.md](04_B_Tier_Marathon.md) — **PATH TO R1**: 17 deferred B-subphases across 4 cohorts; per-subphase punch list with prerequisites, effort, sequencing, costs; critical-path callouts; going-public checklist. Read before planning the next sprint.
 - [Dev_Task_list_Update.md](Dev_Task_list_Update.md) — single-page ops dashboard (synced to the current tag). Read before planning the next phase.
-- **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — the R1/R4/R5 vision. What we're building toward (§11 has the v0.0.1 scaffolding checkpoint; §13 bridges to the marathon doc).
+- **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — the R1/R4/R5 vision (now r0.4). What we're building toward (§1 release bands, §11 v0.0.1 scaffolding checkpoint, §11.8 Beta Playground architecture, §13 bridges to the marathon doc).
 - **[../Research/](../Research/)** — dated landscape scans + focused research dossiers ([2026-05 orchestrator landscape + Hermes deep dive](../Research/2026-05_Landscape_Scan.md) is the most recent). Evidence, not action.
+- **[../../playground/](../../playground/)** — the **Beta Playground**: pluggable experimentation against the stable substrate. 5 active profiles. Read its [README](../../playground/README.md) first if planning Lab work.
 
 ## Per-phase folder structure
 
@@ -94,4 +96,4 @@ Every phase from 5-A onwards uses PR flow, not direct-to-main.
 
 **Why**: Review gate + rollback discipline + parallel experimentation. Aligns with Master_Factory_Architect.md P9 (release-band versioning).
 
-**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`, `phase-15a-closed`, `phase-16a-closed`, `phase-17a-closed`, `phase-18a-closed`, `phase-19a-closed`, `phase-20a-closed`.
+**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`, `phase-15a-closed`, `phase-16a-closed`, `phase-17a-closed`, `phase-18a-closed`, `phase-19a-closed`, `phase-20a-closed`, `phase-2.76-closed`.

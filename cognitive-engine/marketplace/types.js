@@ -14,7 +14,13 @@
  */
 
 /**
- * @typedef {"intake"|"pmd_producer"|"mcp_tool"|"artifact_store"|"memory_backend"|"handler"|"proposer"|"generator"|"provider"} ModuleCategory
+ * @typedef {"intake"|"pmd_producer"|"mcp_tool"|"artifact_store"|"memory_backend"|"handler"|"proposer"|"generator"|"provider"|"experimental"} ModuleCategory
+ *
+ * The "experimental" category is reserved for Beta Playground profiles
+ * (D188). These modules are under active evaluation; they ride the same
+ * marketplace machinery as stable modules but don't graduate to a stable
+ * category until a Decision in their owning Phase document marks them
+ * `tested-adopting` or `tested-rejecting`. See `playground/README.md`.
  */
 
 /**
@@ -79,6 +85,7 @@ export const SCHEMA_VERSION = 1;
 export const MODULE_CATEGORIES = Object.freeze([
   "intake", "pmd_producer", "mcp_tool", "artifact_store",
   "memory_backend", "handler", "proposer", "generator", "provider",
+  "experimental",
 ]);
 
 export const MODULE_STATUSES = Object.freeze(["installed", "disabled", "failed"]);
