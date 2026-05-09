@@ -19,13 +19,14 @@ const ARCHITECT_DIR = path.join(REPO_ROOT, 'cognitive-engine', 'architect');
 let architectModules = null;
 async function loadArchitect() {
   if (architectModules) return architectModules;
-  const [kbMod, researcherMod, proposerMod, architectMod, schedulerMod, briefMod] = await Promise.all([
+  const [kbMod, researcherMod, proposerMod, architectMod, schedulerMod, briefMod, llmDispMod] = await Promise.all([
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'kb.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'researcher.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'proposer.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'architect.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'scheduler.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'brief.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'dispatchers', 'llm.js')).href).catch(() => null),
   ]);
   // Phase 15-A proposal store (architect emits proposals into it)
   const storeMod = await import(
@@ -35,6 +36,7 @@ async function loadArchitect() {
     createKnowledgeBase: kbMod.createKnowledgeBase,
     createResearcher: researcherMod.createResearcher,
     createStubDispatcher: researcherMod.createStubDispatcher,
+    createLLMDispatcher: llmDispMod?.createLLMDispatcher || null,
     createArchitectProposer: proposerMod.createArchitectProposer,
     createArchitect: architectMod.createArchitect,
     createProposalStore: storeMod.createProposalStore,
@@ -43,6 +45,29 @@ async function loadArchitect() {
     composeBriefPrompt: briefMod.composeBriefPrompt,
   };
   return architectModules;
+}
+
+/**
+ * Phase 21-B: pick the dispatcher for a pass based on the cadence/brief
+ * config. Defaults to stub (= $0, synthetic findings — safe). Founder
+ * must explicitly set `dispatcher: 'sonnet'` or `dispatcher: 'opus'` in
+ * Standing Orders → cadences (or in a brief submission) to enable real
+ * LLM research. Failure-mode is safe: if LLM dispatcher fails to load
+ * (module missing, llm-router error), we fall back to stub silently.
+ */
+function pickDispatcher(A, dispatcherKey) {
+  if (dispatcherKey === 'sonnet' || dispatcherKey === 'opus') {
+    if (typeof A.createLLMDispatcher === 'function') {
+      try {
+        return A.createLLMDispatcher({ dispatcher: dispatcherKey });
+      } catch (err) {
+        console.warn(`[architect.dispatcher] LLM dispatcher init failed (${dispatcherKey}); falling back to stub:`, err?.message);
+      }
+    } else {
+      console.warn(`[architect.dispatcher] requested '${dispatcherKey}' but createLLMDispatcher unavailable; using stub`);
+    }
+  }
+  return A.createStubDispatcher();
 }
 
 // ─── Architect cadence daemon ─────────────────────────────────────────────
@@ -67,8 +92,10 @@ async function bootCadenceDaemon() {
         // cadence's own dispatcher + budget. The pass label IS the cadence
         // kind so listPasses({pass_kind:"weekly"}) groups cycle reports.
         const proposer = A.createArchitectProposer({ proposalStore, kb });
+        // Phase 21-B: pick dispatcher per cadence config. Defaults to stub.
+        // Real LLM dispatch fires only when cadenceConfig.dispatcher === 'sonnet' | 'opus'.
         const researcher = A.createResearcher({
-          dispatchSubagent: A.createStubDispatcher(), // 21-B replaces this with real Sonnet
+          dispatchSubagent: pickDispatcher(A, cadenceConfig.dispatcher || 'stub'),
           budget_usd_per_pass: cadenceConfig.budget_usd ?? 1.5,
         });
         const architect = A.createArchitect({ kb, researcher, proposer });
@@ -1473,13 +1500,17 @@ const server = http.createServer((req, res) => {
         }
         const proposalStore = createProposalStore(ARCHITECT_KB_ROOT);
         const proposer = createArchitectProposer({ proposalStore, kb });
+        // Phase 21-B: manual run-pass honors body.dispatcher if supplied
+        // (e.g., "Run with Sonnet" button); defaults to 'stub'.
+        const A = await loadArchitect();
+        const dispatcherKey = body.dispatcher || 'stub';
         const researcher = createResearcher({
-          dispatchSubagent: createStubDispatcher(),
+          dispatchSubagent: pickDispatcher(A, dispatcherKey),
           budget_usd_per_pass: so.baseline?.daily_budget_usd ?? 1.5,
         });
         const architect = createArchitect({ kb, researcher, proposer });
 
-        addLog('system', `👑 Architect: launching ${passKind} research pass (stub dispatcher, $0)…`);
+        addLog('system', `👑 Architect: launching ${passKind} research pass (${dispatcherKey} dispatcher)…`);
         broadcast();
         const result = await architect.runPass(passKind);
         const findingsCount = result.findings_count ?? 0;
@@ -1530,13 +1561,16 @@ const server = http.createServer((req, res) => {
         const kb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
         const proposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
         const proposer = A.createArchitectProposer({ proposalStore, kb });
+        // Phase 21-B: brief honors body.dispatcher (e.g. 'sonnet' for Seven's
+        // first-hand evaluations). Defaults to stub for safety / cost.
+        const briefDispatcherKey = body.dispatcher || 'stub';
         const researcher = A.createResearcher({
-          dispatchSubagent: A.createStubDispatcher(),
+          dispatchSubagent: pickDispatcher(A, briefDispatcherKey),
           budget_usd_per_pass: body.budget_usd || 3,
         });
         const architect = A.createArchitect({ kb, researcher, proposer });
 
-        addLog('system', `🔬 Architect: brief submitted — "${(body.title || '').slice(0, 60)}"`);
+        addLog('system', `🔬 Architect: brief submitted — "${(body.title || '').slice(0, 60)}" (${briefDispatcherKey})`);
         broadcast();
 
         const out = await A.runBrief({ kb, architect, briefInput: body });
@@ -1640,8 +1674,9 @@ const server = http.createServer((req, res) => {
         const A = await loadArchitect();
         const proposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
         const proposer = A.createArchitectProposer({ proposalStore, kb });
+        // Phase 21-B: manual cadence run honors the cadence's configured dispatcher
         const researcher = A.createResearcher({
-          dispatchSubagent: A.createStubDispatcher(),
+          dispatchSubagent: pickDispatcher(A, cfg.dispatcher || 'stub'),
           budget_usd_per_pass: cfg.budget_usd ?? 1.5,
         });
         const architect = A.createArchitect({ kb, researcher, proposer });
