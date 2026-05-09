@@ -66,6 +66,34 @@ async function readRequestBody(req) {
 // version directly — no YAML parser needed.
 const SEED_JSON_PATH = path.join(ARCHITECT_DIR, 'standing_orders.example.json');
 
+// Merge incoming custom_direction onto existing, preserving fields the
+// editor doesn't expose. priority_areas are merged by id (incoming
+// overrides existing fields per area; missing areas inherit from existing).
+function mergeCustomDirection(existing = {}, incoming = {}) {
+  const out = { ...(existing || {}), ...(incoming || {}) };
+  if (existing?.overall_stance || incoming?.overall_stance) {
+    out.overall_stance = { ...(existing?.overall_stance || {}), ...(incoming?.overall_stance || {}) };
+  }
+  if (existing?.effective_period || incoming?.effective_period) {
+    out.effective_period = { ...(existing?.effective_period || {}), ...(incoming?.effective_period || {}) };
+  }
+  // Merge priority_areas by id
+  const incomingAreas = Array.isArray(incoming?.priority_areas) ? incoming.priority_areas : null;
+  const existingAreas = Array.isArray(existing?.priority_areas) ? existing.priority_areas : [];
+  if (incomingAreas) {
+    const byId = new Map(existingAreas.map(a => [a.id, a]));
+    for (const a of incomingAreas) {
+      const prev = byId.get(a.id) || {};
+      byId.set(a.id, { ...prev, ...a });
+    }
+    // Preserve the canonical order: models, agents, languages, tools, output_quality, operations
+    const ORDER = ['models', 'agents', 'languages', 'tools', 'output_quality', 'operations'];
+    out.priority_areas = ORDER.map(id => byId.get(id)).filter(Boolean);
+  }
+  // strategic_watch and notes pass through (editor doesn't touch yet)
+  return out;
+}
+
 function getInitialState() {
   return {
     agents: [
@@ -832,6 +860,53 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         console.error('[architect/seed]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/architect/standing_orders' && req.method === 'POST') {
+    // Founder save from the Standing Orders editor. Body shape:
+    //   { standing_orders: <partial-or-full SO>, bump_version?: boolean }
+    // The handler MERGES the incoming object onto whatever is on disk
+    // (so the editor can ship without exposing every field), then writes
+    // via kb.writeStandingOrders which validates + appends history.
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const incoming = body.standing_orders;
+        if (!incoming || typeof incoming !== 'object') {
+          return jsonResponse(res, 400, { error: 'standing_orders object required in body' });
+        }
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const existing = (await kb.readStandingOrders()) || {};
+
+        // Deep-merge custom_direction so the editor can omit arrays it
+        // doesn't expose (hard_constraints, anti_goals, etc.) without
+        // wiping them. Priority areas are merged by id.
+        const merged = {
+          ...existing,
+          ...incoming,
+          baseline: { ...(existing.baseline || {}), ...(incoming.baseline || {}) },
+          custom_direction: mergeCustomDirection(existing.custom_direction, incoming.custom_direction),
+        };
+
+        // Bump version unless caller opted out (default: bump on every save
+        // so the architect's version-watermark detector picks it up).
+        if (body.bump_version !== false) {
+          merged.version = Number(existing.version || 0) + 1;
+        } else if (typeof merged.version !== 'number') {
+          merged.version = Number(existing.version || 1);
+        }
+
+        const written = await kb.writeStandingOrders(merged);
+        addLog('system', `👑 Architect: Standing Orders saved (v${written.version}).`);
+        broadcast();
+        return jsonResponse(res, 200, { success: true, version: written.version, standing_orders: written });
+      } catch (err) {
+        console.error('[architect/standing_orders POST]', err);
+        return jsonResponse(res, 400, { error: err?.message || String(err) });
       }
     })();
     return;
