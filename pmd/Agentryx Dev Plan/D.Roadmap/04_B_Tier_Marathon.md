@@ -26,7 +26,7 @@ A-tier shipped 16 modules. **17 deferred B-subphases** + **5 active Beta Playgro
 
 | Cohort | Phases | Blocker | Unlock unit | Cost to unlock |
 |---|---|---|---|---|
-| **C1** | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B | OpenRouter credit + TTS credentials | 1 budget top-up + 1 ElevenLabs key | ~$15-40 LLM/TTS validation |
+| **C1** | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B, **21-B** | OpenRouter credit + TTS credentials | 1 budget top-up + 1 ElevenLabs key | ~$15-40 LLM/TTS validation; +$1-2/day for autonomous architect |
 | **C2** | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | UI sprint + ops credentials (Slack/GitHub/SMTP) | React dev sprint + per-channel creds | 2-3 dev-weeks |
 | **C3** | 7-B, 7-C, 7-D | Scale-dependent (memory backends) | Trigger: 100+ observations / multi-host / semantic-search demand | $0 until demand shows up |
 | **C4** | 20-B | Stripe + S3/R2 + external pen-test | Stripe acct + cloud bucket + security budget | ~$5-15K (pen test) + ongoing infra |
@@ -89,7 +89,14 @@ Each row: what's missing, what unlocks it, expected effort, downstream consumers
 - **Effort**: ~2 sessions
 - **Cost**: ~$0.30-1.00 per rendered minute of video at ElevenLabs rates
 
-**Cohort 1 critical path**: `6-B → {7-E, 8-B, 15-B}` and `14-B → {16-B → 17-B}`. 6-B and 14-B are the two unlock keys; everything else fans out from them.
+#### **21-B — Real Sonnet researcher + cron daemon + 12-B portal UI + queue handler + budget gate + Courier**
+- **What's missing**: replace `createStubDispatcher` with a Sonnet-backed web-research subagent (OpenRouter); long-lived process holding the daily cron; register `architect_research` Phase 14-A queue handler; Phase 12-B Founder Proposal Portal UI page consuming `portal.js` API; Phase 11-A pre-flight budget gate; Phase 10-A Courier "approval needed" notifications on pass completion
+- **Prereq**: OpenRouter credit; web-search MCP server allowlisted (Phase 5-A); 12-B (admin UI scaffold); 14-B (queue handler registration); 11-B (cost dashboard target for proposal-area budget); 10-B (Courier real backends)
+- **Effort**: ~3-4 sessions
+- **Cost**: ~$1-2/day target (5-area research pass × ~$0.30-0.40 per area at standard depth, weight-allocated)
+- **Validation**: founder receives "3 new proposals in your `models` area" notification; opens portal; reviews proposals; approves/rejects flow through Phase 15-A applier → architect applier
+
+**Cohort 1 critical path**: `6-B → {7-E, 8-B, 15-B}` and `14-B → {16-B → 17-B}`. 6-B and 14-B are the two unlock keys; everything else fans out from them. **21-B is parallelisable** — it depends on credentials and 14-B but not on any other C1 phase.
 
 ---
 
@@ -249,7 +256,7 @@ Things to revisit as B-tier ships:
 Before cutting v3 (first paid customer projects), every box below must be checked. Per Phase 2.76 D189, security hardening lands in this gate (deferred from v0.0.1 → v2 to here).
 
 **Substrate gates**:
-- [ ] All 17 B-subphases shipped (or explicitly decided to defer past v3)
+- [ ] All 18 B-subphases shipped (or explicitly decided to defer past v3) — 21-B added 2026-05-09
 - [ ] At least 3 Lab profiles graduated to stable
 - [ ] Composition smoke (`integration/composition-smoke.js`) passes
 - [ ] Per-module smokes all pass (16+ modules × respective assertion counts)
@@ -260,6 +267,14 @@ Before cutting v3 (first paid customer projects), every box below must be checke
 - [ ] Cost dashboard shows real spend per tenant
 - [ ] Verify portal handled at least one round-trip feedback cycle on a real bundle
 - [ ] Backup + restore tested (snapshot → drop workspace → restore from manifest → integration smoke passes again)
+
+**Phase 22 — Action Boundary Enforcement (lands at v2 → v3 per D185 + D189 + D199)**:
+- [ ] Pipeline tool / egress allowlist enforced at runtime (no agent can call outside the declared graph)
+- [ ] Sandbox runtimes wired (E2B / Daytona / Modal candidates evaluated)
+- [ ] MCP server allowlist enforced; unmediated network egress blocked
+- [ ] Courier event allowlist enforced
+- [ ] Signed-manifest provenance for marketplace installs
+- [ ] Architect itself subject to the same boundary (declared `architect_egress_allowlist`; audit log every external research call)
 
 **Security hardening (now lands at v3 per D185+D189)**:
 - [ ] Pen test report received + Sev-1/Sev-2 findings closed
@@ -285,6 +300,7 @@ When all boxes checked: cut `v3.0.0` tag, post the announcement, watch the cost 
 |---|---|---|---|
 | v1 | 2026-04-24 | Phase 20-A close + cross-phase composition smoke; all 16 A-tier modules shipped | all |
 | v2 | 2026-05-09 | Phase 2.76 close — Beta Playground established + release-band schedule revised (v0.0.1 → v3 ~5-6 months) | header (release-band table); §1 (Lab parallel track callout); §4 (Lab critical-path additions); §6 (going-public checklist now gates v3 not v1; security hardening section added) |
+| v3 | 2026-05-09 | Phase 21-A close — Master Architect substrate added; 21-B becomes the autonomous-research B-subphase (lands at v1, prereq OpenRouter credit) | §1 (C1 row + 21-B); §2 (new 21-B subsection in Cohort 1); §6 (18 B-subphases; new Phase 22 Action-Boundary block in checklist) |
 
 This document should be revised when:
 - A B-subphase ships (move it from "missing" to a "shipped" log; update sequencing)

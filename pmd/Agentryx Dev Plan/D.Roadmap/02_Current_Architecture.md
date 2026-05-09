@@ -23,7 +23,7 @@ Read this first when joining the project mid-flight.
 
 ---
 
-## 2. Factory at a glance — 14 modules, 683 assertions, $0 spent
+## 2. Factory at a glance — 17 modules, 1111 assertions, $0 spent
 
 ```
                   ┌────────────── pipeline (Phases 0-4, production-path) ──────────────┐
@@ -53,28 +53,31 @@ Read this first when joining the project mid-flight.
                           │  Phase 20-A  release/             — metering + retention + GDPR   │
                           │                                       compliance + readiness +    │
                           │                                       backup (consolidation phase)│
+                          │  Phase 21-A  architect/           — autonomous research + KB +   │
+                          │                                       Standing Orders +           │
+                          │                                       Founder Proposal Portal     │
                           │                                                                │
                           └────────────────────────────────────────────────────────────────┘
                           + cognitive-engine/integration/composition-smoke.js (cross-phase regression net, 73 assertions)
 ```
 
-**Numbers** (as of Phase 20-A close + cross-phase composition smoke):
+**Numbers** (as of Phase 21-A close + cross-phase composition smoke):
 
 | Metric | Value |
 |---|---|
-| A-tier scaffolds shipped | **16** — 100% coverage ✅ |
-| Phases fully closed (Plan+Status+Decisions+Lessons) | 20 of 20 |
-| Smoke-test assertions across scaffolds | **947** per-module + **73** cross-phase = **1020 total** |
+| A-tier scaffolds shipped | **17** — Phase 21-A added autonomous research + KB substrate ✅ |
+| Phases fully closed (Plan+Status+Decisions+Lessons) | 20 of 20 + Phase 21-A |
+| Smoke-test assertions across scaffolds | **947** per-module + **87** architect + **3** self-improvement extension + **73** cross-phase = **1110 total** (incl. +1 marketplace = **1111**) |
 | LLM spend across all scaffolding | **$0.00** |
-| Phase rollback tags on origin | **24** |
-| Feature flags registered | **14** (all default off) |
-| Decisions logged | D1–D180 |
+| Phase rollback tags on origin | **25** |
+| Feature flags registered | **15** (all default off; +`USE_AUTONOMOUS_ARCHITECT`) |
+| Decisions logged | D1–D199 |
 
 **Numbers matter** because every claim in this document is backed by an assertion. When a module's README says "138 assertions pass," running that smoke test is the verification. The cross-phase composition smoke at `cognitive-engine/integration/` proves they all work together.
 
 ---
 
-## 3. The 16 modules — one-line each + composition
+## 3. The 17 modules — one-line each + composition
 
 | # | Module (path) | Phase | Category | What it is | Consumed by |
 |---|---|---|---|---|---|
@@ -85,15 +88,16 @@ Read this first when joining the project mid-flight.
 | 5 | `verify-integration/` | 9 | handler | BuildBundle + FeedbackPayload + fix-router | post_dev_graph (9-B) |
 | 6 | `courier/` | 10 | handler | 8 event × 6 channel dispatch + routing config | every phase that needs to notify (10-B) |
 | 7 | `cost-tracker/` | 11 | handler | CostRollup from artifacts + llm_calls + thresholds | dashboard (11-B); pre-flight gates |
-| 8 | `admin-substrate/` | 12 | handler | 7 configs + 14 flags + 4 roles + audit log | every other module's flag lookup |
+| 8 | `admin-substrate/` | 12 | handler | 7 configs + 15 flags + 4 roles + audit log | every other module's flag lookup |
 | 9 | `replay/` | 13 | handler | RunSnapshot + plan builder + executor | self-improvement (15-A evaluator); debugging |
-| 10 | `concurrency/` | 14 | handler | FS queue + worker pool + round-robin fairness | every async job (14-B real handlers) |
-| 11 | `self-improvement/` | 15 | proposer | proposal state machine + heuristic proposer + applier | factory evolution (15-B LLM proposer) |
+| 10 | `concurrency/` | 14 | handler | FS queue + worker pool + round-robin fairness | every async job (14-B real handlers); architect scheduler enqueue (21-B) |
+| 11 | `self-improvement/` | 15 | proposer | proposal state machine + heuristic proposer + applier; 7 proposal kinds (4 original + 3 architect-owned) | factory evolution (15-B LLM proposer); architect (21-A) |
 | 12 | `training-gen/` | 16 | generator | 6 template generators (incl. voiceover_script) | Verify portal; Phase 17 |
 | 13 | `training-videos/` | 17 | provider | TTS × capture × stitcher; beat-level failure isolation | post-project delivery (17-B real backends) |
-| 14 | `marketplace/` | 18 | meta | ModuleManifest + installer + catalogue of all 15 above | admin UI (18-B); self-improvement swap |
+| 14 | `marketplace/` | 18 | meta | ModuleManifest + installer + catalogue of all 15 above | admin UI (18-B); self-improvement swap; architect tool adoption (21-A) |
 | 15 | `customer-portal/` | 19 | handler | accounts + submissions + timeline + SLA + portal facade; per-tenant sandbox | factory intake (19-B HTTP+UI); customer billing (20-A metering) |
 | 16 | `release/` | 20 | handler | 5-capability consolidation: metering + retention + GDPR compliance + readiness + backup | v1.0 ops cutover (20-B) |
+| 17 | `architect/` | 21 | orchestrator | autonomous research + Knowledge Base; **Standing Orders** (Tab 1 baseline + Tab 2 custom_direction with 6 weighted areas, ~60 fillable slots); priority-weighted researcher; proposer for 3 new kinds; Founder Proposal Portal API | Phase 15-A proposal store (architect emits proposals); Phase 14-A queue (21-B daemon); Phase 12-B admin UI (21-B portal page) |
 
 ---
 
@@ -173,7 +177,7 @@ Every A-tier ship runs offline, deterministic, $0. B-tier adds real external cal
 
 ---
 
-## 5. Feature flag catalog (12 flags, all default OFF)
+## 5. Feature flag catalog (15 flags, all default OFF)
 
 From `cognitive-engine/admin-substrate/registry.js`:
 
@@ -193,6 +197,7 @@ From `cognitive-engine/admin-substrate/registry.js`:
 | `USE_MODULE_MARKETPLACE` | Phase 18 | Factory boot runs installAllBuiltins |
 | `USE_CUSTOMER_PORTAL` | Phase 19 | HTTP API + UI accept customer submissions; queue handler + Courier active |
 | `USE_PUBLIC_RELEASE` | Phase 20 | Cron retention + nightly backup + health endpoints + Stripe reporter |
+| `USE_AUTONOMOUS_ARCHITECT` | Phase 21 | Architect scheduler runs daily cron + boot pass; researcher dispatches real LLM-backed subagents; proposals auto-flow into Phase 15-A store |
 
 **Flag-gating discipline**: turning ON any of the above should be a one-line change with no code edits elsewhere. Turning OFF reverts to pre-flag behavior exactly. This is enforced by keeping B-tier wiring modular — when B-tier writes a graph edge, it's wrapped in a flag check at the edge.
 
@@ -206,8 +211,9 @@ From `cognitive-engine/admin-substrate/registry.js`:
 | C2 — UI work + user credentials | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | React admin panel + customer UI + Slack/GitHub/SMTP creds | 2-3 dev-weeks |
 | C3 — Scale-dependent | 7-B, 7-C, 7-D | Needs 100+ observations or multi-host factory | emerges with load |
 | C4 — v1.0 release ops | 20-B | Stripe + S3/R2 + external pen-test budget | ~$5-15K (pen test) + ongoing infra |
+| C1 — OpenRouter credit (architect) | 21-B | Real Sonnet research subagent + cron daemon + Phase 14 handler + 12-B portal UI + Phase 11 budget gate + Phase 10 Courier notifications | ~$1-2/day target |
 
-**17 B-subphases total** across 4 cohorts. Each unlock is independent — can ship C1 without C2, etc.
+**18 B-subphases total** across 4 cohorts (21-B added 2026-05-09). Each unlock is independent — can ship C1 without C2, etc.
 
 **Critical path within cohorts**: 6-B and 14-B together unlock 10 of the 17 B-subphases. See [04_B_Tier_Marathon.md](04_B_Tier_Marathon.md) for full sequencing analysis.
 
@@ -221,7 +227,7 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - Ops status → `D.Roadmap/Dev_Task_list_Update.md` (single-page dashboard)
 - Current state → this file
 - **B-tier marathon plan → `D.Roadmap/04_B_Tier_Marathon.md` (path from v0.0.1 to R1)**
-- Decision archaeology → every phase has `Decisions.md` (D1-D180 so far)
+- Decision archaeology → every phase has `Decisions.md` (D1-D199 so far)
 - Post-mortem learnings → every phase has `Lessons.md`
 
 **By question**:
@@ -235,7 +241,7 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - Every phase close is a PR + tag. `git show phase-2.76-closed` is the authoritative state snapshot at A-tier completion + Beta Playground established.
 - Every module's smoke test can be rerun: `node cognitive-engine/<module>/smoke-test.js`.
 - Full per-module regression: `for m in <list>; do node cognitive-engine/$m/smoke-test.js || exit 1; done`.
-- **Cross-phase composition smoke**: `node cognitive-engine/integration/composition-smoke.js` — exercises all 16 A-tier modules in one workspace end-to-end (73 assertions).
+- **Cross-phase composition smoke**: `node cognitive-engine/integration/composition-smoke.js` — exercises all 16 A-tier modules in one workspace end-to-end (73 assertions). Phase 21-A architect smokes independently (87 assertions); composition smoke does not yet exercise architect.
 - **Beta Playground baseline**: `node playground/runner.js` — runs the composition-smoke against the stable baseline, writes JSON to `playground/results/`. Future variant runs swap experimental modules in.
 
 ---
@@ -293,6 +299,7 @@ See `playground/README.md` for operational details; `pmd/.../D.Roadmap/Phase_2.7
 | v1 | 2026-04-24 | Post Phase 18-A close; first chronicle of the v0.0.1 scaffold bundle | all |
 | v2 | 2026-04-24 | Post Phase 20-A close — added 19-A + 20-A to module table; numbers refreshed; cross-phase composition smoke added | §2, §3, §6, §7 |
 | v3 | 2026-05-09 | Phase 2.76 — Beta Playground established as permanent infrastructure; release-band schedule updated; flag table extended | new §8 (Beta Playground); §7 git pointer updated; §9 (renumbered, "deliberate absences" — added security gating posture) |
+| v4 | 2026-05-09 | Phase 21-A close — Master Architect autonomous research substrate added; Standing Orders (Tab 1 baseline + Tab 2 custom_direction) is the founder steering input | header (17 modules / 1111 assertions); §2 (numbers); §3 (architect row added); §5 (USE_AUTONOMOUS_ARCHITECT flag; 12 → 15); §6 (21-B added to C1); §7 (decision counter D199) |
 
 Future revisions expected at:
 - Each new phase close that meaningfully shifts the composition graph (Phase 19/20 closes, Phase 2.76 — done)

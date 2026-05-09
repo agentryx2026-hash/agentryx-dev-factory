@@ -11,12 +11,21 @@
  */
 
 /**
- * @typedef {"prompt_change"|"model_change"|"config_change"|"graph_change"} ProposalKind
+ * @typedef {"prompt_change"|"model_change"|"config_change"|"graph_change"|"tool_adoption"|"kb_update"|"research_finding"} ProposalKind
  *
- * - prompt_change:  edit a prompt template for a named agent
- * - model_change:   change the model assigned to a task tier
- * - config_change:  update a value in a registry-known JSON config (Phase 12-A)
- * - graph_change:   reorder, add, or remove a node in a graph (NOT applied in 15-A)
+ * Phase 15-A original kinds:
+ * - prompt_change:    edit a prompt template for a named agent
+ * - model_change:     change the model assigned to a task tier
+ * - config_change:    update a value in a registry-known JSON config (Phase 12-A)
+ * - graph_change:     reorder, add, or remove a node in a graph (NOT applied in 15-A)
+ *
+ * Phase 21-A additions (D190 — autonomous Master Architect proposals):
+ * - tool_adoption:    propose adding/upgrading/swapping a tool (stable or playground)
+ *                     change.target = "tool:<scope>:<tool-id>"  (scope: stable | playground)
+ * - kb_update:        propose adding/updating a Target or Gap in the architect KB
+ *                     change.target = "kb:<class>:<id>"  (class: target | gap | finding)
+ * - research_finding: raw research observation worth recording (low-stakes; auto-approve threshold)
+ *                     change.target = "kb:findings:F-<seq>"
  */
 
 /**
@@ -77,7 +86,10 @@
 export const SCHEMA_VERSION = 1;
 
 export const PROPOSAL_KINDS = Object.freeze([
+  // Phase 15-A original (factory self-improvement)
   "prompt_change", "model_change", "config_change", "graph_change",
+  // Phase 21-A additions (Master Architect / continuous research)
+  "tool_adoption", "kb_update", "research_finding",
 ]);
 
 export const PROPOSAL_STATES = Object.freeze([

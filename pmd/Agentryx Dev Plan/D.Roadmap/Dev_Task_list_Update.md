@@ -1,6 +1,6 @@
 # Agentryx Dev Factory — Task Status Snapshot
 
-**Last updated**: 2026-05-09 (Phase 2.76 close)
+**Last updated**: 2026-05-09 (Phase 21-A close)
 **Snapshot purpose**: single-page view of every phase's status. Read this first to know exactly what's built, where we are, and what's next. Per-phase detail lives in each `Phase_NN_*/` folder — this doc indexes them.
 
 **How to keep this fresh**: update this file at every phase close (alongside the per-phase `Status.md` and `Lessons.md`). The "Last updated" date and the per-phase status row are the two things that must move. Don't let them drift.
@@ -11,20 +11,20 @@
 
 | Metric | Value |
 |---|---|
-| Total phase entries (incl. 1.5, 2.5, 2.75, 2.76) | 25 |
+| Total phase entries (incl. 1.5, 2.5, 2.75, 2.76, 21) | 26 |
 | Fully closed (foundation band + strategy phases) | **13** (0, 1, 1.5, 2, 2.5, 2.75, 2.76, 3, 4) |
-| A-tier scaffolding shipped | **16** — 100% coverage (5-A through 20-A) ✅ |
+| A-tier scaffolding shipped | **17** — Phase 21-A added autonomous research substrate ✅ |
 | Beta Playground active profiles | **5** (4 exploring + 1 watching) |
-| Sketch only (not started) | **0** (roadmap complete; Lab handles new tools as profiles) |
-| B-tier deferred (production wiring) | 17 subphases pending across phases 5-20 |
-| Smoke-test assertions passing | **948** per-module + **73** cross-phase = **1021 total** (was 947+73; +1 marketplace assertion at 2.76 close) |
+| Sketch only (not started) | **0** (roadmap complete through Phase 21; Phase 22 placeholder for Action Boundary at v3) |
+| B-tier deferred (production wiring) | 18 subphases pending (added 21-B) |
+| Smoke-test assertions passing | **1038** per-module (948 + 87 architect + 3 self-improvement extension) + **73** cross-phase = **1111 total** |
 | Lab baseline assertions (composition-smoke via runner.js) | 73 |
-| LLM spend across all scaffolding + Lab | **$0.00** |
-| Phase tags on origin (rollback anchors) | 25 |
-| Decisions logged | D1–D189 |
-| Master Factory Architect revision | r0.4 (2026-05-09) |
+| LLM spend across all scaffolding + Lab + architect | **$0.00** (architect ships with stub dispatcher) |
+| Phase tags on origin (rollback anchors) | 26 (after `phase-21a-closed` lands) |
+| Decisions logged | D1–D199 |
+| Master Factory Architect revision | r0.5 (2026-05-09) |
 
-**Net release-band position**: v0.0.1 **A-tier complete + Beta Playground active**. All 20 phase slots have substrate; all scaffolding shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close. Next band (v1, target ~2-3 months) arrives by resolving B-subphases AND graduating Lab profiles to stable. Production target (v3) is **~5-6 months out** per Phase 2.76 D189.
+**Net release-band position**: v0.0.1 **A-tier complete + Beta Playground active + Master Architect substrate shipped**. All 21 phase slots have substrate; all scaffolding shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close. Next band (v1, target ~2-3 months) arrives by resolving B-subphases (now 18, with 21-B added) AND graduating Lab profiles to stable. Production target (v3) is **~5-6 months out** per Phase 2.76 D189; **Phase 22 (Action Boundary Enforcement) lands at v2 → v3 boundary** per D199.
 
 ---
 
@@ -66,6 +66,8 @@
 | **18** | Pipeline Module Marketplace | 🟡 partial (18-A) | `cognitive-engine/marketplace/`: ModuleManifest schema (9 categories × 3 statuses); installer with 3-kind dependency resolution (module/env/registry); catalogue of 15 built-in manifests covering Phases 5-A through 17-A; store with atomic manifests.jsonl + append-only audit log; query by category / capability / id; 117 assertions; `USE_MODULE_MARKETPLACE` flag | 18-B: remote fetch + signature verification + version resolution + live swap + admin UI (Phase 12-B) + boot-time install + Phase 3/4 catalogue entries | Hosting contract + signature verification story |
 | **19** | Customer Portal | 🟡 partial (19-A) | `cognitive-engine/customer-portal/`: CustomerAccount + 3-tier SLA policies + opaque bearer tokens (SHA-256 hashed) + per-customer sandbox dirs; 9-state-kind append-only timeline; state-machine-gated submissions (6 statuses); typed error codes (UNAUTHORIZED/FORBIDDEN/QUOTA_EXCEEDED/VALIDATION); 138 assertions; `USE_CUSTOMER_PORTAL` flag | 19-B: Fastify/Express HTTP API, React customer UI, Phase 14 queue handler, Phase 10 Courier notifications, Phase 11 budget gate, Phase 9 Verify linkage, SLA scanner, password auth, rate limiting | UI work + credentials (email/password/Stripe) |
 | **20** | Public Release | 🟡 partial (20-A) | `cognitive-engine/release/`: 5-capability consolidation substrate — per-tenant usage metering (day/week/month rollups); retention engine with 7 default policies + dry-run-first apply; GDPR compliance (export/delete/audit) with cross-tenant isolation; readiness aggregator via DI probe registry with 3 statuses + worst-case fold; backup manifests with sha256 tamper detection; 126 assertions; `USE_PUBLIC_RELEASE` flag. **This phase closes 100% A-tier coverage.** | 20-B: Stripe billing, systemd/k8s health probes, cron retention, nightly backup + offsite, security review, load tests, v1.0 release ceremony | UI + credentials (Stripe, S3/R2) + external security review |
+| **21** | Master Architect | 🟡 partial (21-A) | `cognitive-engine/architect/`: types + KB (Standing Orders CRUD + targets/gaps/findings/passes/roadmap snapshot) + scheduler (boot + daily cron driven by `baseline.cron_schedule` + version watermark) + researcher (priority-weighted dispatch from `custom_direction.priority_areas`; per-area failure isolation; stub dispatcher = $0) + proposer (3 new kinds: `tool_adoption` / `kb_update` / `research_finding`) + applier (Phase 15-A `applyProposal(ctx.architectApplier)` routing) + portal (overview/list/detail/approve/reject API); standing_orders.{template,example}.yaml; 87 assertions + 3 in self-improvement smoke; `USE_AUTONOMOUS_ARCHITECT` flag; D190-D199 | 21-B: real Sonnet researcher, cron daemon, Phase 14-A queue handler, Phase 12-B portal UI, Phase 11-A budget gate, Phase 10-A Courier notifications | OpenRouter credit (~$1-2/day target) + 14-B + 12-B + 10-B + 11-B |
+| **22** | Action Boundary Enforcement | 📝 sketched (D199) | Phase placeholder: tool/egress allowlists, sandbox runtimes, MCP server allowlists, Courier event allowlists, signed-manifest provenance; architect itself becomes subject | Lands at v2 → v3 boundary per D185 + D189 + D199 — concurrent with security hardening pass | v2 → v3 timing; pen test budget; sandbox runtime selection |
 
 ---
 
@@ -91,9 +93,9 @@
 
 ## B-tier deferral cohorts
 
-The 17 deferred B-subphases group into 4 clear blockers. Once a blocker clears, the cohort can ship together. Lab profile graduations run in parallel and may resolve some B-subphases by adoption rather than by hand-rolled implementation.
+The 18 deferred B-subphases group into 4 clear blockers. Once a blocker clears, the cohort can ship together. Lab profile graduations run in parallel and may resolve some B-subphases by adoption rather than by hand-rolled implementation.
 
-### Cohort 1 — needs OpenRouter credit / TTS credentials (7 phases)
+### Cohort 1 — needs OpenRouter credit / TTS credentials (8 phases)
 Each requires running real LLM or TTS pipelines end-to-end to validate.
 
 - **5-B** MCP graph integration (rewire 5 graph files under `USE_MCP_TOOLS`)
@@ -103,8 +105,9 @@ Each requires running real LLM or TTS pipelines end-to-end to validate.
 - **15-B** LLM proposer + real outcome comparators (depends on 6-B for artifact-level cost/latency signals)
 - **16-B** LLM generators for training outputs (voiceover/storyboard prose quality; written guides); depends on 14-B for post-dev handler registration
 - **17-B** Real ElevenLabs/OpenAI TTS + Puppeteer/Playwright + ffmpeg for training videos (needs ElevenLabs/OpenAI credentials + ffmpeg binary on VM; depends on 14-B for handler)
+- **21-B** Real Sonnet researcher (replaces stub dispatcher) + cron daemon + Phase 14-A queue handler + Phase 12-B portal UI + Phase 11-A budget gate + Phase 10-A Courier notifications (parallelisable with 14-B; runs at ~$1-2/day)
 
-**Cost estimate to clear all 7**: ~$15–40 in LLM + TTS spend on validation runs (or ~$50–100 if using Opus + ElevenLabs Pro tier).
+**Cost estimate to clear all 8**: ~$15–40 in LLM + TTS spend on validation runs + ~$1-2/day ongoing for the autonomous architect (or ~$50–100 in validation if using Opus + ElevenLabs Pro tier).
 
 ### Cohort 4 — v1.0 release ops (1 phase, new)
 - **20-B** Stripe billing + systemd/k8s health probes + cron retention + nightly backup + security review + load tests + v1.0 release ceremony (needs Stripe + S3/R2 creds + external pen-test budget)
@@ -132,18 +135,20 @@ Won't matter until factory operates at higher volume.
 
 ## What's next
 
-**Beta Playground active + 100% A-tier coverage achieved.** Phase 2.76 closed 2026-05-09. The next moves are parallel:
+**Beta Playground active + 100% A-tier coverage achieved + Master Architect substrate shipped.** Phase 21-A closed 2026-05-09 (same session as Phase 2.76). The next moves are parallel:
 
-1. **B-tier marathon** — 17 deferred subphases across 4 cohorts
+1. **B-tier marathon** — 18 deferred subphases across 4 cohorts (21-B added)
 2. **Lab graduations** — Tier 1 profiles transition `exploring` → `testing` at next monthly review (last Friday of May)
-3. **Strategic watching** — Mira Murati / Thinking Machines Lab tracked in `thinking-machines-tinker` profile; Tier 2 profiles added in June
+3. **Strategic watching** — Mira Murati / Thinking Machines Lab tracked in `thinking-machines-tinker` profile; Tier 2 profiles added in June. **Architect 21-B will automate this watching** when wired.
+4. **Founder edits Standing Orders**: copy `cognitive-engine/architect/standing_orders.example.yaml` → `_kb/standing_orders.json`; refine Tab 2 weights/targets monthly
 
 The B-subphase work lives in 4 cohorts:
 
-- **C1 — OpenRouter + TTS credentials (7 phases, ~\$15-40 LLM spend)**: 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B
+- **C1 — OpenRouter + TTS credentials (8 phases, ~\$15-40 LLM spend + \$1-2/day architect)**: 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B, **21-B**
 - **C2 — UI + user creds (8 phases)**: 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B
 - **C3 — Scale-dependent (3 phases)**: 7-B, 7-C, 7-D memory backends (activate at 100+ observations / multi-host / semantic-search load)
 - **C4 — v1.0 release ops (1 phase)**: 20-B (Stripe + health endpoints + cron + backup + security/load/release ceremony)
+- **Phase 22 — Action Boundary Enforcement** (lands at v2 → v3 boundary): tool/egress allowlists, sandbox runtimes, signed-manifest provenance — concurrent with security hardening pass
 
 Best next moves, depending on available inputs:
 
@@ -176,14 +181,14 @@ Best next moves, depending on available inputs:
 - **Per-phase artifacts**: `D.Roadmap/Phase_NN_*/Phase_NN_{Plan,Status,Decisions,Lessons}.md`
 - **Architectural principles**: `D.Roadmap/00_Architectural_Principles.md` (P1-P9)
 - **Agent delegation model**: `D.Roadmap/01_Agent_Delegation_Model.md` (pipeline + meta agents, cost-tier map)
-- **Current architecture (v0.0.1 snapshot)**: `D.Roadmap/02_Current_Architecture.md` — "YOU ARE HERE" narrative of 14 modules, composition, flags, cost posture
+- **Current architecture (v0.0.1 snapshot)**: `D.Roadmap/02_Current_Architecture.md` — "YOU ARE HERE" narrative of 17 modules, composition, flags, cost posture (rev v4 at 2026-05-09)
 - **Scaffolding pattern (14×-proven recipe)**: `D.Roadmap/03_Scaffolding_Pattern.md` — apply to Phase 19 and beyond
-- **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir; r0.2 at 2026-04-24, §11 has v0.0.1 scaffolding checkpoint)
+- **Long-term R4/R5 vision**: `Master_Factory_Architect.md` (parent dir; r0.5 at 2026-05-09, §11.9 has Master Architect + Continuous Research as a permanent capability)
 - **Code modules** (in `agentryx-factory` repo, mirrored from this PMD as needed):
   - Foundation: `cognitive-engine/{tools,memory,graph,*_graph}.js`, `llm-router/`, `factory-dashboard/`, `server/admin-keys.mjs`
-  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace,customer-portal,release}/`
+  - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace,customer-portal,release,architect}/`
   - Beta Playground: `playground/{README.md,PROFILE_TEMPLATE.md,runner.js,profiles/,results/}` (since 2026-05-09)
-- **Phase tags on origin**: `git tag -l | grep phase-` (25 anchors after `phase-2.76-closed` lands)
+- **Phase tags on origin**: `git tag -l | grep phase-` (26 anchors after `phase-21a-closed` lands)
 - **GitHub milestones**: 18 milestones, 8 closed (foundation), 10 open (scaffolded but partial)
 
 ---
