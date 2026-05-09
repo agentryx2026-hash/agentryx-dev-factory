@@ -40,8 +40,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
   }, []);
 
   return (
-    <aside className="sidebar" id="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="sidebar-brand">
+    <aside className="sidebar" id="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div className="sidebar-brand" style={{ flexShrink: 0 }}>
         <div className="sidebar-brand-inner">
           <div className="brand-icon">AX</div>
           <div className="brand-text">
@@ -51,7 +51,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         </div>
       </div>
 
-      <nav className="sidebar-nav" style={{ flexGrow: 1 }}>
+      {/* Scrollable nav region — flex middle child needs min-height: 0
+          so overflow can kick in on column flex. Brand + Live Trace +
+          Footer stay pinned (flex-shrink: 0). */}
+      <nav
+        className="sidebar-nav"
+        style={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'thin' }}
+      >
         {navItems.map((item) => (
           <div
             key={item.page}
@@ -96,8 +102,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         ))}
       </nav>
 
-      {/* Mini Activity Trail */}
-      <div style={{ margin: '0 16px 16px 16px', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      {/* Mini Activity Trail — pinned (flex-shrink: 0 so it never gets squeezed) */}
+      <div style={{ flexShrink: 0, margin: '0 16px 16px 16px', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Live Trace</span>
             <span className={`status-dot ${isLive ? 'active' : ''}`} style={{ background: isLive ? '#10b981' : '#ef4444', height: '6px', width: '6px', borderRadius: '50%', boxShadow: isLive ? '0 0 5px #10b981' : 'none' }}></span>
@@ -115,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         </div>
       </div>
 
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" style={{ flexShrink: 0 }}>
         <div className="sidebar-status">
           <span className="status-dot" style={{ background: isLive ? '#10b981' : '#fbbf24' }} />
           <span>{isLive ? 'System Live & Polling' : 'Connecting...'}</span>
