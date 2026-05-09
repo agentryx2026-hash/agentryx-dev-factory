@@ -1073,6 +1073,60 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Phase 7-A surface — Memory Layer (read-only) ────────────────────
+  // Lists scopes + observations from the configured memory backend
+  // (default = filesystem at ~/Projects/agent-workspace/_factory-memory).
+  // Empty until pipeline runs / agents write observations through the
+  // service. No write path here in v1 — that's an authored flow handled
+  // by individual agents, not the admin UI.
+  if (req.url?.startsWith('/api/factory-admin/memory') && req.method === 'GET') {
+    (async () => {
+      try {
+        const { getMemoryService } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href);
+        const svc = getMemoryService();
+        const url = new URL(req.url, 'http://localhost');
+        const route = req.url.match(/^\/api\/factory-admin\/memory(\/[^?]*)?(?:\?.*)?$/)?.[1] || '';
+
+        if (route === '/scopes' || route === '') {
+          // Without a real index of scopes we walk known kinds and aggregate.
+          // Filesystem backend has listForScope but we need scope discovery.
+          // Cheap path: ask recall() for everything, then group.
+          const all = await svc.recall({ limit: 1000 });
+          const byScope = {};
+          const byKind = {};
+          for (const o of all) {
+            byScope[o.scope || 'unknown'] = (byScope[o.scope || 'unknown'] || 0) + 1;
+            byKind[o.kind || 'unknown'] = (byKind[o.kind || 'unknown'] || 0) + 1;
+          }
+          return jsonResponse(res, 200, {
+            scopes: Object.entries(byScope).map(([scope, count]) => ({ scope, count })).sort((a, b) => b.count - a.count),
+            kinds: byKind,
+            total: all.length,
+            backend: process.env.MEMORY_BACKEND || 'filesystem',
+            flag_required: 'USE_MEMORY_LAYER',
+            note: all.length === 0
+              ? 'No observations yet — agents and pipelines write here through getMemoryService(). Phase 7-A scaffold ships with a filesystem backend; populated automatically once USE_MEMORY_LAYER is on (Admin → Flags) and agents start writing.'
+              : null,
+          });
+        }
+
+        if (route === '/observations') {
+          const scope = url.searchParams.get('scope') || undefined;
+          const kind = url.searchParams.get('kind') || undefined;
+          const limit = Number(url.searchParams.get('limit')) || 100;
+          const obs = await svc.recall({ scope, kind, limit });
+          return jsonResponse(res, 200, { observations: obs, scope, kind, limit });
+        }
+
+        return jsonResponse(res, 404, { error: 'unknown memory route' });
+      } catch (err) {
+        console.error('[factory-admin/memory]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 13-B Tier B — Replay (read-only visualization) ─────────────
   // The execution path (LLM stub + cross-pipeline replay) is full 13-B and
   // needs OpenRouter credit; today we surface the read side: list past runs

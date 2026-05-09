@@ -14,7 +14,7 @@ const navItems: { page: Page; icon: string; label: string }[] = [
   { page: 'architect', icon: '👑', label: '4. Master Architect' },
   { page: 'replay', icon: '🎬', label: '5. Replay (debug)' },
   { page: 'analytics', icon: '📈', label: 'Analytics & Insights' },
-  { page: 'skills', icon: '🧠', label: 'Skill Memory' },
+  { page: 'skills', icon: '🧠', label: 'Memory Layer' },
   { page: 'system', icon: '📊', label: 'System Resources' },
   { page: 'settings', icon: '⚙️', label: 'Admin · Configuration' },
   { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
