@@ -989,17 +989,85 @@ const server = http.createServer((req, res) => {
     (async () => {
       try {
         const { CONFIG_ENTRIES } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'registry.js')).href);
-        const { snapshotConfig } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'config-store.js')).href);
+        const { readConfig, snapshotConfig } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'config-store.js')).href);
         const out = [];
         for (const entry of CONFIG_ENTRIES) {
           let value = null;
-          try { value = await snapshotConfig(entry.id); } catch {}
-          out.push({ entry, value });
+          let snapshot = null;
+          try {
+            const r = await readConfig(entry.id);
+            value = r.value;
+          } catch {}
+          try { snapshot = await snapshotConfig(entry.id); } catch {}
+          // For sensitive configs, redact value from the wire (UI shows
+          // metadata only). Founder can still edit through a write-only
+          // form when 12-B-full role-gated edits land for those.
+          if (entry.sensitive) value = { _redacted: 'sensitive — edit via separate flow' };
+          out.push({ entry, value, snapshot });
         }
         return jsonResponse(res, 200, { configs: out });
       } catch (err) {
         console.error('[factory-admin/configs]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // Phase 12-B-full — write a config (role-gated, JSON-validated, atomic, audited).
+  // Body: { value: <new full JSON>, actor_role?: 'super_admin' (default), actor?: 'founder' }
+  // Storage stays file-based for v0.0.1 (Postgres deferred to v3 when multi-tenant
+  // matters). The cognitive-engine writeConfig() does atomic temp-file + rename and
+  // schema_version checks; we layer role-gating + audit on top.
+  if (req.url?.match(/^\/api\/factory-admin\/configs\/([^/]+)$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const id = req.url.match(/^\/api\/factory-admin\/configs\/([^/]+)$/)[1];
+        const body = await readRequestBody(req);
+        const newValue = body.value;
+        if (newValue === undefined) return jsonResponse(res, 400, { error: 'body.value required' });
+
+        const { getConfigEntry, canRoleEdit } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'registry.js')).href);
+        const entry = getConfigEntry(id);
+        if (!entry) return jsonResponse(res, 404, { error: `unknown config: ${id}` });
+
+        // For v0.0.1 single-founder mode, the implicit caller role is super_admin.
+        // When real auth lands, this comes from the session.
+        const actorRole = body.actor_role || 'super_admin';
+        if (!canRoleEdit(actorRole, entry)) {
+          return jsonResponse(res, 403, { error: `role ${actorRole} cannot edit ${id} (requires ${entry.min_role_edit})` });
+        }
+
+        // Capture pre-write snapshot for audit (not the full content — just metadata)
+        const { snapshotConfig, writeConfig } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'config-store.js')).href);
+        let prior = null;
+        try { prior = await snapshotConfig(id); } catch {}
+
+        const writeResult = await writeConfig(id, newValue);
+
+        // Append audit. Do NOT log the full value — configs may contain
+        // secret references (provider keys, MCP URLs). Log the metadata only.
+        try {
+          const { appendAudit } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'audit.js')).href);
+          await appendAudit({
+            actor: body.actor || 'founder',
+            action: 'config.write',
+            target: id,
+            details: {
+              role: actorRole,
+              new_bytes: writeResult.bytes,
+              new_sha256: writeResult.sha256,
+              prior_sha256: prior?.sha256 || null,
+            },
+          });
+        } catch {}
+
+        addLog('system', `⚙️ Config ${id} updated (${writeResult.bytes} bytes)`);
+        broadcast();
+        return jsonResponse(res, 200, { id, ok: true, bytes: writeResult.bytes, sha256: writeResult.sha256 });
+      } catch (err) {
+        console.error('[factory-admin/configs POST]', err);
+        return jsonResponse(res, 400, { error: err?.message || String(err) });
       }
     })();
     return;

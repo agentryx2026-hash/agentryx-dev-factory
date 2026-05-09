@@ -155,45 +155,145 @@ const ConfigsPanel: React.FC = () => {
   const [configs, setConfigs] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // edit-mode draft text per config (raw JSON string the user is editing)
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [saveErr, setSaveErr] = useState<Record<string, string>>({});
+  const [flash, setFlash] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch('/telemetry/factory-admin/configs')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`configs returned ${r.status}`)))
-      .then(d => setConfigs(d.configs || []))
-      .catch(e => setErr(e?.message || 'failed'));
-  }, []);
+  const refresh = async () => {
+    try {
+      const r = await fetch('/telemetry/factory-admin/configs');
+      if (!r.ok) throw new Error(`configs returned ${r.status}`);
+      const d = await r.json();
+      setConfigs(d.configs || []);
+    } catch (e: any) { setErr(e?.message || 'failed'); }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const enterEdit = (id: string, value: any) => {
+    setDrafts(prev => ({ ...prev, [id]: JSON.stringify(value, null, 2) }));
+  };
+  const cancelEdit = (id: string) => {
+    setDrafts(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setSaveErr(prev => { const n = { ...prev }; delete n[id]; return n; });
+  };
+  const saveDraft = async (id: string) => {
+    setBusy(id);
+    setSaveErr(prev => { const n = { ...prev }; delete n[id]; return n; });
+    try {
+      let parsed: any;
+      try { parsed = JSON.parse(drafts[id] || '{}'); }
+      catch (e: any) { throw new Error(`invalid JSON: ${e?.message}`); }
+
+      const r = await fetch(`/telemetry/factory-admin/configs/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: parsed, actor: 'founder', actor_role: 'super_admin' }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `save failed: ${r.status}`);
+
+      setFlash(`✅ Config ${id} saved (${d.bytes} bytes, sha256 ${String(d.sha256).slice(0, 12)}…)`);
+      setTimeout(() => setFlash(null), 5000);
+      cancelEdit(id);
+      await refresh();
+    } catch (e: any) {
+      setSaveErr(prev => ({ ...prev, [id]: e?.message || 'save failed' }));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="glass-panel">
       <div className="panel-header">
         <h3 className="panel-title">⚙️ Admin configs ({configs.length})</h3>
-        <span style={{ color: '#64748b', fontSize: '0.7rem' }}>read-only in Tier B · edit forms land in 12-B-full</span>
+        <span style={{ color: '#64748b', fontSize: '0.7rem' }}>file-backed · role-gated edit · audited</span>
       </div>
       <div className="panel-body">
         {err && <div style={errorBar}>{err}</div>}
-        {configs.map(({ entry, value }) => (
-          <div key={entry.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '12px 0' }}>
-            <div onClick={() => setOpenId(openId === entry.id ? null : entry.id)} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, cursor: 'pointer', alignItems: 'baseline' }}>
-              <div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 2 }}>
-                  <code style={{ ...inlineCode, fontSize: '0.85rem' }}>{entry.id}</code>
-                  <span style={{ color: '#64748b', fontSize: '0.7rem' }}>· {entry.category} · view: {entry.view_role} · edit: {entry.edit_role}</span>
+        {flash && <div style={{ padding: 10, marginBottom: 12, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 6, color: '#34d399', fontSize: '0.8rem' }}>{flash}</div>}
+        {configs.map(({ entry, value, snapshot }) => {
+          const isOpen = openId === entry.id;
+          const isEditing = drafts[entry.id] !== undefined;
+          const isSensitive = !!entry.sensitive;
+          return (
+            <div key={entry.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '12px 0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'baseline' }}>
+                <div onClick={() => setOpenId(isOpen ? null : entry.id)} style={{ cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 2, flexWrap: 'wrap' }}>
+                    <code style={{ ...inlineCode, fontSize: '0.85rem' }}>{entry.id}</code>
+                    <span style={{ color: '#64748b', fontSize: '0.7rem' }}>
+                      · {entry.category} · view ≥ <strong style={{ color: '#cbd5e1' }}>{entry.min_role_view}</strong> · edit ≥ <strong style={{ color: '#cbd5e1' }}>{entry.min_role_edit}</strong>
+                      {entry.schema_version != null && <> · v{entry.schema_version}</>}
+                    </span>
+                    {isSensitive && <span style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', padding: '1px 6px', borderRadius: 4, fontSize: '0.6rem', fontWeight: 700 }}>SENSITIVE</span>}
+                    {snapshot && <span style={{ color: '#475569', fontSize: '0.7rem', fontFamily: 'monospace' }}>· {snapshot.bytes}B</span>}
+                  </div>
+                  <div style={{ color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.5 }}>{entry.description || entry.display_name}</div>
                 </div>
-                <div style={{ color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.5 }}>{entry.description || entry.display_name}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {isOpen && !isEditing && !isSensitive && (
+                    <button onClick={() => enterEdit(entry.id, value)} style={editBtn}>✎ Edit</button>
+                  )}
+                  {isEditing && <>
+                    <button onClick={() => cancelEdit(entry.id)} disabled={busy === entry.id} style={cancelBtn}>Cancel</button>
+                    <button onClick={() => saveDraft(entry.id)} disabled={busy === entry.id} style={saveBtn}>{busy === entry.id ? '💾...' : '💾 Save'}</button>
+                  </>}
+                  <span style={{ color: '#94a3b8', fontSize: '0.7rem', cursor: 'pointer' }} onClick={() => setOpenId(isOpen ? null : entry.id)}>{isOpen ? '▼' : '▶'}</span>
+                </div>
               </div>
-              <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>{openId === entry.id ? '▼' : '▶'}</span>
+              {isOpen && (
+                <div style={{ marginTop: 10 }}>
+                  {isEditing ? (
+                    <>
+                      <textarea
+                        value={drafts[entry.id]}
+                        onChange={e => setDrafts(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                        spellCheck={false}
+                        style={{
+                          width: '100%',
+                          minHeight: 280,
+                          padding: 12,
+                          background: 'rgba(0,0,0,0.5)',
+                          border: '1px solid rgba(168,85,247,0.4)',
+                          borderRadius: 6,
+                          color: '#e2e8f0',
+                          fontSize: '0.78rem',
+                          fontFamily: 'monospace',
+                          lineHeight: 1.5,
+                          resize: 'vertical',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      {saveErr[entry.id] && (
+                        <div style={{ marginTop: 8, padding: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 4, color: '#f87171', fontSize: '0.78rem' }}>
+                          ⚠ {saveErr[entry.id]}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 6, color: '#64748b', fontSize: '0.7rem' }}>
+                        Valid JSON required. Schema: must include <code style={inlineCode}>schema_version: {entry.schema_version}</code> if the entry declares one. Atomic write; audit entry on success.
+                      </div>
+                    </>
+                  ) : (
+                    <pre style={{ padding: 12, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, color: '#cbd5e1', fontSize: '0.75rem', overflowX: 'auto', maxHeight: 320, overflowY: 'auto', margin: 0 }}>
+                      {value ? JSON.stringify(value, null, 2) : '(no value set yet)'}
+                    </pre>
+                  )}
+                </div>
+              )}
             </div>
-            {openId === entry.id && (
-              <pre style={{ marginTop: 10, padding: 12, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, color: '#cbd5e1', fontSize: '0.75rem', overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
-                {value ? JSON.stringify(value, null, 2) : '(no value set yet)'}
-              </pre>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 };
+
+const editBtn: React.CSSProperties = { padding: '4px 12px', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.5)', color: '#c4b5fd', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer', fontWeight: 600 };
+const cancelBtn: React.CSSProperties = { padding: '4px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, color: '#cbd5e1', fontSize: '0.7rem', cursor: 'pointer' };
+const saveBtn: React.CSSProperties = { padding: '4px 12px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: '#fff', borderRadius: 4, fontSize: '0.7rem', cursor: 'pointer', fontWeight: 700 };
 
 // ─── Modules ───────────────────────────────────────────────────────────
 const ModulesPanel: React.FC = () => {
