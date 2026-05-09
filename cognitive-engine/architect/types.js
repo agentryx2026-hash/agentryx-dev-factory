@@ -225,6 +225,11 @@ export const GAP_STATUSES = Object.freeze(["open", "resolved", "dropped"]);
 
 export const FINDING_KINDS = Object.freeze([
   "info", "upgrade-available", "new-tool", "deprecation", "security",
+  // Phase 21-A.1 — produced by Seven (Tool Evaluator) when an evaluation
+  // benchmark / probe completes. Distinct from "new-tool" (just observed
+  // a tool exists) — tool_evaluation means "we measured it against our
+  // baseline, here's the data." Required to roll up into Evaluation Reports.
+  "tool_evaluation",
 ]);
 
 export const RISK_APPETITES = Object.freeze(["risk-averse", "balanced", "experimental"]);

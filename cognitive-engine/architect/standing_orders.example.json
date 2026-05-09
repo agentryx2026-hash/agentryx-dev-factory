@@ -76,9 +76,9 @@
       {
         "id": "agents",
         "weight": 4,
-        "current_state": "11 named agents: Picard (architect), Sisko (triage), Troi (research), Jane (planning), Spock (impl), Torres (refinement), Tuvok (tests), Data (QA), Crusher (architect review), O'Brien (deploy), Genovi (intake). Hermes adopted for Courier (Phase 10).",
-        "target_3mo": "Picard architect-tier output passes Tuvok at 95% (current ~80% per Phase 4 baseline). Curator pattern (from Hermes 0.12) adopted into Phase 18-B for skills health.",
-        "target_6mo": "Add a 'Q' debug specialist (multi-agent error-pattern recognition). Prompt-hot-swap consumer wired (Phase 15-A overrides → graph nodes).",
+        "current_state": "12 named agents: Picard (architect), Sisko (triage), Troi (research), Jane (planning), Spock (impl), Torres (refinement), Tuvok (tests), Data (QA), Crusher (architect review), O'Brien (deploy), Genovi (intake), and Seven (Tool Evaluator — onboarded 2026-05-09 for the R&D pipeline; SOUL.md at cognitive-engine/agents/Seven.SOUL.md). Hermes adopted for Courier (Phase 10) and being evaluated by Seven for memory/self-improvement/runtime adoption.",
+        "target_3mo": "Picard architect-tier output passes Tuvok at 95% (current ~80% per Phase 4 baseline). Curator pattern (from Hermes 0.12) adopted into Phase 18-B for skills health. Seven completes first-hand Hermes evaluation report once Phase 21-B's real dispatcher is live; founder approves or rejects each adoption point on evidence.",
+        "target_6mo": "Add a 'Q' debug specialist (multi-agent error-pattern recognition). Prompt-hot-swap consumer wired (Phase 15-A overrides → graph nodes). All 12 named agents have SOUL.md files (Seven was the first; backfill the other 11).",
         "hard_constraints": [
           "never remove a named agent without 30-day notice",
           "every named agent must have a SOUL.md identity file (Hermes pattern)"
@@ -186,6 +186,6 @@
       { "id": "vercel", "kind": "org", "name": "Vercel", "importance": "low", "url": "https://vercel.com/", "watch_frequency": "monthly", "notes": "AI SDK 6 is a Verify-portal-chat candidate; not a runtime concern" },
       { "id": "linux-foundation-aaif", "kind": "org", "name": "Linux Foundation Agentic AI Foundation (AGENTS.md / Skills standard)", "importance": "medium", "url": "https://agents.md/", "watch_frequency": "monthly", "notes": "Standards body for AGENTS.md + SKILL.md; affects Phase 18 marketplace" }
     ],
-    "notes": "Operating context (don't optimize for this period; just mind it): Security hardening lands at v3 (per D185 + D189). Findings are recorded in PROFILE.md \"Learnings\" but non-gating during v0.0.1 → v2. Beta Playground (Phase 2.76) handles new tool evaluations. The architect should propose new Lab profiles, not adopt directly to stable. Founder is the sole reviewer through v2; broader review process lands at v3."
+    "notes": "Operating context (don't optimize for this period; just mind it): Security hardening lands at v3 (per D185 + D189). Findings are recorded in PROFILE.md \"Learnings\" but non-gating during v0.0.1 → v2. Beta Playground (Phase 2.76) handles new tool evaluations. The architect should propose new Lab profiles, not adopt directly to stable. Founder is the sole reviewer through v2; broader review process lands at v3.\n\n2026-05-09 — Architect standing instruction: every monthly cycle MUST include a Hermes Agent re-evaluation section (Seven owns it). Hermes ships weekly; we evaluate monthly. Each cycle: scan releases since last cycle, re-run Seven's benchmark suite, update playground/profiles/hermes-agent/PROFILE.md Learnings log, surface a tool_evaluation finding if measurements have shifted materially. Adoption decisions remain founder-gated."
   }
 }

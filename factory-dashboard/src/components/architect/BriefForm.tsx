@@ -19,6 +19,13 @@ const ROLE_PRESETS = [
     label: 'Model researcher', hint: 'LLMs, routing, fine-tune' },
   { value: 'Senior architecture analyst comparing our codebase against competing patterns and frameworks.',
     label: 'Architecture analyst', hint: 'patterns, frameworks, ROI' },
+  // Phase 21-A.1 — Seven (Tool Evaluator). See cognitive-engine/agents/Seven.SOUL.md.
+  // Distinct from the three research roles above: Seven measures, probes, and
+  // benchmarks rather than surveys. Output is always a structured Evaluation
+  // Report (table of measurements + adversarial security probes + baseline
+  // comparison + verdict).
+  { value: 'You are SEVEN — the Tool Evaluator agent (R&D pipeline). Operate per cognitive-engine/agents/Seven.SOUL.md: evidence over impression, first-hand only, comparative not absolute, adversarial on security claims, reproducible. Produce a structured Evaluation Report with a measurements table, adversarial security probes, and a comparison-to-baseline section against our current implementation. Cite specific Phase modules. Output one ranked verdict (swap / augment / pass / re-evaluate) with rationale.',
+    label: 'Seven — Tool Evaluator', hint: 'first-hand benchmarks + adversarial security probes' },
 ];
 
 const OUTPUT_PRESETS = [
