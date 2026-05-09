@@ -1,17 +1,28 @@
-# B-Tier Marathon — Path from v0.0.1 to R1
+# B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-04-24 (immediately after Phase 20-A close + cross-phase composition smoke)
-**Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and R1 cutover.
+**Snapshot date**: 2026-05-09 (Phase 2.76 close — Beta Playground established + release-band schedule revised)
+**Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
 
-This is a living doc. Update it after every B-subphase ships.
+This is a living doc. Update it after every B-subphase ships, after every Lab profile graduation, and at every release-band cut.
 
-Read this **after** [02_Current_Architecture.md](02_Current_Architecture.md) (where we are) and [Master_Factory_Architect.md](../Master_Factory_Architect.md) (where we're going). This file is the bridge.
+Read this **after** [02_Current_Architecture.md](02_Current_Architecture.md) (where we are) and [Master_Factory_Architect.md](../Master_Factory_Architect.md) (where we're going). This file is the bridge between A-tier complete and v3 production.
+
+## Release-band schedule (per Phase 2.76 D189)
+
+| Version | Maps to architectural band | Target | What happens here |
+|---|---|---|---|
+| **v0.0.1** | pre-R1 | now (2026-05-09) | A-tier complete + Beta Playground active; internal R&D |
+| **v1** | R1 | mid-2026 (~2-3 months) | First real factory run; ≥3 Lab profiles graduated; ≥1 B-tier cohort closed |
+| **v2** | R2 | mid-late 2026 (~4-5 months) | Advanced internal testing; first external pilot users (no production stakes); UI sprint complete |
+| **v3** | R3 | **2026-Q4 / 2027-Q1 (~5-6 months)** | **Production-grade; first paid customer projects; security hardening pass; Stripe billing live** |
+
+The B-tier marathon spans v0.0.1 → v3. Lab profile graduations are *parallel* to B-tier work — a Lab graduation closes a roadmap row by adopting an external solution; a B-tier ship closes a row by hand-rolling our own.
 
 ---
 
 ## 1. The shape of the marathon
 
-A-tier shipped 16 modules; **17 deferred B-subphases** are what stand between v0.0.1 and R1. They cluster into 4 cohorts by blocker:
+A-tier shipped 16 modules. **17 deferred B-subphases** + **5 active Beta Playground profiles** are what stand between v0.0.1 and v3 production. The B-subphases cluster into 4 cohorts by blocker; Lab profiles run in parallel:
 
 | Cohort | Phases | Blocker | Unlock unit | Cost to unlock |
 |---|---|---|---|---|
@@ -21,6 +32,10 @@ A-tier shipped 16 modules; **17 deferred B-subphases** are what stand between v0
 | **C4** | 20-B | Stripe + S3/R2 + external pen-test | Stripe acct + cloud bucket + security budget | ~$5-15K (pen test) + ongoing infra |
 
 Each cohort unlocks independently. Order is a strategy choice, not a technical dependency (with one exception: 14-B handler registration is a soft prereq for 16-B and 17-B, both of which run async via the queue).
+
+**Beta Playground in parallel** (Phase 2.76, D181): 5 active profiles with Tier 1 (hermes-agent, honcho, deep-agents, anthropic-agent-teams) targeting graduation to stable as `exploring` → `testing` → `adopting` over the next 1-3 monthly reviews. Tier 2 watching profile (thinking-machines-tinker) tracks Mira Murati's lab. **Lab graduations directly resolve B-subphases**: e.g., honcho adoption closes Phase 7-E; deep-agents adoption shapes Phase 9 implementation; hermes-agent capability adoptions slot into 7-E (memory), 9 (Kanban patterns), 10 (Courier), 18-B (Curator).
+
+**See `playground/README.md` for the Lab roster and `pmd/.../Phase_2.76_Lab_and_Strategy_Update_2026_05/` for the formal Decisions (D181-D189) authorising this parallel track.**
 
 ---
 
@@ -210,6 +225,8 @@ These two unlock the most downstream work. Resolving them early shortens the mar
 
 Doing 6-B and 14-B first means **10 of 17 B-subphases become directly actionable** (7 from 6-B + 3 from 14-B; some overlap).
 
+**Parallel critical path from the Lab**: Honcho adoption (Phase 7-E) is a near-zero-cost win that compresses Phase 7's roadmap. Hermes Kanban pattern adoption shapes Phase 9 to such a degree that we may collapse 9-A scope. Both are gated by Lab graduation timeline, not by credentials or budget.
+
 ---
 
 ## 5. Decision points along the way
@@ -227,25 +244,38 @@ Things to revisit as B-tier ships:
 
 ---
 
-## 6. Going-public checklist (gate to v1.0)
+## 6. Going-public checklist (gate to v3 production)
 
-Before flipping the public-release flag, every box below must be checked:
+Before cutting v3 (first paid customer projects), every box below must be checked. Per Phase 2.76 D189, security hardening lands in this gate (deferred from v0.0.1 → v2 to here).
 
-- [ ] All 17 B-subphases shipped (or explicitly decided to defer past v1.0)
+**Substrate gates**:
+- [ ] All 17 B-subphases shipped (or explicitly decided to defer past v3)
+- [ ] At least 3 Lab profiles graduated to stable
 - [ ] Composition smoke (`integration/composition-smoke.js`) passes
-- [ ] Per-module smokes all pass (16 modules × respective assertion counts)
+- [ ] Per-module smokes all pass (16+ modules × respective assertion counts)
+- [ ] Lab runner produces a comparison report stable vs adopted-experimental for each graduated profile
+
+**Functional gates**:
 - [ ] At least 3 real customer projects run end-to-end (pre_dev → dev → post_dev → delivered)
 - [ ] Cost dashboard shows real spend per tenant
 - [ ] Verify portal handled at least one round-trip feedback cycle on a real bundle
 - [ ] Backup + restore tested (snapshot → drop workspace → restore from manifest → integration smoke passes again)
+
+**Security hardening (now lands at v3 per D185+D189)**:
 - [ ] Pen test report received + Sev-1/Sev-2 findings closed
-- [ ] CHANGELOG.md generated; migration guide reviewed
+- [ ] Hermes hardened config: container backend + WRITE_SAFE_ROOT + explicit allowlists + no YOLO + secrets chmod 600
+- [ ] Skill provenance signing wrapper around marketplace installs
+- [ ] Audit log every external message + every tool approval (Phase 10/12 substrate already supports)
+- [ ] All accumulated PROFILE.md "Security findings" reviewed and addressed or accepted-with-reason
+
+**Release ceremony gates**:
+- [ ] CHANGELOG.md generated from git log; migration guide reviewed
 - [ ] Marketing site live with link to public sign-up
 - [ ] Stripe sandbox green-light + production webhook configured
 - [ ] On-call rotation calendar published
 - [ ] Public announcement post drafted + reviewed by founder
 
-When all 12 boxes are checked: cut `v1.0.0` tag, post the announcement, watch the cost panel.
+When all boxes checked: cut `v3.0.0` tag, post the announcement, watch the cost panel.
 
 ---
 
@@ -254,10 +284,13 @@ When all 12 boxes are checked: cut `v1.0.0` tag, post the announcement, watch th
 | Rev | Date | Trigger | Sections |
 |---|---|---|---|
 | v1 | 2026-04-24 | Phase 20-A close + cross-phase composition smoke; all 16 A-tier modules shipped | all |
+| v2 | 2026-05-09 | Phase 2.76 close — Beta Playground established + release-band schedule revised (v0.0.1 → v3 ~5-6 months) | header (release-band table); §1 (Lab parallel track callout); §4 (Lab critical-path additions); §6 (going-public checklist now gates v3 not v1; security hardening section added) |
 
 This document should be revised when:
 - A B-subphase ships (move it from "missing" to a "shipped" log; update sequencing)
+- A Lab profile graduates to stable (fold its phase row into "shipped"; cite Phase Decision)
 - A new blocker emerges (add to cohort table)
 - Pricing changes (revise cost estimates)
-- The R1 cutover criteria change (revise §6 checklist)
+- The v3 cutover criteria change (revise §6 checklist)
 - A new external dep is adopted (add row to relevant cohort)
+- Release-band schedule is renegotiated (update header table; bump to next rev)

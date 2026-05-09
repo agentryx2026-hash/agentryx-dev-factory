@@ -1,26 +1,30 @@
 # Agentryx Dev Factory — Task Status Snapshot
 
-**Last updated**: 2026-04-23
+**Last updated**: 2026-05-09 (Phase 2.76 close)
 **Snapshot purpose**: single-page view of every phase's status. Read this first to know exactly what's built, where we are, and what's next. Per-phase detail lives in each `Phase_NN_*/` folder — this doc indexes them.
 
 **How to keep this fresh**: update this file at every phase close (alongside the per-phase `Status.md` and `Lessons.md`). The "Last updated" date and the per-phase status row are the two things that must move. Don't let them drift.
 
 ---
 
-## Headline numbers (as of 2026-04-23)
+## Headline numbers (as of 2026-05-09)
 
 | Metric | Value |
 |---|---|
-| Total phase entries (incl. 1.5, 2.5, 2.75) | 24 |
-| Fully closed (foundation band) | **11** (0, 1, 1.5, 2, 2.5, 2.75, 3, 4) |
+| Total phase entries (incl. 1.5, 2.5, 2.75, 2.76) | 25 |
+| Fully closed (foundation band + strategy phases) | **13** (0, 1, 1.5, 2, 2.5, 2.75, 2.76, 3, 4) |
 | A-tier scaffolding shipped | **16** — 100% coverage (5-A through 20-A) ✅ |
-| Sketch only (not started) | **0** (roadmap complete) |
+| Beta Playground active profiles | **5** (4 exploring + 1 watching) |
+| Sketch only (not started) | **0** (roadmap complete; Lab handles new tools as profiles) |
 | B-tier deferred (production wiring) | 17 subphases pending across phases 5-20 |
-| Smoke-test assertions passing | **947** across 16 scaffolded modules |
-| LLM spend across all scaffolding | **$0.00** |
-| Phase tags on origin (rollback anchors) | 24 |
+| Smoke-test assertions passing | **948** per-module + **73** cross-phase = **1021 total** (was 947+73; +1 marketplace assertion at 2.76 close) |
+| Lab baseline assertions (composition-smoke via runner.js) | 73 |
+| LLM spend across all scaffolding + Lab | **$0.00** |
+| Phase tags on origin (rollback anchors) | 25 |
+| Decisions logged | D1–D189 |
+| Master Factory Architect revision | r0.4 (2026-05-09) |
 
-**Net release-band position**: v0.0.1 **A-tier complete**. All 20 phase slots have substrate; all scaffolding shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close. Next band (R1) arrives by resolving the 17 deferred B-subphases, not by scaffolding new modules.
+**Net release-band position**: v0.0.1 **A-tier complete + Beta Playground active**. All 20 phase slots have substrate; all scaffolding shipped behind feature flags defaulted off — production behavior is unchanged from Phase 4 close. Next band (v1, target ~2-3 months) arrives by resolving B-subphases AND graduating Lab profiles to stable. Production target (v3) is **~5-6 months out** per Phase 2.76 D189.
 
 ---
 
@@ -43,6 +47,7 @@
 | **2** | LLM Router | ✅ closed | LiteLLM + OpenRouter switchable, fallback chains, per-call $ capture, compare mode, cost panel | — | — |
 | **2.5** | Key Console (B7-lite) | ✅ closed | Browser key mgr, AES-256-GCM at rest, audit log; eliminated 7-leak chat-paste pattern | — | — |
 | **2.75** | Hermes Evaluation | ✅ closed | Hybrid-adoption verdict (D74): Hermes for Courier (Ph10) + skills (Ph18); patterns for Memory (Ph7) + Self-improve (Ph15) | — | — |
+| **2.76** | Beta Playground + Strategy Update 2026-05 | ✅ closed | Beta Playground established as permanent capability (D181); Hermes footprint expanded (D182); 5 Lab profiles seeded (hermes-agent, honcho, deep-agents, anthropic-agent-teams, thinking-machines-tinker); marketplace `experimental` category (D188); release-band schedule v0.0.1→v3 ~5-6 months (D189); D181-D189 | Lab promotions (Tier 1 → testing) at next monthly review | None — Lab is operational |
 | **3** | Intake (Genovi) | ✅ closed | New first agent. SRS/FRS/PRD → structured requirement extraction (library) | — | — |
 | **4** | PMD Template Registry | ✅ closed | 25 PMD docs in `pmd-registry.json`; Genovi integrated into `pre_dev_graph.js`; `PRE_DEV_USE_GRAPH` feature flag | — | — |
 | **5** | MCP Tool Plane | 🟡 partial (5-A) | `cognitive-engine/mcp/`: client, bridge, configs, smoke-test (live MCP server spawn proven) | 5-B: graph nodes import from bridge under `USE_MCP_TOOLS` | OpenRouter credit (E2E LLM validation) |
@@ -64,9 +69,29 @@
 
 ---
 
+## Beta Playground (added Phase 2.76, 2026-05-09)
+
+**Permanent capability** (D181): pluggable experimentation against the stable substrate. 5 active profiles. See [`playground/README.md`](../../../playground/README.md).
+
+| # | Profile | Status | Target phase | Latest learning |
+|---|---|---|---|---|
+| 1 | hermes-agent | exploring | 7-E (Honcho), 9 (Kanban patterns), 10 (Courier), 18-B (Curator) | 2026-05-09: profile created; v0.13 ships durable Kanban |
+| 2 | honcho | exploring | Phase 7-E candidate | 2026-05-09: profile created; MIT, separable from Hermes |
+| 3 | deep-agents | exploring | Phase 9 candidate | 2026-05-09: profile created; same vendor as LangGraph runtime |
+| 4 | anthropic-agent-teams | exploring | Phase 9 alt candidate | 2026-05-09: profile created; experimental in Claude Code |
+| 5 | thinking-machines-tinker | watching | Phase 15-C/D (when Tinker GA) | 2026-05-09: profile created; Tinker private beta |
+
+**Cadence** (D187): monthly review (last Friday) + hard re-evaluation at every release-band cut.
+
+**Tier 2 — adding next month**: Inspect AI · Mastra · DSPy + BAML.
+
+**Tier 3 — research-only watching list** (no Lab seat yet): Strands · Vercel AI SDK 6 · A2A · Browser Use / Stagehand · E2B / Daytona / Modal · Spec Kit / BMAD-METHOD / Factory.ai · OpenAI Agents SDK · Cursor 3 · Devin / Aider / OpenHands · OpenSpec · Replit Agent v3 · Lovable.dev · Claude Code as a meta-runtime study.
+
+---
+
 ## B-tier deferral cohorts
 
-The 11 deferred B-subphases group into 3 clear blockers. Once a blocker clears, the cohort can ship together.
+The 17 deferred B-subphases group into 4 clear blockers. Once a blocker clears, the cohort can ship together. Lab profile graduations run in parallel and may resolve some B-subphases by adoption rather than by hand-rolled implementation.
 
 ### Cohort 1 — needs OpenRouter credit / TTS credentials (7 phases)
 Each requires running real LLM or TTS pipelines end-to-end to validate.
@@ -107,9 +132,13 @@ Won't matter until factory operates at higher volume.
 
 ## What's next
 
-**🎉 100% A-tier coverage achieved.** All 20 phase slots have substrate. No more greenfield scaffolding — R1 cutover is a B-tier marathon.
+**Beta Playground active + 100% A-tier coverage achieved.** Phase 2.76 closed 2026-05-09. The next moves are parallel:
 
-The remaining work lives in 17 deferred B-subphases across 4 cohorts:
+1. **B-tier marathon** — 17 deferred subphases across 4 cohorts
+2. **Lab graduations** — Tier 1 profiles transition `exploring` → `testing` at next monthly review (last Friday of May)
+3. **Strategic watching** — Mira Murati / Thinking Machines Lab tracked in `thinking-machines-tinker` profile; Tier 2 profiles added in June
+
+The B-subphase work lives in 4 cohorts:
 
 - **C1 — OpenRouter + TTS credentials (7 phases, ~\$15-40 LLM spend)**: 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B
 - **C2 — UI + user creds (8 phases)**: 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B
@@ -130,6 +159,7 @@ Best next moves, depending on available inputs:
 
 - **PR flow** for every change since 5-A. No direct push to `main`. Squash-merge via `gh pr merge --squash --delete-branch`. Branch + tag every phase close. (See `D.Roadmap/README.md` "Git workflow" section for the 7-step sequence.)
 - **Pre-phase code survey** is mandatory before scoping any phase (Phase 4 Lesson #1). Catches `memory.js` already exists, `llm_calls` table already exists, etc. Saves rewrites.
+- **Beta Playground** (since Phase 2.76, 2026-05-09): pluggable experimentation against the stable substrate. Three-stage pipeline `Research/` → `playground/` → `cognitive-engine/`. Monthly review cadence. See `playground/README.md`.
 - **Scaffolding pattern** (proven 16× across 5-A → 20-A, codified in `03_Scaffolding_Pattern.md`):
   - `types.js` → `store/service` → `backend(s)` → `smoke-test` → `README` → 4 phase docs
   - Library lives alongside existing code, never replaces it
@@ -152,7 +182,8 @@ Best next moves, depending on available inputs:
 - **Code modules** (in `agentryx-factory` repo, mirrored from this PMD as needed):
   - Foundation: `cognitive-engine/{tools,memory,graph,*_graph}.js`, `llm-router/`, `factory-dashboard/`, `server/admin-keys.mjs`
   - Phase 5+: `cognitive-engine/{mcp,artifacts,memory-layer,parallel,verify-integration,cost-tracker,courier,admin-substrate,replay,concurrency,self-improvement,training-gen,training-videos,marketplace,customer-portal,release}/`
-- **Phase tags on origin**: `git tag -l | grep phase-` (24 anchors)
+  - Beta Playground: `playground/{README.md,PROFILE_TEMPLATE.md,runner.js,profiles/,results/}` (since 2026-05-09)
+- **Phase tags on origin**: `git tag -l | grep phase-` (25 anchors after `phase-2.76-closed` lands)
 - **GitHub milestones**: 18 milestones, 8 closed (foundation), 10 open (scaffolded but partial)
 
 ---

@@ -12,16 +12,29 @@
 
 The Agentryx Dev Factory goes through five visible release bands. Each band has a distinct **adoption posture** toward external tools:
 
+### Architectural release bands (R1-R5)
+
 | Band | Horizon | Posture | Primary risk |
 |---|---|---|---|
-| **v0.0.1** (current) | weeks 0-6 | **Exploratory** — install every reasonable tool, compare, decide. Configurability is an absolute principle. | Analysis paralysis; over-speccing |
-| **R1** (target: week 10) | weeks 6-12 | **Ecosystem-first** — use proven external tools wherever they exist (Hermes, agentskills, MCP, Paperclip, etc.). Custom-build ONLY where nothing fits. Ship the first real project end-to-end. | External dependencies locking us in |
-| **R2** (month 4-6) | months 3-6 | **Production hardening** — multi-tenant, billing, scaling, observability. Same external deps as R1. | Scaling without changing deps |
-| **R3** (month 7-9) | months 6-9 | **Selective replacement** — the 1-2 external tools that showed real friction get replaced with our own. Others stay. | Mid-flight architecture changes |
-| **R4** (month 10-12) | months 9-12 | **Vertical integration** — most of the brain-layer external deps have our own equivalents. External providers remain for what they uniquely do (LLM inference, compute). | Build-everything syndrome |
-| **R5** (month 13+) | year 2+ | **Factory supremacy** — self-hostable stack with zero external SaaS in the control plane. External usage is purely "we outsource what isn't strategic." | Maintenance cost of owning everything |
+| **v0.0.1** (current) | A-tier 100% complete (2026-04-24) | **Exploratory + scaffolding** — install every reasonable tool behind a switch; build all 20 phase substrates. | Analysis paralysis; over-speccing |
+| **R1** (≈ v1) | first in-house testing | **Ecosystem-first** — use proven external tools wherever they exist. Beta Playground promotes ≥3 tools to stable. First real factory pipeline run end-to-end. | External dependencies locking us in |
+| **R2** (≈ v2) | advanced internal testing | **Production hardening** — multi-tenant, billing, scaling, observability. Same external deps as R1. First external pilot users (no production stakes). | Scaling without changing deps |
+| **R3** (≈ v3 production) | first paid customers | **Selective replacement** — 1-2 external tools that showed real friction get replaced with our own. Others stay. **Security hardening pass lands here** (Hermes ALLOW-ALL → hardened config; signed manifest provenance; pen test). | Mid-flight architecture changes |
+| **R4** | (post-R3) | **Vertical integration** — most brain-layer external deps have our own equivalents. External providers remain for what they uniquely do (LLM inference, compute). | Build-everything syndrome |
+| **R5** | year 2+ | **Factory supremacy** — self-hostable stack with zero external SaaS in the control plane. External usage is purely "we outsource what isn't strategic." | Maintenance cost of owning everything |
+
+### User-facing version schedule (revised 2026-05-09 per Phase 2.76 D189)
+
+| Version | Maps to | Target | Posture |
+|---|---|---|---|
+| **v0.0.1** | pre-R1 | now | A-tier complete; internal R&D |
+| **v1** | R1 | mid-2026 (~2-3 months) | In-house testing; B-tier integrations + first Lab graduations |
+| **v2** | R2 | mid-late-2026 (~4-5 months) | Advanced internal testing; first external pilot users |
+| **v3** | R3 | **2026-Q4 / 2027-Q1 (~5-6 months)** | **Production-grade; first paid customer projects; security hardening pass** |
 
 **Core insight**: we don't skip straight to R4. We **earn the right** to replace an external tool by having suffered its actual failure modes. This document is the contract that describes what we replace it WITH.
+
+**Security gating discipline**: per Phase 2.76 D185+D189, security findings (e.g., Hermes' ALLOW-ALL default, skill-poisoning vector, no signed provenance) are **recorded in PROFILE.md "Learnings"** during v0.0.1 → v2 but do NOT gate Lab work. Hardening pass is scheduled at the v2 → v3 boundary.
 
 ---
 
@@ -325,6 +338,36 @@ After r0.2 was written, Phases 19-A (Customer Portal) and 20-A (Public Release) 
 
 **Consolidation phases work under the same A-tier recipe** (Phase 20-A D173). Phase 20-A was the first consolidation phase — it aggregates over stores built by 15 prior phases and invents no new storage primitive. The hypothesis going in: would the 7-artifact recipe + 8 conventions from `03_Scaffolding_Pattern.md` (designed during greenfield phases) generalise to integration work? Answer: yes, with no modification. Same file count (types + 5 capabilities + orchestrator + smoke + README), same line budgets (~1000 LOC excluding smoke), same decision-doc format. The pattern is **content-agnostic**: it shapes the artifacts produced, not the problem domain. This means R1+ B-tier phases that wire existing A-tier substrate to external APIs (Stripe, ElevenLabs, ffmpeg) can also use the recipe as a checklist — the recipe doesn't care whether the work is greenfield or integration.
 
+### 11.8 Beta Playground as permanent capability (added in r0.4)
+
+After Phase 2.76 (2026-05-09), the factory has a third top-level concern alongside `cognitive-engine/` (stable substrate) and `Research/` (landscape evidence): **`playground/` — the Beta Playground.**
+
+The Lab is the operational answer to a strategic problem: **the AI ecosystem moves faster than any single team can absorb.** Phase 2.75's Hermes verdict (Courier-only) was rendered insufficient ~3 weeks later when Hermes shipped multi-agent Kanban + Honcho memory + Curator. Predicting which tool wins is a losing bet; *active testing against a baseline* is the winning bet.
+
+**Three-stage research → adopt pipeline:**
+
+```
+Research/                 playground/                 cognitive-engine/
+─────────                 ───────────                 ─────────────────
+Landscape scans   ──►   Hands-on profiles    ──►    Stable substrate
+(what's out there)      (what we tried)              (what we adopted)
+Evidence                 Hands-on data                Production-direction
+```
+
+Each stage feeds the next. Stage transitions are formal Decisions in `Phase_NN_Decisions.md`; nothing graduates without measurement.
+
+**Profile lifecycle**: `watching` → `exploring` → `testing` → `adopting` (graduates) / `rejecting` (archived as institutional memory) / `parked` (revisit monthly).
+
+**Cadence**: monthly review + hard re-evaluation at every release-band cut (v0.0.1 → v1 → v2 → v3). Drop-in welcome anytime for alpha / beta tools.
+
+**Marketplace integration** (D188): `cognitive-engine/marketplace/types.js::MODULE_CATEGORIES` gained a tenth value, `"experimental"`. Lab profiles register here. Adoption = recategorisation in the same store with append-only audit log.
+
+**Strategic implication beyond evaluation**: per the founder's framing 2026-05-09, the Lab is also **the launching pad for our own innovations** when external tools fall short. Profile that fails our needs but reveals a clear pattern is the seed of an internal module. "We might build the next Hermes or next OpenCLAW if we keep building and testing over the entire dev factory."
+
+**Initial roster** (Phase 2.76 close): hermes-agent (Tier 1 exploring) · honcho (Tier 1 exploring) · deep-agents (Tier 1 exploring) · anthropic-agent-teams (Tier 1 exploring) · thinking-machines-tinker (Tier 2 watching). Tier 2 expansion (Inspect AI / Mastra / DSPy / BAML) ships next month.
+
+**Documents**: see `playground/README.md` for operational details; see `pmd/.../D.Roadmap/Phase_2.76_Lab_and_Strategy_Update_2026_05/` for the formal Plan + Decisions (D181-D189) + Status + Lessons.
+
 ### 11.7 Cross-phase composition smoke validates the integration story
 
 After A-tier 100% coverage, a `cognitive-engine/integration/composition-smoke.js` was added — a 73-assertion end-to-end smoke that walks one customer journey through all 16 A-tier modules in one workspace. It validates what per-module smokes don't:
@@ -366,6 +409,7 @@ The marathon doc identifies **6-B (artifact-store dual-write) and 14-B (queue ha
 | r0.1 | 2026-04-21 | claude-opus-4-7 | Initial draft — first architectural vision document after Phase 2.75 verdict | all |
 | r0.2 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 18-A close — 10 additional A-tier modules shipped since r0.1; chronicle checkpoint added | §10, §11 (new), §12 (was §9 renumbered) |
 | r0.3 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 20-A close — A-tier 100% coverage achieved; cross-phase composition smoke shipped (1020 total assertions); B-tier marathon path documented | §10 (cross-ref to 04_B_Tier_Marathon), §11.7 (new — 19-A and 20-A insights), §13 (new — bridge to marathon doc) |
+| r0.4 | 2026-05-09 | claude-opus-4-7 (1M context) | Phase 2.76 — Beta Playground capability + 2026-05 landscape scan + Hermes footprint expansion + release-band schedule update (v0.0.1 → v3 production at ~5-6 months) | §1 release-band table (architectural + user-facing version schedule), §10 (Research/ + playground/ cross-refs), §11.8 (new — Beta Playground architecture), §12 revision log |
 
 Future revisions expected at:
 - End of Phase 20 (R1 close) — will rewrite §5 with actual data

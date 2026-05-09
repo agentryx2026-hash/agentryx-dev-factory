@@ -232,28 +232,69 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - "What's left before R1?" → `Dev_Task_list_Update.md` → "What's next" + cohort tables
 
 **By git**:
-- Every phase close is a PR + tag. `git show phase-20a-closed` is the authoritative state snapshot at A-tier completion.
+- Every phase close is a PR + tag. `git show phase-2.76-closed` is the authoritative state snapshot at A-tier completion + Beta Playground established.
 - Every module's smoke test can be rerun: `node cognitive-engine/<module>/smoke-test.js`.
 - Full per-module regression: `for m in <list>; do node cognitive-engine/$m/smoke-test.js || exit 1; done`.
-- **Cross-phase composition smoke**: `node cognitive-engine/integration/composition-smoke.js` — exercises all 16 A-tier modules in one workspace end-to-end (73 assertions). Run after any change to a shared boundary.
+- **Cross-phase composition smoke**: `node cognitive-engine/integration/composition-smoke.js` — exercises all 16 A-tier modules in one workspace end-to-end (73 assertions).
+- **Beta Playground baseline**: `node playground/runner.js` — runs the composition-smoke against the stable baseline, writes JSON to `playground/results/`. Future variant runs swap experimental modules in.
 
 ---
 
-## 8. What v0.0.1 is NOT (deliberate absences)
+## 8. The Beta Playground (added in Phase 2.76)
+
+After Phase 2.76 (2026-05-09), the factory has a third top-level concern alongside `cognitive-engine/` and `pmd/.../Research/`:
+
+```
+agentryx-factory/
+├── cognitive-engine/        ← stable substrate (16 A-tier modules)
+├── playground/              ← Beta Playground — pluggable experimentation
+│   ├── README.md            ← what it is, lifecycle, cadence, roster
+│   ├── PROFILE_TEMPLATE.md  ← per-tool documentation template
+│   ├── runner.js            ← stable + experimental variant comparison
+│   ├── profiles/            ← 5 profiles seeded: hermes-agent, honcho, deep-agents,
+│   │                          anthropic-agent-teams, thinking-machines-tinker
+│   └── results/             ← per-run JSON output
+└── pmd/.../Research/        ← landscape scans (already shipped)
+```
+
+**Three-stage research → adopt pipeline**:
+
+```
+Research/  ──►  playground/profiles/  ──►  cognitive-engine/
+(evidence)      (hands-on data)              (production-direction)
+```
+
+**Marketplace integration** (D188): `MODULE_CATEGORIES` extended to 10 (added `experimental`). Lab profiles register with `category: "experimental"`. Adoption = recategorisation in the same store.
+
+**Profile lifecycle**: `watching` → `exploring` → `testing` → `adopting` (graduates) / `rejecting` (archived) / `parked` (revisit monthly).
+
+**Cadence** (D187): monthly review + hard re-evaluation at every release-band cut (v0.0.1 → v1 → v2 → v3).
+
+**Why this is in `02_Current_Architecture.md` and not just in Phase 2.76 docs**: the Beta Playground is permanent infrastructure now — anyone reading the Current Architecture doc to onboard mid-flight needs to know it exists alongside `cognitive-engine/`.
+
+See `playground/README.md` for operational details; `pmd/.../D.Roadmap/Phase_2.76_Lab_and_Strategy_Update_2026_05/` for the formal Plan + Decisions (D181-D189).
+
+---
+
+## 9. What v0.0.1 is NOT (deliberate absences)
 
 - **Not a running production factory.** All B-tier is deferred. The pipeline that Phase 1 restored (pre_dev / dev / post_dev graphs) still runs the Phase-4-era behavior. Scaffolded modules are libraries waiting to be wired.
 - **Not a multi-tenant system.** Single workspace, single admin, no billing (Phase 19/20 territory).
 - **Not an external SaaS.** Every module is filesystem-backed. Cloud upload, signed manifests, remote registries are all 18-B / 19 / 20.
 - **Not network-dependent.** Every smoke test runs offline with zero external API calls. Deterministic.
+- **Not security-hardened for production.** Per Phase 2.76 D185 + D189, security findings during Lab work (e.g., Hermes ALLOW-ALL, skill-poisoning) are recorded but non-gating during v0.0.1 → v2. Hardening pass scheduled at v2 → v3 boundary.
 
 ---
 
-## 9. Document revision log
+## 10. Document revision log
 
 | Rev | Date | Trigger | Sections touched |
 |---|---|---|---|
 | v1 | 2026-04-24 | Post Phase 18-A close; first chronicle of the v0.0.1 scaffold bundle | all |
+| v2 | 2026-04-24 | Post Phase 20-A close — added 19-A + 20-A to module table; numbers refreshed; cross-phase composition smoke added | §2, §3, §6, §7 |
+| v3 | 2026-05-09 | Phase 2.76 — Beta Playground established as permanent infrastructure; release-band schedule updated; flag table extended | new §8 (Beta Playground); §7 git pointer updated; §9 (renumbered, "deliberate absences" — added security gating posture) |
 
 Future revisions expected at:
-- Each new phase close that meaningfully shifts the composition graph (Phase 19 closes, Phase 20 closes)
+- Each new phase close that meaningfully shifts the composition graph (Phase 19/20 closes, Phase 2.76 — done)
+- After ≥3 Lab profile graduations → fold them into the module table
 - R1 cutover — this file gets replaced by a "R1 Current Architecture" equivalent
