@@ -1174,6 +1174,38 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Phase 7-E — Sync memory observations from artifacts ─────────────
+  // Founder-triggered. Walks <agent-workspace>/<project>/_artifacts/ via
+  // walkArtifacts(), groups by run_id, writes one `lesson` observation per
+  // run (idempotent via _sync_state.json) + one `pattern` per agent
+  // (refreshed each sync). Lights up the Memory Layer page once 6-B
+  // produces real artifacts.
+  if (req.url === '/api/factory-admin/memory/sync-from-artifacts' && req.method === 'POST') {
+    (async () => {
+      try {
+        const [{ getMemoryService }, { syncFromArtifacts }] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'sync-from-artifacts.js')).href),
+        ]);
+        // Same agent-workspace path Replay uses
+        const AGENT_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+        const memSvc = getMemoryService();
+        const result = await syncFromArtifacts({
+          workspaceRoot: AGENT_WORKSPACE,
+          memoryService: memSvc,
+          memoryRootDir: memSvc.rootDir,
+        });
+        addLog('system', `🧠 Memory sync: ${result.synced} observations written (${result.skipped} skipped, ${result.artifacts_scanned} artifacts scanned)`);
+        broadcast();
+        return jsonResponse(res, 200, result);
+      } catch (err) {
+        console.error('[factory-admin/memory/sync-from-artifacts]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 7-A surface — Memory Layer (read-only) ────────────────────
   // Lists scopes + observations from the configured memory backend
   // (default = filesystem at ~/Projects/agent-workspace/_factory-memory).

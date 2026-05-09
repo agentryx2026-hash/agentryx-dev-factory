@@ -61,6 +61,9 @@ const SkillMemory: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncFlash, setSyncFlash] = useState<string | null>(null);
+
   const refreshScopes = async () => {
     try {
       const r = await fetch('/telemetry/factory-admin/memory/scopes');
@@ -74,6 +77,23 @@ const SkillMemory: React.FC = () => {
     finally { setLoading(false); }
   };
   useEffect(() => { refreshScopes(); }, []);
+
+  const syncFromArtifacts = async () => {
+    setSyncing(true);
+    setSyncFlash(null);
+    try {
+      const r = await fetch('/telemetry/factory-admin/memory/sync-from-artifacts', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `sync returned ${r.status}`);
+      setSyncFlash(`✅ Synced ${d.synced} observations (${d.skipped} skipped · ${d.artifacts_scanned} artifacts scanned · ${d.runs_processed} runs · ${d.agents_processed} agents)`);
+      setTimeout(() => setSyncFlash(null), 8000);
+      await refreshScopes();
+    } catch (e: any) {
+      setErr(e?.message || 'sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const loadObservations = async (scope: string | null, kind: Kind | null) => {
     try {
@@ -107,10 +127,14 @@ const SkillMemory: React.FC = () => {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ color: '#64748b', fontSize: '0.7rem' }}>backend:</span>
           <code style={inlineCode}>{meta.backend || 'filesystem'}</code>
+          <button onClick={syncFromArtifacts} disabled={syncing} style={{ padding: '6px 12px', background: syncing ? 'rgba(100,116,139,0.2)' : 'linear-gradient(135deg, #a855f7, #7c3aed)', border: 'none', borderRadius: 6, color: '#fff', fontSize: '0.7rem', cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+            {syncing ? '🔄 Syncing…' : '🔄 Sync from artifacts'}
+          </button>
           <button onClick={refreshScopes} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, color: '#cbd5e1', fontSize: '0.7rem', cursor: 'pointer' }}>↻ Refresh</button>
         </div>
       </div>
 
+      {syncFlash && <div style={{ padding: 10, marginBottom: 12, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 6, color: '#34d399', fontSize: '0.8rem' }}>{syncFlash}</div>}
       {err && <div style={errorBar}>{err}</div>}
 
       {/* Empty-state banner */}
