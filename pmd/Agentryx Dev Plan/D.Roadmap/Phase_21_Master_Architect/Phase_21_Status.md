@@ -1,7 +1,8 @@
-# Phase 21 — Status: 21-A COMPLETE ✅  (21-B + Phase 22 DEFERRED)
+# Phase 21 — Status: 21-A + 21-A.1 COMPLETE ✅  (21-B + Phase 22 DEFERRED)
 
 **Phase started**: 2026-05-09
-**Phase 21-A closed**: 2026-05-09
+**Phase 21-A closed**: 2026-05-09 (substrate)
+**Phase 21-A.1 closed**: 2026-05-09 (Platform Evolution Roadmap + Founder R&D Brief + Seven onboarded — same day, same session, after founder direction during the 21-A close call)
 **Duration**: single session (immediately after Phase 2.76 close)
 
 ## What shipped
@@ -154,3 +155,55 @@ Ship 21-A as the firm substrate. 21-B layers production wiring on a tested contr
 - ⏳ Phase 22 Action Boundary Enforcement deferred to v3 boundary
 
 Phase 21-A is **wired, tested, and ready**. The Master Architect is permanent infrastructure now; **Standing Orders** is the founder's permanent directive (Tab 1 baseline / Tab 2 custom_direction, ~60 fillable slots); 21-B brings the architect alive at \$1-2/day.
+
+---
+
+## Phase 21-A.1 — Platform Evolution Roadmap + Founder R&D Brief + Seven (added 2026-05-09)
+
+Closed same session as 21-A. Founder articulated three additional needs during the close call that turned 21-A from substrate-only into a self-running R&D loop:
+
+1. *"Standardize the cycle"* — autonomous loop should run on a schedule (not click-driven), like every healthy software platform's continuous-improvement track. Founder named the artifact: **Platform Evolution Roadmap**.
+2. *"Founder-driven research is also a thing"* — separate tab + structured prompt form so a brief can be filed without leaving the Dev-Hub.
+3. *"We need first-hand evaluation, not 2nd-hand opinions"* — a dedicated **Tool Evaluator** agent that benchmarks candidates, runs adversarial security probes, and produces structured reports. Star-Trek named: **Seven**.
+
+### What shipped in 21-A.1
+
+- **3 cadences** (daily / weekly / monthly), each independently toggleable, with per-cadence local time, day rule, budget cap, depth, dispatcher, and report toggle. Defaults: monthly ON, weekly + daily OFF — founder's stated preference.
+- **Cadence daemon** embedded in `factory-telemetry.service` — ticks every 60s, IST-aware, last-Thursday cron math, dedupe via per-cadence fire log, survives `paused: true`.
+- **Cycle hierarchy**: daily passes feed weekly synthesis feeds monthly strategic review (which includes a "criteria health check" — self-evolving priority-area set).
+- **Founder R&D Brief tab** — 8-field structured-prompt form (title / role / background / research_question / trigger / constraints / output_format / references) + budget + priority-area tag. Composes into an Anthropic-style prompt, spawns a `founder_brief` pass, produces a structured Report linked back to the brief.
+- **Reports & Proposals tab** — both cycle reports + brief reports listed, click-to-open modal viewer, unread badge per report, dashboard banner when reports pile up.
+- **PresetSelect component** — 3 typed presets + Custom… escape hatch, used everywhere a dropdown lives (Role, Output format, Research depth, Dispatcher).
+- **Pause/Resume toggle** — global switch on the page header.
+- **Seven (Tool Evaluator)** — 12th named agent, first in the codebase with a `SOUL.md` identity file (per Hermes pattern). Distinct from Tuvok (tests our code) / Spock (researches) / Data (reviews architecture). Operating principles: evidence over impression, first-hand only, adversarial on security, reproducible. First mission queued: evaluate Hermes Agent v0.13.
+- **Hermes Lab profile** promoted `exploring → testing` with Seven as evaluation owner.
+- **`tool_evaluation` finding kind** added — distinct from `new-tool` (we observed it exists) — `tool_evaluation` means we measured it.
+
+### Phase 21-A.1 close criteria — met
+
+- ✅ Schema: `baseline.cadences` (3 entries) + `baseline.paused` + `baseline.timezone` + per-cadence config
+- ✅ Cadence daemon (long-lived, 60s tick) + `shouldFireCadence` math + last-Thursday-of-month resolver (verified for May 2026 = May 28) + IST `partsInTz` helper
+- ✅ Backend endpoints: `POST /brief`, `GET /briefs(/:id)`, `GET /reports(/:id)`, `POST /reports/:id/read`, `POST /pause`, `POST /resume`, `POST /cadence/:kind/run`
+- ✅ Frontend: 3-tab refactor (Standing Orders & Roadmap / R&D Brief / Reports & Proposals) with new-report banner + 30s background poll
+- ✅ `cognitive-engine/agents/Seven.SOUL.md` (first SOUL.md in the codebase) + Seven preset in BriefForm
+- ✅ Hermes Lab profile bumped to `testing` + Learnings log entry on the strategic intent
+- ✅ Standing Orders example.json bumped to include cadences + Seven + monthly Hermes-evaluate cadence note
+- ✅ Architect smoke 87 → 89 (+2 for new pass kinds: `weekly`, `monthly`, `founder_brief`)
+- ✅ Dashboard build clean (474KB / gzip 136KB)
+- ✅ End-to-end backend smoke: `seed → brief submit → cadence run → reports list → mark read → pause → resume` all 200 OK
+- ✅ `factory-telemetry.service` restarted, daemon booted with "first tick aligned to next minute boundary, period 60000ms"
+
+### What stays for Phase 21-B
+
+- Real Sonnet/Opus research dispatcher (today still synthetic stub — reports & briefs have correct shape, synthetic content)
+- Auto-doc-update on proposal approval
+- Slack / email notifications (in-dashboard banner shipped here)
+
+### What stays for Phase 22
+
+- Sandboxed runtime so Seven actually *runs* candidates in isolation (Hermes evaluation today is documentation+probe-based until then)
+- Continuous monitoring loop (weekly re-runs to catch regression on adopted tools)
+
+### Loose ends queued for follow-up
+
+- **SOUL.md backfill** for the other 11 named agents (Picard / Sisko / Troi / Jane / Spock / Torres / Tuvok / Data / Crusher / O'Brien / Genovi). Seven was the first; the rest tracked as a single dedicated task (deferred — pure grunt work, perfect for a subagent later).

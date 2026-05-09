@@ -128,11 +128,75 @@ YAML for editor-friendliness; `_kb/standing_orders.json` is the runtime form (ar
 
 **Tradeoff**: 21-A architect's research subagent will go to the open web in 21-B without sandbox enforcement. Mitigation: 21-B uses Sonnet via OpenRouter (ours), with web-search MCP servers (allowlisted via Phase 5-A). Sandbox-grade isolation arrives at Phase 22.
 
+---
+
+## Phase 21-A.1 — Decisions D200–D204 (added same session 2026-05-09)
+
+After 21-A close, founder articulated three additional needs that turned 21-A from substrate-only into a self-running R&D loop. Five new decisions captured here.
+
+## D200 — Platform Evolution Roadmap is the named artifact for continuous improvement
+
+**What**: The autonomous research loop is named **Platform Evolution Roadmap** (founder confirmation 2026-05-09 after rejecting "DevOps roadmap" — wrong industry term). It is a living, continuously-running pipeline that produces structured upgrade proposals on a cadence and feeds them to the founder for the final call.
+
+**Why**:
+- Every working platform has a 6-12 month relevance window (Linux, Postgres, Stripe). The R&D loop is standard practice; the only blocker for automating it was that discovery work used to require humans. With LLMs cheap enough to run web research at \$1-2/day, that constraint disappears.
+- Founder gets the final gate but no longer the discovery role. Architect drives "what should we improve next?".
+- The criteria set itself is dynamic — when factory grows new modules, the architect proposes adding new priority areas. Founder is not the maintainer of the watch list.
+
+**Tradeoff**: requires real LLM dispatcher (21-B) to be useful. Until then, cycles produce synthetic findings — correct *shape*, no real research content.
+
+## D201 — Three independent cadences (daily / weekly / monthly), each toggleable
+
+**What**: Standing Orders gains `baseline.cadences.{daily,weekly,monthly}` — three independently configurable cadences with per-cadence enabled flag, local time, day rule, budget cap, depth, dispatcher, and report toggle. Defaults: monthly ON, weekly + daily OFF (founder's stated preference). Cycles run hierarchically — daily passes accumulate raw findings, weekly synthesises 7 days into one report, monthly does strategic review + criteria health check.
+
+**Why**:
+- Three identical-depth passes at three frequencies = noise, not signal. Different depths give meaningful tiering.
+- Independent toggles let founder dial in their attention budget — most months the monthly report is enough; daily/weekly turn on when more cadence is wanted.
+- Hierarchy means enabling lower tiers makes upper-tier reports better; if only monthly is on, monthly does its own ecosystem scan.
+
+**Tradeoff**: Three cadences = three places to misconfigure. Mitigation: PresetSelect dropdowns (D203) for depth + dispatcher; per-cadence "Run [kind] cycle now" button bypasses the schedule.
+
+## D202 — Cadence daemon embedded in factory-telemetry.service (no new systemd unit)
+
+**What**: A long-lived 60-second polling tick lives inside the existing `factory-telemetry.service` Node process. Each tick reads Standing Orders, computes which cadences should fire *right now* given local time + day rule + dedupe window, and runs the appropriate pass through the architect. Survives `baseline.paused: true`. IST-aware (Asia/Kolkata default). Last-Thursday-of-month resolved correctly (verified for May 2026 = May 28).
+
+**Why**:
+- Project pattern is zero-deps where reasonable; node-cron would be a new dep for 3 cadence shapes.
+- Reusing factory-telemetry.service (already managed by systemd) means no new unit file, no new supervision setup, no new restart story.
+- 60s tick = adequate for cadences expressed in minutes; cheap (one Standing Orders read + one math check per minute).
+
+**Tradeoff**: telemetry process restart = missed cycles. Acceptable per dedupe semantics (`shouldFireCadence` skips if last fire was within the cadence period).
+
+## D203 — Dropdown-with-custom is the standard founder-input pattern
+
+**What**: Reusable `PresetSelect` component everywhere a typed-but-extensible field exists (Role, Output format, Research depth, Dispatcher). Three presets cover ~70-80% of common cases; "Custom…" escape hatch reveals a free-text input below. Founder direction (2026-05-09): "wherever you can have three defined drop-down items for selection to cover maybe 70-80% of the options, and then a custom field."
+
+**Why**:
+- Pure dropdowns force the schema to predict every possible value — brittle.
+- Pure free-text invites typos that fail validation downstream.
+- 3+custom is the right cardinality: presets handle the common path, custom handles the edge cases without schema thrash.
+
+**Tradeoff**: founder-typed custom values aren't validated against the architect's prompt-template. Mitigation: presets are the *recommended* path; custom is documented as "you're now hand-engineering the prompt — own it."
+
+## D204 — Seven (Tool Evaluator) is a new named agent — first SOUL.md in the codebase
+
+**What**: A 12th named agent — **Seven** — joins the roster (Star Trek convention preserved). Seven's role: evaluation specialist for the R&D pipeline. Distinct from Tuvok (tests our code) / Spock (researches) / Data (reviews architecture) / Troi (surfaces ideas). Seven *measures*, *probes*, and *benchmarks* third-party candidates. First SOUL.md identity file in the codebase (per Hermes pattern — memory rule confirmed 2026-04-21: every named agent must have a SOUL.md). The other 11 agents need their SOUL.md files too — tracked as a follow-up.
+
+**Why**:
+- Founder direction (2026-05-09) explicitly asked: "we've heard 2nd-hand info about Hermes; prepare our own first-hand report." Existing agents don't fit — Tuvok tests our code (not external candidates); Spock surveys (not benchmarks); Data reviews our architecture.
+- Mixing evaluation into Tuvok dilutes both roles cognitively.
+- New agent costs ~one prompt + identity file; benefit is clean cognitive map: "Tuvok tests our code · Seven evaluates candidate tools."
+- Seven's first mission is the Hermes evaluation — promoted to Lab `testing` tier same day, Seven named as evaluation owner.
+- New `tool_evaluation` finding kind distinguishes Seven's findings from raw research observations.
+
+**Tradeoff**: Until Phase 21-B (real dispatcher) and Phase 22 (sandboxed runtime) land, Seven's "evaluation" is documentation+probe-based, not full benchmark-suite-against-our-workload. The seat is at the table; the first real benchmarks run when 21-B is live.
+
 ## Decision counter
 
 - D1–D165: Phases 0-18
 - D166–D172: Phase 19
 - D173–D180: Phase 20
 - D181–D189: Phase 2.76
-- **D190–D199: Phase 21 (this phase)**
-- Future: Phase 22+ continues from D200
+- **D190–D199: Phase 21 (substrate)**
+- **D200–D204: Phase 21-A.1 (Platform Evolution Roadmap + R&D Brief + Seven)**
+- Future: Phase 22+ continues from D205

@@ -125,7 +125,30 @@ Phase 15-A's original 4 kinds are unchanged. Same lifecycle, same store, same au
 | 21-A.9 | Phase 15-A extensions: 3 new ProposalKind enum values + applier routing via `ctx.architectApplier` | ✅ |
 | 21-A.10 | Smoke test — 87 assertions across 8 test groups | ✅ |
 | 21-A.11 | `architect/README.md` + `USE_AUTONOMOUS_ARCHITECT` flag | ✅ |
-| 21-B | Real Sonnet-backed researcher; cron daemon wiring; Phase 14-A queue handler; Phase 12-B Founder Portal UI; Phase 11-A budget gate; Phase 10-A Courier notifications | ⏳ DEFERRED |
+| 21-B | Real Sonnet-backed researcher; Phase 14-A queue handler; Phase 12-B Founder Portal UI; Phase 11-A budget gate; Phase 10-A Courier notifications | ⏳ DEFERRED |
+
+> **Naming clarification**: rows 21-A.1 → 21-A.11 above are *sub-deliverables of phase 21-A*. The post-substrate ship (Platform Evolution Roadmap + Founder R&D Brief + Seven), shipped same day as 21-A close, is tracked separately as the **Phase 21-A.1 sub-phase** below.
+
+## Phase 21-A.1 sub-phase — Platform Evolution Roadmap + Founder R&D Brief + Seven (added 2026-05-09 same session)
+
+After 21-A close, founder articulated three more needs that turned the substrate into a self-running R&D loop. Closed same session.
+
+| Sub | What | Deliverable |
+|---|---|---|
+| 21-A.1.1 | `types.js` Cadence types + validators + IST tz `partsInTz` + `resolveMonthlyDay` (last-Thursday math) + `shouldFireCadence` dedupe + `validateBrief` + `validateCadence` | ✅ |
+| 21-A.1.2 | `kb.js` Brief CRUD + Report CRUD + `recordCadenceFire` / `lastCadenceFire` + `markReportRead` / `unreadReportCount` | ✅ |
+| 21-A.1.3 | `scheduler.js` `createCadenceDaemon` — long-lived 60s tick loop, IST-aware, dedupe via per-cadence fire log, survives `paused: true` | ✅ |
+| 21-A.1.4 | `brief.js` (new) — `composeBriefPrompt` (Anthropic-style structured prompt) + `runBrief` (orchestrates brief → pass → report) | ✅ |
+| 21-A.1.5 | Backend endpoints: `POST /brief`, `GET /briefs(/:id)`, `GET /reports(/:id)`, `POST /reports/:id/read`, `POST /pause`, `POST /resume`, `POST /cadence/:kind/run` + daemon boot at server start | ✅ |
+| 21-A.1.6 | `MasterArchitect.tsx` 3-tab refactor (Standing Orders & Roadmap / R&D Brief / Reports & Proposals) + new-report banner + 30s background poll | ✅ |
+| 21-A.1.7 | `architect/PresetSelect.tsx` — 3 typed presets + Custom… escape hatch (founder UX direction) | ✅ |
+| 21-A.1.8 | `architect/BriefForm.tsx` — 8-field structured-prompt form + budget + priority-area tag | ✅ |
+| 21-A.1.9 | `cognitive-engine/agents/Seven.SOUL.md` (first SOUL.md in codebase) + `tool_evaluation` finding kind + Seven preset in BriefForm | ✅ |
+| 21-A.1.10 | `playground/profiles/hermes-agent/PROFILE.md` promoted `exploring → testing` + Seven named as evaluation owner + Learnings log entry | ✅ |
+| 21-A.1.11 | `standing_orders.example.json` bumped: cadences + Seven in agents area + monthly Hermes-evaluate cadence note | ✅ |
+| 21-A.1.12 | Architect smoke updated 87 → 89 (new pass kinds: `weekly` / `monthly` / `founder_brief`) | ✅ |
+
+**21-A.1 close criteria — met**: see Phase_21_Status.md.
 
 **Out of scope for 21-A** (deferred to 21-B / 22):
 
