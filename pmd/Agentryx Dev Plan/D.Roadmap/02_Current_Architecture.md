@@ -71,7 +71,7 @@ Read this first when joining the project mid-flight.
 | LLM spend across all scaffolding | **$0.00** |
 | Phase rollback tags on origin | **25** |
 | Feature flags registered | **15** (all default off; +`USE_AUTONOMOUS_ARCHITECT`) |
-| Decisions logged | D1–D204 (Phase 21-A.1 added D200-D204) |
+| Decisions logged | D1–D208 (Phase 21-A.1 + visible-factory sprint added D200-D208) |
 
 **Numbers matter** because every claim in this document is backed by an assertion. When a module's README says "138 assertions pass," running that smoke test is the verification. The cross-phase composition smoke at `cognitive-engine/integration/` proves they all work together.
 
@@ -227,7 +227,7 @@ From `cognitive-engine/admin-substrate/registry.js`:
 - Ops status → `D.Roadmap/Dev_Task_list_Update.md` (single-page dashboard)
 - Current state → this file
 - **B-tier marathon plan → `D.Roadmap/04_B_Tier_Marathon.md` (path from v0.0.1 to R1)**
-- Decision archaeology → every phase has `Decisions.md` (D1-D204 so far)
+- Decision archaeology → every phase has `Decisions.md` (D1-D208 so far)
 - Post-mortem learnings → every phase has `Lessons.md`
 
 **By question**:
@@ -301,6 +301,7 @@ See `playground/README.md` for operational details; `pmd/.../D.Roadmap/Phase_2.7
 | v3 | 2026-05-09 | Phase 2.76 — Beta Playground established as permanent infrastructure; release-band schedule updated; flag table extended | new §8 (Beta Playground); §7 git pointer updated; §9 (renumbered, "deliberate absences" — added security gating posture) |
 | v4 | 2026-05-09 | Phase 21-A close — Master Architect autonomous research substrate added; Standing Orders (Tab 1 baseline + Tab 2 custom_direction) is the founder steering input | header (17 modules / 1111 assertions); §2 (numbers); §3 (architect row added); §5 (USE_AUTONOMOUS_ARCHITECT flag; 12 → 15); §6 (21-B added to C1); §7 (decision counter D199) |
 | v5 | 2026-05-09 | Phase 21-A.1 close (same session) — Platform Evolution Roadmap named (D200); 3 toggleable cadences (D201); cadence daemon embedded in factory-telemetry.service (D202); dropdown-with-custom standard pattern (D203); Founder R&D Brief tab + Seven (Tool Evaluator, 12th named agent, first SOUL.md) (D204); `tool_evaluation` finding kind; Hermes Lab profile promoted to `testing` with Seven as evaluation owner | §2 (decision counter D204); §7 (decision counter); §10 (this row) |
+| v6 | 2026-05-09 | Visible-factory sprint (same session) — **Phase 12-B closed (Tier B + full)**: Admin · Configuration page with 6 sub-tabs, live flag toggles, role-gated config edit forms, JSON atomic writes, metadata-only audit. **Phase 13-B Tier B (read-only) closed**: Replay page surfaces past pipeline runs with artifact timeline. **Memory Layer page** replaces Skill Memory mock (real Phase 7-A reads). **Analytics & Insights** rewritten as live factory-pulse synthesis (no new endpoints; composition over the wired surfaces). Decision counter advances to D208 with new decisions D205-D208 captured in their respective phase docs. Sidebar items: 11/11 real, zero static mocks remaining | header (assertion + decisions counts); §3 (admin-substrate row notes UI is now wired); §10 (this row) |
 
 Future revisions expected at:
 - Each new phase close that meaningfully shifts the composition graph (Phase 19/20 closes, Phase 2.76 — done)

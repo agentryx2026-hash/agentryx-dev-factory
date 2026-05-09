@@ -27,7 +27,7 @@ A-tier shipped 16 modules. **17 deferred B-subphases** + **5 active Beta Playgro
 | Cohort | Phases | Blocker | Unlock unit | Cost to unlock |
 |---|---|---|---|---|
 | **C1** | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B, **21-B** | OpenRouter credit + TTS credentials | 1 budget top-up + 1 ElevenLabs key | ~$15-40 LLM/TTS validation; +$1-2/day for autonomous architect |
-| **C2** | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | UI sprint + ops credentials (Slack/GitHub/SMTP) | React dev sprint + per-channel creds | 2-3 dev-weeks |
+| **C2** | 9-B, 10-B, ~~11-B (partial, in Admin)~~, ~~12-B (closed)~~, ~~13-B (Tier B closed)~~, ~~14-B (partial, in Admin)~~, ~~18-B (partial, in Admin)~~, 19-B | UI sprint + ops credentials (Slack/GitHub/SMTP) | React dev sprint + per-channel creds | 2-3 dev-weeks (much smaller now after 2026-05-09 sprint) |
 | **C3** | 7-B, 7-C, 7-D | Scale-dependent (memory backends) | Trigger: 100+ observations / multi-host / semantic-search demand | $0 until demand shows up |
 | **C4** | 20-B | Stripe + S3/R2 + external pen-test | Stripe acct + cloud bucket + security budget | ~$5-15K (pen test) + ongoing infra |
 
@@ -119,16 +119,16 @@ Each row: what's missing, what unlocks it, expected effort, downstream consumers
 - **Prereq**: 6-B (real cost data to show), 10-B (alert delivery)
 - **Effort**: ~2-3 sessions
 
-#### **12-B — Admin UI** ⭐ high-leverage
-- **What's missing**: React admin pages (configs, flags, modules, customers); Postgres `config_settings` migration; runtime flag-toggle endpoint
-- **Prereq**: nothing in particular — all data substrate exists
-- **Effort**: ~3-4 sessions (Postgres migration + React + role-gating)
-- **Why high-leverage**: every other B-tier becomes operator-friendly once admin UI exists. Currently every config edit is a manual JSON file change.
+#### **12-B — Admin UI** ✅ closed (Tier B + full, 2026-05-09)
+- **Shipped**: Dev-Hub Admin · Configuration page with 6 sub-tabs (🚦 Flags / ⚙️ Configs / 📦 Modules / 📊 Queue / 💰 Cost / 📋 Audit). Live flag toggles persisted (`_factory_runtime/flag_overrides.json`); config edit forms role-gated via `min_role_edit`; atomic JSON writes through `writeConfig`; metadata-only audit (no value leakage). Postgres explicitly deferred to v3 — file-backed is sufficient for v0.0.1 single-VM single-founder.
+- **Cost**: ~5 minutes elapsed (composition over substrate — admin-substrate APIs were already there; this was wiring 6 lib calls to a UI). Original 3-4-session estimate assumed greenfield.
+- **What that unlocks**: every other module's flags + configs + audit are now operator-friendly without editing JSON files. The marathon docs noted this as the highest-leverage B-subphase; it ships first because it's the keystone.
 
-#### **13-B — Replay UI + LLM stub**
-- **What's missing**: default `nodeStub` that replays via fresh LLM call (currently stubs are test-injected); React timeline UI; HTTP endpoint
-- **Prereq**: 6-B (artifacts to replay)
-- **Effort**: ~2-3 sessions
+#### **13-B — Replay UI + LLM stub** 🟡 Tier B closed (read-only, 2026-05-09)
+- **Shipped (Tier B, read-only)**: Dev-Hub Replay page (sidebar 5) — list past run_ids via `listRunIds(workspaceRoot)`, click a run to see chronological artifact timeline via `collectRun`, color-coded agent pills, expandable detail (model / cost / latency / parent_ids).
+- **Pending (full 13-B)**: default `nodeStub` that replays via fresh LLM call; POST `/api/factory-admin/replay/runs/:id/execute` (substitution mode); cross-pipeline replay; side-by-side diff view
+- **Prereq for full**: 6-B (artifacts to replay) AND OpenRouter credit (LLM stub)
+- **Effort remainder**: ~1-2 sessions once OpenRouter is wired
 
 #### **14-B — Concurrency real handlers + UI** ⭐ critical-path for 16-B/17-B
 - **What's missing**: register `pre_dev` / `dev` / `post_dev` / `project_intake` / `training_gen` / `training_video_render` handlers in the registry; HTTP submit endpoint; React queue UI; per-project quotas wired to Phase 11-A

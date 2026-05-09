@@ -1,8 +1,9 @@
-# Phase 14 — Status: 14-A COMPLETE ✅  (14-B DEFERRED)
+# Phase 14 — Status: 14-A COMPLETE + queue read UI ✅  (14-B remainder DEFERRED — handlers + per-project quotas)
 
 **Phase started**: 2026-04-23
 **Phase 14-A closed**: 2026-04-23
 **Duration**: single session
+**UI surface added**: 2026-05-09 — Dev-Hub Admin → 📊 Queue panel: 4-stat strip (queued / in-flight / done / failed via `queue.stats()`), live queued + in-flight job lists with priority and worker IDs, auto-refresh every 5s. **Still pending**: real factory handlers (`pre_dev` / `dev` / `post_dev` / `project_intake` / `training_gen` / `training_video_render`) registered in the queue, HTTP submission, per-project quotas wired to Phase 11-A, crash recovery. Real submissions need OpenRouter for the LLM-driven graphs.
 
 ## Subphase progress
 

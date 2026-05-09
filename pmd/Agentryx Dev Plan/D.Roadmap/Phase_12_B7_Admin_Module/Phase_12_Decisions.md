@@ -55,6 +55,39 @@
 
 **Tradeoff**: large logs need rotation. Phase 12-B or a future ops phase adds rotation; today it grows unbounded but admin actions are infrequent enough that this isn't pressing.
 
+## D205 — Phase 12-B keeps file-backed config storage; Postgres deferred to v3 (added 2026-05-09 at 12-B close)
+
+**What**: 12-B-full as shipped keeps the existing file-based atomic-write path (`writeConfig` does temp-file + rename, validates `schema_version`). Flag toggles persist to `_factory_runtime/flag_overrides.json`; survives telemetry restart via boot-time `applyFlagOverrides()`. Original 12-B scope mentioned a Postgres `config_settings` migration — postponed.
+
+**Why**:
+- Single-VM single-founder is the v0.0.1 reality. Postgres solves cross-host + concurrent-writer problems we don't have.
+- File backend is auditable + atomic. Temp-file + rename + schema_version check + sha256 metadata in audit = same correctness Postgres would give us.
+- Migration is reversible — `readConfig` / `writeConfig` is a clean abstraction; swap the backend at v3 without API changes.
+- Telemetry server stays zero-DB-deps.
+
+**Tradeoff**: race condition if two admins write simultaneously. There's only one founder. When a second admin appears, that's the revisit trigger.
+
+## D206 — UI flag toggle stores override in `_factory_runtime/flag_overrides.json` + updates current process.env (added 2026-05-09)
+
+**What**: Toggle in Admin UI → write to overrides file + set `process.env[envVar]` in telemetry process + append `appendAudit({ action: 'flag.toggle', target, details: { to, prior } })`. On boot, `applyFlagOverrides()` re-applies the file into `process.env` so toggles persist across `systemctl restart`.
+
+**Why**:
+- D130 said toggling needed a "restart strategy." We didn't write one — instead the in-process override updates env immediately, the architect daemon (in-process) sees it instantly, and `spawn({ env: process.env })` calls inherit it.
+- A JSON file is enough persistence. No `.env` rewrites, no systemd unit edits.
+- Reversible: delete the file = reset to env defaults.
+
+**Tradeoff**: long-lived processes started BEFORE a toggle won't see the new value. There are none today (architect daemon is in-process; pipeline graphs spawn per-request). If one appears, it gets a SIGHUP-reload story.
+
+## D207 — Audit log captures config-write metadata only, never the value (added 2026-05-09)
+
+**What**: `config.write` audit entries record `{ actor, action, target, details: { role, new_bytes, new_sha256, prior_sha256 } }`. The full new value is NOT logged.
+
+**Why**:
+- Configs may reference secrets (provider keys via `providers`, MCP server URLs). Audit log is durable JSONL; secrets there leak forever.
+- sha256 + bytes give enough fingerprint to verify state and spot suspicious size deltas; `prior_sha256` confirms previous-known-good.
+
+**Tradeoff**: can't reconstruct exact value from audit alone. Mitigation: the file itself is the source of truth.
+
 ## D130 — Feature flags are READ-ONLY in 12-A
 
 **What**: `feature-flags.js` exposes `readFlag()` and `snapshotAllFlags()`. No write/toggle API in 12-A.

@@ -1,8 +1,9 @@
-# Phase 11 — Status: 11-A COMPLETE ✅  (11-B DEFERRED)
+# Phase 11 — Status: 11-A COMPLETE + read UI ✅  (11-B remainder DEFERRED — alerts via 10-B Courier; per-tenant charts arrive with real data)
 
 **Phase started**: 2026-04-22
 **Phase 11-A closed**: 2026-04-22
 **Duration**: single session
+**UI surface added**: 2026-05-09 — Dev-Hub Admin → 💰 Cost panel + Analytics & Insights Cost card. Reads via `/api/factory-admin/cost`, calls `getRollup({ workspace_root, source: 'artifacts' })`. Empty today (no real LLM calls yet); lights up automatically once Phase 21-B's real Sonnet dispatcher starts producing artifacts. **Still pending**: per-tenant + per-day charts, Courier-wired threshold alerts (depends on 10-B).
 
 ## Subphase progress
 

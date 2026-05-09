@@ -1,8 +1,42 @@
-# Phase 12 — Status: 12-A COMPLETE ✅  (12-B DEFERRED)
+# Phase 12 — Status: 12-A + 12-B COMPLETE ✅
 
 **Phase started**: 2026-04-23
-**Phase 12-A closed**: 2026-04-23
-**Duration**: single session
+**Phase 12-A closed**: 2026-04-23 (substrate library)
+**Phase 12-B closed**: 2026-05-09 (Tier B + full — Admin · Configuration page; same session as the visible-factory sprint after Phase 21-A.1)
+**Duration**: 12-A single session; 12-B ~5 minutes elapsed because the substrate was already there — wiring was 6 library calls to a UI
+
+---
+
+## Phase 12-B — what shipped
+
+**Backend** (`factory-dashboard/server/telemetry.mjs` — 7 new endpoints under `/api/factory-admin/*`):
+- `GET /flags` — returns `snapshotAllFlags()` + override-source tag (UI-set vs env-default)
+- `POST /flags/:env_var/toggle` — flips ON↔OFF, persists to `_factory_runtime/flag_overrides.json`, updates `process.env` immediately so the architect daemon and child-process spawns see the new value, appends `appendAudit({ actor, action: 'flag.toggle', target, details: { to, prior } })`
+- `GET /configs` — returns `readConfig(id)` for each registry entry (sensitive entries get value redacted on the wire)
+- `POST /configs/:id` (12-B-full) — body `{ value, actor_role: 'super_admin' }`; gates via `canRoleEdit(actor_role, entry)` against `min_role_edit`, atomic write through `writeConfig` (validates `schema_version` match), audit logs metadata only (`actor / action / target / { role, new_bytes, new_sha256, prior_sha256 }`) — never logs the new value (configs may reference secrets)
+- `GET /audit?limit=N&actor=X&action=Y&target=Z` — wraps `readAudit()`
+- `GET /modules` — `marketplace.list()`, falls back to `BUILTIN_MANIFESTS` catalogue when in-process store empty
+- `GET /queue` — `queue.stats()` + `listQueued()` + `listInFlight()`
+- `GET /cost` — `getRollup({ workspace_root: REPO_ROOT, source: 'artifacts' })`
+
+Plus boot-time `applyFlagOverrides()` so persisted toggles survive `systemctl restart`.
+
+**Frontend** (`factory-dashboard/src/components/AdminConfig.tsx` — replaced placeholder with 6 sub-tabs):
+- 🚦 Flags · ⚙️ Configs · 📦 Modules · 📊 Queue · 💰 Cost · 📋 Audit
+- Live flag pills (ON/OFF), `UI-SET` badge for founder-toggled flags
+- Configs: read-only viewer per entry → ✎ Edit button reveals JSON textarea with the current value pre-loaded → Save validates JSON parses + roundtrips through backend; backend rejects schema_version mismatch with descriptive error; sensitive entries get a red `SENSITIVE` badge and no Edit button
+- Modules: catalogue grouped by category, capability tags
+- Queue: 4-stat strip, queued + in-flight job lists, auto-refresh every 5s
+- Cost: total/tokens/calls + by-model breakdown
+- Audit: timestamp / actor / action / target / details, auto-refresh every 10s
+
+**Sidebar label**: "Configuration" → "Admin · Configuration"
+
+## Postgres deferred to v3
+
+The original 12-B scope mentioned a Postgres `config_settings` migration. Decided (D205) to keep the file-backed store for v0.0.1: single-VM single-founder mode doesn't need cross-host config consistency. Postgres lands when multi-tenant pressure arrives at v3 (or earlier if a second admin user materialises).
+
+---
 
 ## Subphase progress
 
