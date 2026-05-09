@@ -191,6 +191,31 @@ After 21-A close, founder articulated three additional needs that turned 21-A fr
 
 **Tradeoff**: Until Phase 21-B (real dispatcher) and Phase 22 (sandboxed runtime) land, Seven's "evaluation" is documentation+probe-based, not full benchmark-suite-against-our-workload. The seat is at the table; the first real benchmarks run when 21-B is live.
 
+## D209 — Real LLM dispatcher is opt-in per-cadence / per-brief, not a global flag (added 2026-05-09)
+
+**What**: Phase 21-B ships `createLLMDispatcher({ dispatcher: 'sonnet' | 'opus' })` as a drop-in replacement for `createStubDispatcher`. Activation is explicit per execution: a cadence config in Standing Orders sets `dispatcher: 'sonnet'`, or a brief submission includes `dispatcher: 'sonnet'`, or the manual run-pass body includes it. Default everywhere = `stub`. The LLM dispatcher is wired but inert until each cadence/brief chooses it.
+
+**Why**:
+- A global "USE_REAL_LLM" flag would couple all three cadences + every brief at once — too coarse. Founder might want monthly to use Opus while daily stays on stub for cost reasons.
+- Per-cadence dispatcher gives a natural cost ladder: `stub` ($0) → `sonnet` (~$0.30/pass) → `opus` (~$1.50/pass) per the cadence's depth and importance.
+- Briefs can pick their own dispatcher independently (Seven's Hermes evaluation might be Opus; quick "is this tool interesting" briefs might be Sonnet).
+- Founder retains the kill switch (set dispatcher back to `stub` to instantly stop real LLM spend without touching env vars or systemd).
+- Standing Orders' loose validator already accepts arbitrary `dispatcher` strings; the editor's `PresetSelect` exposes 3 presets (Stub / Sonnet / Opus) plus Custom.
+
+**Tradeoff**: If founder forgets to flip a cadence's dispatcher to `sonnet`, that cycle keeps producing synthetic content. Mitigation: each report's summary section explicitly notes "stub dispatcher — synthetic findings" when `cost_usd === 0` so empty-substance reports are visibly tagged.
+
+## D210 — Phase 6-B hooks `RouterChatModel.invoke()` rather than per-graph (added 2026-05-09)
+
+**What**: Phase 6-B (artifact dual-write) is implemented as a hook inside `RouterChatModel.invoke()` (the universal LLM-call entry point) rather than touching the three graphs (`pre_dev_graph.js`, `dev_graph.js`, `post_dev_graph.js`) individually. The graphs are unchanged; `setProjectDir()` (which they all already call) sets `process.env.AGENT_PROJECT_DIR` + `AGENT_RUN_ID` so the hook resolves them automatically.
+
+**Why**:
+- Single chokepoint = one patch covers every LLM call in the codebase: 3 pipeline graphs + Phase 21-B Sonnet/Opus dispatcher + any future caller.
+- Per-graph patching would mean editing 3 files now plus every future graph — perpetual maintenance debt.
+- `setProjectDir()` is already a chokepoint for project-creation; adding env-var population there is a 5-line addition. Setting env unconditionally is safe because the artifact-write hook is gated by `USE_ARTIFACT_STORE`.
+- Fail-open posture (artifact-write errors are caught + warned + swallowed) means a buggy artifact write never breaks an LLM call.
+
+**Tradeoff**: Hook adds a few ms per LLM call when active (artifact write is ~10ms on filesystem). Mitigation: it's gated by the flag; default-off means no cost in the common case.
+
 ## Decision counter
 
 - D1–D165: Phases 0-18
@@ -199,4 +224,8 @@ After 21-A close, founder articulated three additional needs that turned 21-A fr
 - D181–D189: Phase 2.76
 - **D190–D199: Phase 21 (substrate)**
 - **D200–D204: Phase 21-A.1 (Platform Evolution Roadmap + R&D Brief + Seven)**
-- Future: Phase 22+ continues from D205
+- **D205–D207: Phase 12-B-full (Postgres-deferred, flag-override file, audit-metadata-only)**
+- **D208: Phase 13-B Tier B split**
+- **D209: Phase 21-B — opt-in per cadence/brief, not global flag**
+- **D210: Phase 6-B — hook RouterChatModel.invoke (chokepoint), not per-graph**
+- Future: Phase 22+ continues from D211

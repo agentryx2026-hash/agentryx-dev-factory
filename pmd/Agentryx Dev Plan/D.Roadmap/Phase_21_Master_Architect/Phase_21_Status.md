@@ -1,8 +1,9 @@
-# Phase 21 — Status: 21-A + 21-A.1 COMPLETE ✅  (21-B + Phase 22 DEFERRED)
+# Phase 21 — Status: 21-A + 21-A.1 + 21-B COMPLETE ✅  (Phase 22 DEFERRED to v2→v3)
 
 **Phase started**: 2026-05-09
 **Phase 21-A closed**: 2026-05-09 (substrate)
 **Phase 21-A.1 closed**: 2026-05-09 (Platform Evolution Roadmap + Founder R&D Brief + Seven onboarded — same day, same session, after founder direction during the 21-A close call)
+**Phase 21-B closed**: 2026-05-09 (real LLM research dispatcher — Sonnet/Opus via the LLM router; opt-in via cadence/brief `dispatcher` field; same session)
 **Duration**: single session (immediately after Phase 2.76 close)
 
 ## What shipped
@@ -207,3 +208,48 @@ Closed same session as 21-A. Founder articulated three additional needs during t
 ### Loose ends queued for follow-up
 
 - **SOUL.md backfill** for the other 11 named agents (Picard / Sisko / Troi / Jane / Spock / Torres / Tuvok / Data / Crusher / O'Brien / Genovi). Seven was the first; the rest tracked as a single dedicated task (deferred — pure grunt work, perfect for a subagent later).
+
+---
+
+## Phase 21-B — Real LLM Research Dispatcher (closed 2026-05-09 same session)
+
+When founder confirmed OpenRouter was ready, the long-deferred 21-B core shipped: a real LLM-backed dispatcher that replaces the stub when explicitly requested per cadence/brief.
+
+### What shipped
+
+**`cognitive-engine/architect/dispatchers/llm.js`** (new):
+- `createLLMDispatcher({ dispatcher: 'sonnet' | 'opus' })` — drop-in replacement for `createStubDispatcher` (same I/O contract).
+- Routes through `llm-router/src/router.js` `complete()`:
+  - `sonnet` → `research` task (Gemini 2.5 Pro primary, Sonnet 4.6 fallback)
+  - `opus` → `architect` task (Opus 4.7 primary, GPT-5 + Gemini 2.5 Pro fallbacks)
+- Builds an Anthropic-style structured prompt from the area context (current_state / target_3mo / target_6mo / hard_constraints / anti_goals / directions / strategic_watch / kb_summary)
+- Strict JSON output contract — parses model output into Findings; rejects malformed entries silently (fail-open per area)
+- Tolerates code-fenced JSON for forgiving parsing
+- Cost capture flows through the LLM router's `cost.js`
+- Budget cap enforcement comes for free from the router (Phase 2E pre-call gate)
+
+**`factory-dashboard/server/telemetry.mjs`**:
+- `loadArchitect()` also imports the LLM dispatcher (fail-open: if module missing, falls back to stub silently)
+- `pickDispatcher(A, dispatcherKey)` central helper at 4 dispatcher call sites (cadence daemon, manual run-pass, brief endpoint, manual cadence run)
+
+### Default = stub (opt-in by design)
+
+Three places must explicitly pick a real dispatcher to fire it:
+1. Standing Orders → cadence config: `dispatcher: 'sonnet'` or `'opus'` for daily/weekly/monthly (founder edits via Master Architect UI)
+2. R&D Brief: include `dispatcher: 'sonnet'` in body
+3. Manual run-pass: include `dispatcher: 'sonnet'` in body
+
+Today every cadence + brief defaults to `stub`. Real LLM calls fire only when the founder turns on a specific cadence's dispatcher in the Standing Orders editor.
+
+### Safety
+
+- Budget caps: per-call via LLM router (project + daily); per-cadence via `cadenceConfig.budget_usd`
+- Failure isolation: per-area errors caught + recorded in `by_area[id].error`; other 5 areas continue
+- Fail-open at dispatcher layer: LLM module missing or LLM call erroring → fall back to empty findings, log warning, don't crash the pass
+- JSON validation: malformed model output dropped per-finding (not per-pass)
+
+### What stays for later (not 21-B core)
+
+- Phase 11-A pre-flight whole-pass budget gate (router has per-call; architect could pre-flight 6-area total)
+- Phase 10-A Courier "approval needed" pings on real proposals (in-dashboard banner ships today)
+- Phase 22 sandbox enforcement (Seven's actual benchmarking + sandboxed runs)
