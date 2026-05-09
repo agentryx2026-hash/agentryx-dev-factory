@@ -21,7 +21,7 @@ import React, { useEffect, useState } from 'react';
  * timeline UI / customer admin views.
  */
 
-type SubTab = 'flags' | 'configs' | 'modules' | 'queue' | 'cost' | 'audit';
+type SubTab = 'flags' | 'configs' | 'modules' | 'queue' | 'cost' | 'verify' | 'courier' | 'audit';
 
 const tabs: { key: SubTab; label: string }[] = [
   { key: 'flags',   label: '🚦 Flags' },
@@ -29,6 +29,8 @@ const tabs: { key: SubTab; label: string }[] = [
   { key: 'modules', label: '📦 Modules' },
   { key: 'queue',   label: '📊 Queue' },
   { key: 'cost',    label: '💰 Cost' },
+  { key: 'verify',  label: '✅ Verify' },
+  { key: 'courier', label: '📡 Courier' },
   { key: 'audit',   label: '📋 Audit' },
 ];
 
@@ -67,6 +69,8 @@ const AdminConfig: React.FC = () => {
       {active === 'modules' && <ModulesPanel />}
       {active === 'queue'   && <QueuePanel />}
       {active === 'cost'    && <CostPanel />}
+      {active === 'verify'  && <VerifyPanel />}
+      {active === 'courier' && <CourierPanel />}
       {active === 'audit'   && <AuditPanel />}
     </div>
   );
@@ -509,6 +513,127 @@ const AuditPanel: React.FC = () => {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Verify ────────────────────────────────────────────────────────────
+const VerifyPanel: React.FC = () => {
+  const [data, setData] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/telemetry/factory-admin/verify/state')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`verify returned ${r.status}`)))
+      .then(setData)
+      .catch(e => setErr(e?.message || 'failed'));
+  }, []);
+  if (err) return <div className="glass-panel"><div className="panel-body"><div style={errorBar}>{err}</div></div></div>;
+  if (!data) return <div className="glass-panel"><div className="panel-body" style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>Loading…</div></div>;
+
+  return (
+    <div className="glass-panel">
+      <div className="panel-header">
+        <h3 className="panel-title">✅ Verify Integration (Phase 9-A)</h3>
+        <span style={{ color: '#64748b', fontSize: '0.7rem' }}>flag: <code style={inlineCode}>{data.flag_required}</code></span>
+      </div>
+      <div className="panel-body">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
+          <Stat label="Enabled" value={data.enabled ? '● ON' : 'off'} />
+          <Stat label="Client kind" value={data.client_kind || '—'} />
+          <Stat label="Verify URL" value={data.verify_url || '— (mock)'} mono />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Review decisions</h4>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {(data.review_decisions || []).map((d: string) => (
+              <span key={d} style={{ background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', padding: '3px 10px', borderRadius: 100, fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>{d}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding: 10, background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, color: '#fbbf24', fontSize: '0.78rem', marginBottom: 14 }}>
+          {data.note}
+        </div>
+        <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Recent published bundles ({data.recent_bundles?.length || 0})</h4>
+        {(!data.recent_bundles || data.recent_bundles.length === 0) ? (
+          <p style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center', padding: 20 }}>(none — mock store resets on telemetry restart; real Verify lands at 9-B)</p>
+        ) : data.recent_bundles.map((b: any) => (
+          <div key={b.build_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '8px 0', fontSize: '0.78rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8 }}>
+            <code style={inlineCode}>{b.build_id}</code>
+            <span style={{ color: '#cbd5e1' }}>{b.project_id}</span>
+            <span style={{ color: '#64748b' }}>{b.received_at ? new Date(b.received_at).toLocaleString() : ''}</span>
+            <span style={{ color: '#a855f7', fontFamily: 'monospace' }}>seq {b.seq}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Courier ───────────────────────────────────────────────────────────
+const CourierPanel: React.FC = () => {
+  const [data, setData] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/telemetry/factory-admin/courier/state')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`courier returned ${r.status}`)))
+      .then(setData)
+      .catch(e => setErr(e?.message || 'failed'));
+  }, []);
+  if (err) return <div className="glass-panel"><div className="panel-body"><div style={errorBar}>{err}</div></div></div>;
+  if (!data) return <div className="glass-panel"><div className="panel-body" style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>Loading…</div></div>;
+
+  return (
+    <div className="glass-panel">
+      <div className="panel-header">
+        <h3 className="panel-title">📡 Courier (Phase 10-A)</h3>
+        <span style={{ color: '#64748b', fontSize: '0.7rem' }}>flag: <code style={inlineCode}>{data.flag_required}</code></span>
+      </div>
+      <div className="panel-body">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
+          <Stat label="Enabled" value={data.enabled ? '● ON' : 'off'} />
+          <Stat label="Event types" value={data.event_types?.length || 0} mono />
+          <Stat label="Channels" value={data.channels?.length || 0} mono />
+          <Stat label="Severities" value={data.severities?.length || 0} mono />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div>
+            <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Event types ({data.event_types?.length || 0})</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {(data.event_types || []).map((e: string) => (
+                <code key={e} style={{ ...inlineCode, fontSize: '0.72rem', display: 'block', padding: '4px 8px' }}>{e}</code>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Channels ({data.channels?.length || 0})</h4>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(data.channels || []).map((c: string) => (
+                <span key={c} style={{ background: 'rgba(168,85,247,0.15)', color: '#c4b5fd', padding: '3px 10px', borderRadius: 100, fontSize: '0.75rem', textTransform: 'capitalize', fontWeight: 600 }}>{c}</span>
+              ))}
+            </div>
+            <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 14 }}>Severities</h4>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(data.severities || []).map((s: string) => (
+                <span key={s} style={{ background: s === 'error' ? 'rgba(239,68,68,0.15)' : s === 'warn' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)', color: s === 'error' ? '#f87171' : s === 'warn' ? '#fbbf24' : '#60a5fa', padding: '3px 10px', borderRadius: 100, fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>{s}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Routing config</h4>
+        {data.routing?.error ? (
+          <div style={{ padding: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 4, color: '#f87171', fontSize: '0.78rem' }}>⚠ {data.routing.error}</div>
+        ) : (
+          <pre style={{ padding: 12, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, color: '#cbd5e1', fontSize: '0.72rem', overflowX: 'auto', maxHeight: 240, overflowY: 'auto', margin: 0 }}>
+            {JSON.stringify(data.routing, null, 2)}
+          </pre>
+        )}
+
+        <div style={{ padding: 10, marginTop: 14, background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, color: '#fbbf24', fontSize: '0.78rem' }}>
+          {data.note}
+        </div>
       </div>
     </div>
   );

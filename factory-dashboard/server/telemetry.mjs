@@ -1073,6 +1073,80 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Phase 9-A surface — Verify Integration (read-only) ──────────────
+  // Surfaces enabled state + client kind + REVIEW_DECISIONS enum + most-
+  // recent inspectable mock-bundle store. Real HTTP cycle (Verify-stg auth
+  // + multi-app mode) is full 9-B.
+  if (req.url === '/api/factory-admin/verify/state' && req.method === 'GET') {
+    (async () => {
+      try {
+        const [{ getVerifyClient, isEnabled: verifyEnabled }, { REVIEW_DECISIONS }] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'client.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'types.js')).href),
+        ]);
+        const client = getVerifyClient();
+        const recent_bundles = typeof client._inspectStore === 'function' ? client._inspectStore() : [];
+        return jsonResponse(res, 200, {
+          enabled: verifyEnabled(),
+          flag_required: 'USE_VERIFY_INTEGRATION',
+          client_kind: client.kind,
+          verify_url: process.env.VERIFY_URL || null,
+          review_decisions: [...REVIEW_DECISIONS],
+          recent_bundles: recent_bundles.slice(-20).map(b => ({
+            build_id: b.build_id,
+            project_id: b.project_id,
+            received_at: b.received_at,
+            seq: b.seq,
+          })),
+          note: client.kind === 'mock'
+            ? 'Mock client active — bundles publish to an in-memory store (resets on telemetry restart). Real Verify portal requires VERIFY_URL + auth_token (Phase 9-B).'
+            : 'HTTP client active.',
+        });
+      } catch (err) {
+        console.error('[factory-admin/verify/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Phase 10-A surface — Courier (read-only) ────────────────────────
+  // Surfaces enabled state + EVENT_TYPES + CHANNELS + SEVERITIES +
+  // current routing config + most-recent dispatched events. Real
+  // Slack/GitHub/SMTP backends + Hermes deploy = full 10-B.
+  if (req.url === '/api/factory-admin/courier/state' && req.method === 'GET') {
+    (async () => {
+      try {
+        const [{ EVENT_TYPES, CHANNELS, SEVERITIES }, routerMod] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'types.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'router.js')).href),
+        ]);
+        // Try to load the routing config from the Phase 12-A admin path
+        let routing = null;
+        try {
+          const routingPath = path.join(REPO_ROOT, 'configs', 'courier-routing.json');
+          routing = await routerMod.loadRoutingConfig(routingPath);
+        } catch (err) {
+          routing = { error: err?.message || 'failed to load courier-routing.json' };
+        }
+        return jsonResponse(res, 200, {
+          enabled: process.env.USE_COURIER === 'true',
+          flag_required: 'USE_COURIER',
+          event_types: [...EVENT_TYPES],
+          channels: [...CHANNELS],
+          severities: [...SEVERITIES],
+          routing,
+          recent_events: [], // Phase 10-B will wire in-memory ring buffer
+          note: 'Real Slack / GitHub / SMTP backends + Hermes gateway = Phase 10-B (deferred). Today: routing config visible; events fire-and-forget through the registered backends; no event log yet.',
+        });
+      } catch (err) {
+        console.error('[factory-admin/courier/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 7-A surface — Memory Layer (read-only) ────────────────────
   // Lists scopes + observations from the configured memory backend
   // (default = filesystem at ~/Projects/agent-workspace/_factory-memory).
