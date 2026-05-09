@@ -14,7 +14,7 @@
  * falls back to constructor config for fully-decoupled tests.
  */
 
-import { isValidPassKind } from "./types.js";
+import { isValidPassKind, CADENCE_KINDS, shouldFireCadence } from "./types.js";
 
 function dailyTriggerMs(now, hourUtc, minuteUtc) {
   const target = new Date(now);
@@ -142,5 +142,122 @@ export function createScheduler(init) {
     },
 
     get _now() { return now(); },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 21-A.1 — Cadence Daemon (Platform Evolution Roadmap)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// A long-lived loop that ticks every 60 seconds, reads Standing Orders,
+// and for each enabled cadence checks whether the configured local
+// time + day rule matches the current minute. If yes, fires a pass via
+// the injected runPass (architect.runPass) and records the fire so
+// shouldFireCadence can dedupe within the cadence period.
+//
+// Lives inside the telemetry server process — no separate systemd unit.
+// Survives `paused: true` by sleeping and re-checking on the next tick.
+//
+// Dependency-injected for testability:
+//   readStandingOrders : async () => StandingOrders | null
+//   recordCadenceFire  : async (cadenceKind, passId) => void
+//   lastCadenceFire    : async (cadenceKind) => { at } | null
+//   runCadencePass     : async (cadenceKind, cadenceConfig) => result
+//   onReportProduced   : optional, (report) => void  (for live notification hooks)
+//   tickMs             : default 60_000
+//   now                : default Date.now (test clock)
+//   logger             : optional, { info, warn } — defaults to console
+
+/**
+ * @param {Object} init
+ * @param {() => Promise<any>} init.readStandingOrders
+ * @param {(cadenceKind: string, passId: string) => Promise<void>} init.recordCadenceFire
+ * @param {(cadenceKind: string) => Promise<{ at: string } | null>} init.lastCadenceFire
+ * @param {(cadenceKind: string, cadenceConfig: object) => Promise<{ pass: any, report?: any }>} init.runCadencePass
+ * @param {Object} [init.logger]
+ * @param {number} [init.tickMs=60000]
+ * @param {() => number} [init.now]
+ */
+export function createCadenceDaemon(init) {
+  if (!init?.readStandingOrders) throw new Error("daemon: readStandingOrders required");
+  if (!init?.runCadencePass) throw new Error("daemon: runCadencePass required");
+  if (!init?.recordCadenceFire) throw new Error("daemon: recordCadenceFire required");
+  if (!init?.lastCadenceFire) throw new Error("daemon: lastCadenceFire required");
+
+  const tickMs = init.tickMs ?? 60_000;
+  const now = init.now || (() => Date.now());
+  const logger = init.logger || console;
+  let _timer = null;
+  let _running = false;
+  let _ticks = 0;
+  let _fired = 0;
+
+  async function tickOnce() {
+    if (_running) return; // never overlap a long-running pass with the next tick
+    _running = true;
+    try {
+      _ticks += 1;
+      const so = await init.readStandingOrders();
+      if (!so) return;
+      const baseline = so.baseline || {};
+      if (baseline.paused === true) return;
+      const tz = baseline.timezone || "Asia/Kolkata";
+      const cadences = baseline.cadences || {};
+
+      for (const kind of CADENCE_KINDS) {
+        const cfg = cadences[kind];
+        if (!cfg) continue;
+        const lastFire = await init.lastCadenceFire(kind);
+        const decision = shouldFireCadence(kind, cfg, tz, new Date(now()), lastFire?.at);
+        if (!decision.fire) continue;
+        try {
+          logger.info?.(`[architect.daemon] firing ${kind} cadence (tz=${tz}, time=${cfg.time_local})`);
+          const result = await init.runCadencePass(kind, cfg);
+          const passId = result?.pass?.id || `unknown-${kind}-${Date.now()}`;
+          await init.recordCadenceFire(kind, passId);
+          if (init.onReportProduced && result?.report) {
+            try { init.onReportProduced(result.report); } catch {}
+          }
+          _fired += 1;
+        } catch (err) {
+          logger.warn?.(`[architect.daemon] ${kind} pass failed: ${err?.message || err}`);
+        }
+      }
+    } finally {
+      _running = false;
+    }
+  }
+
+  return {
+    /**
+     * Start the daemon — schedules the first tick on the next minute boundary,
+     * then every tickMs. Returns immediately.
+     */
+    async start() {
+      if (_timer) return; // already started
+      const loop = async () => {
+        try { await tickOnce(); } catch (err) {
+          logger.warn?.(`[architect.daemon] tick error: ${err?.message || err}`);
+        }
+        _timer = setTimeout(loop, tickMs);
+        if (typeof _timer?.unref === "function") _timer.unref();
+      };
+      // First tick aligned to next minute boundary for predictable cron-style
+      // firing (otherwise a startup at 22:00:30 would never fire 22:00 cadences).
+      const ms = 60_000 - (now() % 60_000) + 100;
+      _timer = setTimeout(loop, ms);
+      if (typeof _timer?.unref === "function") _timer.unref();
+      return { tickMs, alignedFirstTickInMs: ms };
+    },
+
+    stop() {
+      if (_timer) clearTimeout(_timer);
+      _timer = null;
+    },
+
+    // Test/debug accessors
+    get stats() { return { ticks: _ticks, fired: _fired, running: _running }; },
+    /** Tick once manually (for tests). */
+    async _tick() { return tickOnce(); },
   };
 }

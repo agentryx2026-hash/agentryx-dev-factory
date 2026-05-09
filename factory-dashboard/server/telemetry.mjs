@@ -19,11 +19,13 @@ const ARCHITECT_DIR = path.join(REPO_ROOT, 'cognitive-engine', 'architect');
 let architectModules = null;
 async function loadArchitect() {
   if (architectModules) return architectModules;
-  const [kbMod, researcherMod, proposerMod, architectMod] = await Promise.all([
+  const [kbMod, researcherMod, proposerMod, architectMod, schedulerMod, briefMod] = await Promise.all([
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'kb.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'researcher.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'proposer.js')).href),
     import(pathToFileURL(path.join(ARCHITECT_DIR, 'architect.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'scheduler.js')).href),
+    import(pathToFileURL(path.join(ARCHITECT_DIR, 'brief.js')).href),
   ]);
   // Phase 15-A proposal store (architect emits proposals into it)
   const storeMod = await import(
@@ -36,8 +38,102 @@ async function loadArchitect() {
     createArchitectProposer: proposerMod.createArchitectProposer,
     createArchitect: architectMod.createArchitect,
     createProposalStore: storeMod.createProposalStore,
+    createCadenceDaemon: schedulerMod.createCadenceDaemon,
+    runBrief: briefMod.runBrief,
+    composeBriefPrompt: briefMod.composeBriefPrompt,
   };
   return architectModules;
+}
+
+// ─── Architect cadence daemon ─────────────────────────────────────────────
+// Boots once on telemetry startup. Each tick reads Standing Orders and fires
+// any cadence whose configured local time/day matches the current minute.
+// Stays paused if baseline.paused === true. All persistence + dedupe goes
+// through the KB.
+let cadenceDaemonHandle = null;
+async function bootCadenceDaemon() {
+  if (cadenceDaemonHandle) return cadenceDaemonHandle;
+  try {
+    const A = await loadArchitect();
+    const kb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
+    const proposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+
+    cadenceDaemonHandle = A.createCadenceDaemon({
+      readStandingOrders: () => kb.readStandingOrders(),
+      recordCadenceFire:  (k, p) => kb.recordCadenceFire(k, p),
+      lastCadenceFire:    (k)    => kb.lastCadenceFire(k),
+      runCadencePass: async (cadenceKind, cadenceConfig) => {
+        // For each cadence we run a fresh architect.runPass with the
+        // cadence's own dispatcher + budget. The pass label IS the cadence
+        // kind so listPasses({pass_kind:"weekly"}) groups cycle reports.
+        const proposer = A.createArchitectProposer({ proposalStore, kb });
+        const researcher = A.createResearcher({
+          dispatchSubagent: A.createStubDispatcher(), // 21-B replaces this with real Sonnet
+          budget_usd_per_pass: cadenceConfig.budget_usd ?? 1.5,
+        });
+        const architect = A.createArchitect({ kb, researcher, proposer });
+        const result = await architect.runPass(cadenceKind, {
+          cadence: cadenceKind,
+          cadence_config: cadenceConfig,
+        });
+
+        // If the cadence has report_enabled, synthesize a Report artifact.
+        // (For Phase 21-A the report shape is real; the content is synthetic
+        // since dispatcher=stub. 21-B fills with real prose.)
+        if (cadenceConfig.report_enabled) {
+          const findings = await kb.listFindings({ pass_id: result.pass?.id, limit: 200 });
+          const sections = [
+            {
+              heading: `${cadenceKind[0].toUpperCase()}${cadenceKind.slice(1)} cycle summary`,
+              kind: "narrative",
+              body: `Cadence \`${cadenceKind}\` ran at ${new Date(result.pass?.completed_at || Date.now()).toISOString()}. Produced ${result.findings_count ?? 0} findings, ${result.proposals_count ?? 0} candidate proposals at $${(result.cost_usd ?? 0).toFixed(2)} cost. ${result.cost_usd === 0 ? '_(stub dispatcher — synthetic findings; Phase 21-B replaces with real Sonnet research.)_' : ''}`,
+            },
+          ];
+          if (findings.length) {
+            sections.push({
+              heading: "Findings by priority area",
+              kind: "list",
+              body: findings.map(f => `- **[${f.priority_area || 'untagged'}]** ${f.content || '(no content)'}`).join("\n"),
+            });
+          }
+          if (cadenceKind === "monthly") {
+            sections.push({
+              heading: "Criteria health check",
+              kind: "criteria-health",
+              body: `_(stub)_ Architect should review the priority-area set against shipped modules and propose adding/removing/renaming areas. Phase 21-B implements this with the real dispatcher.`,
+            });
+          }
+          const report = await kb.writeReport({
+            kind: "cycle",
+            cadence: cadenceKind,
+            pass_id: result.pass?.id,
+            title: `${cadenceKind[0].toUpperCase()}${cadenceKind.slice(1)} cycle — ${new Date().toISOString().slice(0,10)}`,
+            summary: `Architect ${cadenceKind} cycle: ${result.findings_count ?? 0} findings, ${result.proposals_count ?? 0} proposals.`,
+            sections,
+            linked_findings: findings.map(f => f.id),
+            linked_proposals: [],
+            cost_usd: result.cost_usd ?? 0,
+          });
+          return { pass: result.pass, report };
+        }
+        return { pass: result.pass };
+      },
+      onReportProduced: (report) => {
+        try {
+          addLog('system', `👑 Architect cycle report ready: ${report.id} (${report.cadence})`);
+          broadcast();
+        } catch {}
+      },
+      logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+    });
+
+    const info = await cadenceDaemonHandle.start();
+    console.log(`📅 Architect cadence daemon started (first tick in ${info.alignedFirstTickInMs}ms, period ${info.tickMs}ms)`);
+  } catch (err) {
+    console.error('[architect.daemon] failed to boot:', err);
+    cadenceDaemonHandle = null;
+  }
+  return cadenceDaemonHandle;
 }
 
 function jsonResponse(res, status, body) {
@@ -808,12 +904,15 @@ const server = http.createServer((req, res) => {
         const { createKnowledgeBase, createProposalStore } = await loadArchitect();
         const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
         const store = createProposalStore(ARCHITECT_KB_ROOT);
-        const [standing_orders, summary, passes, findings, allProposals] = await Promise.all([
+        const [standing_orders, summary, passes, findings, allProposals, briefs, reports, unreadCount] = await Promise.all([
           kb.readStandingOrders(),
           kb.summary(),
           kb.listPasses({ limit: 5 }),
           kb.listFindings({ limit: 30 }),
           store.list(),
+          kb.listBriefs({ limit: 30 }),
+          kb.listReports({ limit: 30 }),
+          kb.unreadReportCount(),
         ]);
         // Architect-owned proposal kinds only — keep the surface focused
         const ARCH_KINDS = new Set(['tool_adoption', 'kb_update', 'research_finding']);
@@ -827,6 +926,10 @@ const server = http.createServer((req, res) => {
           passes,
           findings,
           proposals,
+          briefs,
+          reports,
+          unread_report_count: unreadCount,
+          paused: standing_orders?.baseline?.paused === true,
           kb_root: ARCHITECT_KB_ROOT,
           has_seed: fs.existsSync(SEED_JSON_PATH),
         });
@@ -955,6 +1058,183 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Pause / resume the cadence daemon (writes baseline.paused) ───────
+  if ((req.url === '/api/architect/pause' || req.url === '/api/architect/resume') && req.method === 'POST') {
+    (async () => {
+      try {
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const so = await kb.readStandingOrders();
+        if (!so) return jsonResponse(res, 412, { error: 'no Standing Orders configured' });
+        const paused = req.url.endsWith('pause');
+        const merged = { ...so, baseline: { ...(so.baseline || {}), paused } };
+        merged.version = Number(so.version || 0) + 1;
+        const written = await kb.writeStandingOrders(merged);
+        addLog('system', `👑 Architect ${paused ? 'paused' : 'resumed'} (v${written.version}).`);
+        broadcast();
+        return jsonResponse(res, 200, { success: true, paused, version: written.version });
+      } catch (err) {
+        console.error('[architect/pause-resume]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Briefs (Founder R&D Brief tab) ───────────────────────────────────
+  if (req.url === '/api/architect/brief' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const A = await loadArchitect();
+        const kb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const proposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+        const proposer = A.createArchitectProposer({ proposalStore, kb });
+        const researcher = A.createResearcher({
+          dispatchSubagent: A.createStubDispatcher(),
+          budget_usd_per_pass: body.budget_usd || 3,
+        });
+        const architect = A.createArchitect({ kb, researcher, proposer });
+
+        addLog('system', `🔬 Architect: brief submitted — "${(body.title || '').slice(0, 60)}"`);
+        broadcast();
+
+        const out = await A.runBrief({ kb, architect, briefInput: body });
+        addLog('system', `🔬 Architect: brief ${out.brief.id} done · ${out.report?.id || 'no report'}`);
+        broadcast();
+        return jsonResponse(res, 200, out);
+      } catch (err) {
+        console.error('[architect/brief POST]', err);
+        return jsonResponse(res, 400, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.startsWith('/api/architect/briefs') && req.method === 'GET') {
+    (async () => {
+      try {
+        const m = req.url.match(/^\/api\/architect\/briefs(?:\/([^/?]+))?(?:\?.*)?$/);
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        if (m && m[1]) {
+          const b = await kb.readBrief(m[1]);
+          if (!b) return jsonResponse(res, 404, { error: 'brief not found' });
+          return jsonResponse(res, 200, b);
+        }
+        const briefs = await kb.listBriefs({ limit: 50 });
+        return jsonResponse(res, 200, { briefs });
+      } catch (err) {
+        console.error('[architect/briefs]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Reports (cycle reports + brief reports) ──────────────────────────
+  if (req.url?.startsWith('/api/architect/reports') && req.method === 'GET') {
+    (async () => {
+      try {
+        const m = req.url.match(/^\/api\/architect\/reports(?:\/([^/?]+))?(?:\?.*)?$/);
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        if (m && m[1]) {
+          const r = await kb.readReport(m[1]);
+          if (!r) return jsonResponse(res, 404, { error: 'report not found' });
+          return jsonResponse(res, 200, r);
+        }
+        // List
+        const url = new URL(req.url, 'http://localhost');
+        const reports = await kb.listReports({
+          limit: Number(url.searchParams.get('limit')) || 30,
+          kind: url.searchParams.get('kind') || undefined,
+          cadence: url.searchParams.get('cadence') || undefined,
+          unread_only: url.searchParams.get('unread_only') === 'true',
+        });
+        const unreadCount = await kb.unreadReportCount();
+        return jsonResponse(res, 200, { reports, unread_count: unreadCount });
+      } catch (err) {
+        console.error('[architect/reports]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.match(/^\/api\/architect\/reports\/([^/]+)\/read$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const id = req.url.match(/^\/api\/architect\/reports\/([^/]+)\/read$/)[1];
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const updated = await kb.markReportRead(id);
+        if (!updated) return jsonResponse(res, 404, { error: 'report not found' });
+        return jsonResponse(res, 200, updated);
+      } catch (err) {
+        console.error('[architect/reports/read]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Manual cadence run (for "Run a [weekly] now" buttons in the UI) ──
+  if (req.url?.match(/^\/api\/architect\/cadence\/(daily|weekly|monthly)\/run$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const cadenceKind = req.url.match(/^\/api\/architect\/cadence\/(daily|weekly|monthly)\/run$/)[1];
+        await bootCadenceDaemon(); // ensure handler exists
+        if (!cadenceDaemonHandle) return jsonResponse(res, 500, { error: 'daemon failed to boot' });
+        // Manually invoke the same code path as a scheduled tick — but force
+        // the cadence regardless of clock. We do this by calling runCadencePass
+        // through a fresh architect setup, mirroring what the daemon would do.
+        const { createKnowledgeBase } = await loadArchitect();
+        const kb = createKnowledgeBase(ARCHITECT_KB_ROOT);
+        const so = await kb.readStandingOrders();
+        if (!so) return jsonResponse(res, 412, { error: 'no Standing Orders configured' });
+        const cfg = so.baseline?.cadences?.[cadenceKind] || { budget_usd: 1.5, report_enabled: true };
+        // Reuse the daemon's runCadencePass via a public hook. We exposed it
+        // through a tiny adapter on the closure earlier — call it via a fresh
+        // architect setup here for simplicity.
+        const A = await loadArchitect();
+        const proposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+        const proposer = A.createArchitectProposer({ proposalStore, kb });
+        const researcher = A.createResearcher({
+          dispatchSubagent: A.createStubDispatcher(),
+          budget_usd_per_pass: cfg.budget_usd ?? 1.5,
+        });
+        const architect = A.createArchitect({ kb, researcher, proposer });
+        const result = await architect.runPass(cadenceKind);
+        await kb.recordCadenceFire(cadenceKind, result.pass?.id);
+        let report = null;
+        if (cfg.report_enabled !== false) {
+          const findings = await kb.listFindings({ pass_id: result.pass?.id, limit: 200 });
+          report = await kb.writeReport({
+            kind: "cycle",
+            cadence: cadenceKind,
+            pass_id: result.pass?.id,
+            title: `${cadenceKind[0].toUpperCase()}${cadenceKind.slice(1)} cycle — ${new Date().toISOString().slice(0,10)}`,
+            summary: `Architect ${cadenceKind} cycle: ${result.findings_count ?? 0} findings, ${result.proposals_count ?? 0} proposals.`,
+            sections: [
+              { heading: "Summary", kind: "narrative", body: `Manually-triggered ${cadenceKind} cycle. ${result.findings_count ?? 0} findings, ${result.proposals_count ?? 0} proposals. ${result.cost_usd === 0 ? '_(stub dispatcher — synthetic.)_' : ''}` },
+              { heading: "Findings", kind: "list", body: findings.map(f => `- **[${f.priority_area || 'untagged'}]** ${f.content || '(no content)'}`).join("\n") || "_(none)_" },
+            ],
+            linked_findings: findings.map(f => f.id),
+            cost_usd: result.cost_usd ?? 0,
+          });
+        }
+        addLog('system', `👑 Architect manual ${cadenceKind} cycle done${report ? ` (report ${report.id})` : ''}`);
+        broadcast();
+        return jsonResponse(res, 200, { pass: result.pass, report });
+      } catch (err) {
+        console.error('[architect/cadence/run]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   if (req.url?.startsWith('/api/architect/proposal/') && req.method === 'POST') {
     // /api/architect/proposal/:id/:action  where action is approve|reject
     (async () => {
@@ -1002,4 +1282,9 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end();
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`📡 Telemetry running on :${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`📡 Telemetry running on :${PORT}`);
+  // Phase 21-A.1 — boot the architect cadence daemon. Failures are
+  // logged but don't crash the telemetry server (architect is optional).
+  bootCadenceDaemon().catch(err => console.error('[architect.daemon] boot error:', err));
+});

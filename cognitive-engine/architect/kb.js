@@ -4,7 +4,8 @@ import crypto from "node:crypto";
 import {
   SCHEMA_VERSION, PRIORITY_AREAS,
   isValidTargetStatus, isValidGapStatus, isValidFindingKind, isValidPriorityArea,
-  validateStandingOrders, applyBaselineDefaults, nowIso,
+  isValidBriefStatus, isValidCadenceKind,
+  validateStandingOrders, validateBrief, applyBaselineDefaults, nowIso,
 } from "./types.js";
 
 /**
@@ -33,6 +34,10 @@ const FINDINGS_FILE = "findings.jsonl";
 const PASSES_FILE = "passes.jsonl";
 const ROADMAP_SNAPSHOT_FILE = "roadmap_snapshot.json";
 const SEQ_FILE = "_seq";
+// Phase 21-A.1 — Platform Evolution Roadmap
+const BRIEFS_DIR = "briefs";        // _kb/briefs/BRIEF-NNNN.json (mutable per-id)
+const REPORTS_DIR = "reports";      // _kb/reports/REP-NNNN.json (mutable per-id)
+const CADENCE_FIRES_FILE = "cadence_fires.jsonl";  // append-only — last fire timestamp per cadence (daemon dedupe)
 
 async function atomicWriteJSON(destPath, obj) {
   const tmp = destPath + ".tmp." + crypto.randomBytes(4).toString("hex");
@@ -326,6 +331,154 @@ export function createKnowledgeBase(rootDir) {
         if (err.code === "ENOENT") return null;
         throw err;
       }
+    },
+
+    // -------------------------------------------------------------------
+    // Briefs (Phase 21-A.1 — Founder R&D Brief)
+    // -------------------------------------------------------------------
+    async writeBrief(input) {
+      const errs = validateBrief(input);
+      if (errs.length) throw new Error("invalid brief: " + errs.join("; "));
+      await ensureDir();
+      const briefsDir = path.join(baseDir, BRIEFS_DIR);
+      await fs.mkdir(briefsDir, { recursive: true });
+      const id = input.id || await nextSeq("BRIEF");
+      const out = {
+        id,
+        status: input.status || "queued",
+        submitted_at: input.submitted_at || nowIso(),
+        submitted_by: input.submitted_by || "founder",
+        ...input,
+      };
+      await atomicWriteJSON(path.join(briefsDir, `${id}.json`), out);
+      return out;
+    },
+
+    async updateBrief(id, patch) {
+      const briefsDir = path.join(baseDir, BRIEFS_DIR);
+      const filePath = path.join(briefsDir, `${id}.json`);
+      let existing;
+      try { existing = JSON.parse(await fs.readFile(filePath, "utf-8")); }
+      catch (err) { if (err.code === "ENOENT") return null; throw err; }
+      if (patch.status && !isValidBriefStatus(patch.status)) {
+        throw new Error(`invalid brief status: ${patch.status}`);
+      }
+      const merged = { ...existing, ...patch, id, updated_at: nowIso() };
+      await atomicWriteJSON(filePath, merged);
+      return merged;
+    },
+
+    async listBriefs({ limit = 50, status } = {}) {
+      const briefsDir = path.join(baseDir, BRIEFS_DIR);
+      let entries;
+      try { entries = await fs.readdir(briefsDir); }
+      catch (err) { if (err.code === "ENOENT") return []; throw err; }
+      const out = [];
+      for (const f of entries) {
+        if (!f.startsWith("BRIEF-") || !f.endsWith(".json")) continue;
+        try {
+          const b = JSON.parse(await fs.readFile(path.join(briefsDir, f), "utf-8"));
+          if (status && b.status !== status) continue;
+          out.push(b);
+        } catch {}
+      }
+      out.sort((a, b) => (b.submitted_at || "").localeCompare(a.submitted_at || ""));
+      return out.slice(0, limit);
+    },
+
+    async readBrief(id) {
+      const filePath = path.join(baseDir, BRIEFS_DIR, `${id}.json`);
+      try { return JSON.parse(await fs.readFile(filePath, "utf-8")); }
+      catch (err) { if (err.code === "ENOENT") return null; throw err; }
+    },
+
+    // -------------------------------------------------------------------
+    // Reports (cycle reports + brief reports)
+    // -------------------------------------------------------------------
+    async writeReport(input) {
+      await ensureDir();
+      const reportsDir = path.join(baseDir, REPORTS_DIR);
+      await fs.mkdir(reportsDir, { recursive: true });
+      const id = input.id || await nextSeq("REP");
+      const out = {
+        id,
+        kind: input.kind || "cycle",
+        generated_at: input.generated_at || nowIso(),
+        read_by_founder: false,
+        sections: input.sections || [],
+        linked_findings: input.linked_findings || [],
+        linked_proposals: input.linked_proposals || [],
+        cost_usd: input.cost_usd ?? 0,
+        ...input,
+      };
+      await atomicWriteJSON(path.join(reportsDir, `${id}.json`), out);
+      return out;
+    },
+
+    async listReports({ limit = 50, kind, cadence, unread_only } = {}) {
+      const reportsDir = path.join(baseDir, REPORTS_DIR);
+      let entries;
+      try { entries = await fs.readdir(reportsDir); }
+      catch (err) { if (err.code === "ENOENT") return []; throw err; }
+      const out = [];
+      for (const f of entries) {
+        if (!f.startsWith("REP-") || !f.endsWith(".json")) continue;
+        try {
+          const r = JSON.parse(await fs.readFile(path.join(reportsDir, f), "utf-8"));
+          if (kind && r.kind !== kind) continue;
+          if (cadence && r.cadence !== cadence) continue;
+          if (unread_only && r.read_by_founder) continue;
+          out.push(r);
+        } catch {}
+      }
+      out.sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
+      return out.slice(0, limit);
+    },
+
+    async readReport(id) {
+      const filePath = path.join(baseDir, REPORTS_DIR, `${id}.json`);
+      try { return JSON.parse(await fs.readFile(filePath, "utf-8")); }
+      catch (err) { if (err.code === "ENOENT") return null; throw err; }
+    },
+
+    async markReportRead(id) {
+      const reportsDir = path.join(baseDir, REPORTS_DIR);
+      const filePath = path.join(reportsDir, `${id}.json`);
+      let r;
+      try { r = JSON.parse(await fs.readFile(filePath, "utf-8")); }
+      catch (err) { if (err.code === "ENOENT") return null; throw err; }
+      r.read_by_founder = true;
+      r.read_at = nowIso();
+      await atomicWriteJSON(filePath, r);
+      return r;
+    },
+
+    async unreadReportCount() {
+      const reports = await this.listReports({ unread_only: true, limit: 1000 });
+      return reports.length;
+    },
+
+    // -------------------------------------------------------------------
+    // Cadence fire log (daemon dedupe — last-fired timestamp per cadence)
+    // -------------------------------------------------------------------
+    async recordCadenceFire(cadenceKind, passId, at = null) {
+      if (!isValidCadenceKind(cadenceKind)) throw new Error(`invalid cadence: ${cadenceKind}`);
+      await ensureDir();
+      await fs.appendFile(
+        path.join(baseDir, CADENCE_FIRES_FILE),
+        JSON.stringify({ cadence: cadenceKind, pass_id: passId, at: at || nowIso() }) + "\n",
+        "utf-8",
+      );
+    },
+
+    async lastCadenceFire(cadenceKind) {
+      const entries = await readJSONL(path.join(baseDir, CADENCE_FIRES_FILE));
+      let latest = null;
+      for (const e of entries) {
+        if (e.cadence !== cadenceKind) continue;
+        if (!latest || (e.at || "").localeCompare(latest.at || "") > 0) latest = e;
+      }
+      return latest;
     },
 
     // -------------------------------------------------------------------

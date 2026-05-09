@@ -66,8 +66,9 @@ async function testTypes() {
   console.log("[types]");
   assert(PRIORITY_AREAS.length === 6, "6 priority areas (D194)");
   assert(PRIORITY_AREAS.every(a => isValidPriorityArea(a)), "all 6 valid");
-  assert(PASS_KINDS.length === 4, "4 pass kinds");
+  assert(PASS_KINDS.length === 7, "7 pass kinds (Phase 21-A.1: + weekly, monthly, founder_brief)");
   assert(PASS_KINDS.includes("boot") && PASS_KINDS.includes("daily") && PASS_KINDS.includes("founder_priority_update"), "core pass kinds present");
+  assert(PASS_KINDS.includes("weekly") && PASS_KINDS.includes("monthly") && PASS_KINDS.includes("founder_brief"), "Phase 21-A.1 pass kinds present");
 
   const errs = validateStandingOrders(clone());
   assert(errs.length === 0, `valid sample passes validation (got ${errs.length}: ${errs.join("|")})`);

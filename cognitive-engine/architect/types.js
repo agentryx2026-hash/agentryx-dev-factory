@@ -202,7 +202,19 @@ export const PRIORITY_AREAS = Object.freeze([
 ]);
 
 export const PASS_KINDS = Object.freeze([
-  "boot", "daily", "manual", "founder_priority_update",
+  "boot", "daily", "weekly", "monthly", "manual", "founder_priority_update", "founder_brief",
+]);
+
+// Cadence kinds (Platform Evolution Roadmap, founder confirmation 2026-05-09).
+// Three tiers — each runs at a different depth and at a different cadence;
+// the daily watcher accumulates raw findings, weekly synthesises them into a
+// report, monthly reviews trends across weeks + tunes the criteria set.
+export const CADENCE_KINDS = Object.freeze(["daily", "weekly", "monthly"]);
+
+export const REPORT_KINDS = Object.freeze(["cycle", "brief"]);
+
+export const BRIEF_STATUSES = Object.freeze([
+  "queued", "running", "completed", "failed", "cancelled",
 ]);
 
 export const TARGET_STATUSES = Object.freeze([
@@ -221,6 +233,40 @@ export const COST_SENSITIVITIES = Object.freeze(["high", "medium", "low"]);
 export const CHANGE_TOLERANCES = Object.freeze(["stable-lock", "gradual", "aggressive"]);
 export const RESEARCH_DEPTHS = Object.freeze(["light", "standard", "deep"]);
 
+// Per-cadence default config. Defaults reflect the founder's stated preference
+// (2026-05-09): monthly enabled, weekly + daily off; reports on for the two
+// synthesis tiers; budget caps per cadence (cheaper for daily, more for monthly
+// strategic). All times are in `baseline.timezone` (default Asia/Kolkata) so
+// "Friday 22:00" means founder-local Friday, not UTC Friday.
+export const DEFAULT_CADENCES = Object.freeze({
+  daily: {
+    enabled: false,
+    time_local: "22:00",          // HH:MM in baseline.timezone
+    report_enabled: false,
+    budget_usd: 0.5,
+    depth: "light",
+    dispatcher: "stub",
+  },
+  weekly: {
+    enabled: false,
+    day_of_week: 4,               // 0=Sun ... 4=Thu (Thu night → Fri morning report ready)
+    time_local: "22:00",
+    report_enabled: true,
+    budget_usd: 2.0,
+    depth: "standard",
+    dispatcher: "stub",
+  },
+  monthly: {
+    enabled: true,
+    day_rule: "last-thursday",    // last-thursday | last-day | first-day
+    time_local: "22:00",
+    report_enabled: true,
+    budget_usd: 8.0,
+    depth: "deep",
+    dispatcher: "stub",
+  },
+});
+
 export const DEFAULT_BASELINE = Object.freeze({
   cron_schedule: { hour_utc: 0, minute_utc: 0 },
   daily_budget_usd: 1.5,
@@ -228,6 +274,10 @@ export const DEFAULT_BASELINE = Object.freeze({
   research_dispatcher: "stub",
   auto_watch_enabled: true,
   auto_watch_disabled_ids: [],
+  // Phase 21-A.1 — Platform Evolution Roadmap additions
+  timezone: "Asia/Kolkata",
+  paused: false,
+  cadences: DEFAULT_CADENCES,
 });
 
 export function isValidPriorityArea(a) { return PRIORITY_AREAS.includes(a); }
@@ -236,6 +286,8 @@ export function isValidTargetStatus(s) { return TARGET_STATUSES.includes(s); }
 export function isValidGapStatus(s) { return GAP_STATUSES.includes(s); }
 export function isValidFindingKind(k) { return FINDING_KINDS.includes(k); }
 export function isValidResearchDepth(d) { return RESEARCH_DEPTHS.includes(d); }
+export function isValidCadenceKind(k) { return CADENCE_KINDS.includes(k); }
+export function isValidBriefStatus(s) { return BRIEF_STATUSES.includes(s); }
 
 export function nowIso() { return new Date().toISOString(); }
 
@@ -244,6 +296,11 @@ export function nowIso() { return new Date().toISOString(); }
  * value. Returns a new object; does not mutate input.
  */
 export function applyBaselineDefaults(baseline = {}) {
+  const incomingCadences = baseline.cadences || {};
+  const cadences = {};
+  for (const k of CADENCE_KINDS) {
+    cadences[k] = { ...DEFAULT_CADENCES[k], ...(incomingCadences[k] || {}) };
+  }
   return {
     cron_schedule: {
       hour_utc: baseline.cron_schedule?.hour_utc ?? DEFAULT_BASELINE.cron_schedule.hour_utc,
@@ -256,6 +313,9 @@ export function applyBaselineDefaults(baseline = {}) {
     auto_watch_disabled_ids: Array.isArray(baseline.auto_watch_disabled_ids)
       ? baseline.auto_watch_disabled_ids.slice()
       : DEFAULT_BASELINE.auto_watch_disabled_ids.slice(),
+    timezone: baseline.timezone || DEFAULT_BASELINE.timezone,
+    paused: baseline.paused === true,
+    cadences,
     ...(baseline.meta ? { meta: baseline.meta } : {}),
   };
 }
@@ -345,4 +405,195 @@ export function computeAttentionBudget(standingOrders) {
     out[a.id] = Math.round((a.weight / totalWeight) * 1000) / 1000;
   }
   return out;
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Phase 21-A.1 — Platform Evolution Roadmap: Briefs, Reports, Cron math
+// ───────────────────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} Brief
+ * Founder-driven research brief — submitted via the R&D Brief tab. Each
+ * brief composes into a prompt and spawns one founder_brief pass.
+ *
+ * @property {string} id                            e.g. "BRIEF-0001"
+ * @property {string} title
+ * @property {string} role                          resolved from preset or custom
+ * @property {string} [background]
+ * @property {string} research_question             REQUIRED
+ * @property {string} [trigger]                     "why now"
+ * @property {string} [constraints]
+ * @property {string} output_format                 resolved from preset or custom
+ * @property {string[]} [references]                URLs / repos
+ * @property {number} [budget_usd]                  default 3
+ * @property {string} [priority_area]               optional tag
+ * @property {string} submitted_at                  ISO 8601
+ * @property {string} submitted_by                  usually "founder"
+ * @property {"queued"|"running"|"completed"|"failed"|"cancelled"} status
+ * @property {string} [pass_id]                     linked pass once spawned
+ * @property {string} [report_id]                   linked report once produced
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {Object} Report
+ * Cycle or brief report. Each Pass with `report_enabled: true` produces
+ * one Report. The cycle hierarchy means a weekly report rolls up the
+ * preceding 7 days of findings; monthly rolls up the last 4 weeks.
+ *
+ * @property {string} id                            e.g. "REP-0001"
+ * @property {"cycle"|"brief"} kind
+ * @property {"daily"|"weekly"|"monthly"|null} cadence
+ * @property {string} pass_id
+ * @property {string} [brief_id]                    only for kind="brief"
+ * @property {string} generated_at                  ISO 8601
+ * @property {string} [cycle_start]                 ISO 8601 (cycle reports)
+ * @property {string} [cycle_end]                   ISO 8601
+ * @property {string} title
+ * @property {string} summary                       headline narrative
+ * @property {ReportSection[]} sections
+ * @property {string[]} linked_findings             F-... ids
+ * @property {string[]} linked_proposals            PROP-... ids
+ * @property {boolean} read_by_founder
+ * @property {string} [read_at]
+ * @property {number} cost_usd
+ */
+
+/**
+ * @typedef {Object} ReportSection
+ * @property {string} heading
+ * @property {string} body                          markdown
+ * @property {"narrative"|"comparison"|"list"|"recommendation"|"criteria-health"} kind
+ */
+
+export function validateBrief(b) {
+  const errors = [];
+  if (!b || typeof b !== "object") return ["brief must be an object"];
+  if (!b.title || typeof b.title !== "string") errors.push("title required");
+  if (!b.research_question || typeof b.research_question !== "string") {
+    errors.push("research_question required");
+  }
+  if (!b.role || typeof b.role !== "string") errors.push("role required");
+  if (!b.output_format || typeof b.output_format !== "string") {
+    errors.push("output_format required");
+  }
+  if (b.budget_usd != null && (typeof b.budget_usd !== "number" || b.budget_usd <= 0)) {
+    errors.push("budget_usd must be a positive number");
+  }
+  if (b.priority_area && !isValidPriorityArea(b.priority_area)) {
+    errors.push(`priority_area invalid: ${b.priority_area}`);
+  }
+  return errors;
+}
+
+export function validateCadence(kind, c) {
+  const errors = [];
+  if (!isValidCadenceKind(kind)) errors.push(`invalid cadence kind: ${kind}`);
+  if (!c || typeof c !== "object") { errors.push(`${kind}: cadence config required`); return errors; }
+  if (typeof c.enabled !== "boolean") errors.push(`${kind}.enabled must be boolean`);
+  if (c.time_local && !/^\d{1,2}:\d{2}$/.test(c.time_local)) {
+    errors.push(`${kind}.time_local must be HH:MM`);
+  }
+  if (c.budget_usd != null && (typeof c.budget_usd !== "number" || c.budget_usd < 0)) {
+    errors.push(`${kind}.budget_usd must be non-negative`);
+  }
+  if (kind === "weekly" && c.day_of_week != null) {
+    if (typeof c.day_of_week !== "number" || c.day_of_week < 0 || c.day_of_week > 6) {
+      errors.push(`weekly.day_of_week must be 0-6`);
+    }
+  }
+  if (kind === "monthly" && c.day_rule) {
+    const valid = ["last-thursday", "last-day", "first-day"];
+    if (!valid.includes(c.day_rule)) {
+      errors.push(`monthly.day_rule must be one of ${valid.join(",")}`);
+    }
+  }
+  return errors;
+}
+
+// ─── Cron math (timezone-aware) ─────────────────────────────────────────
+// We implement this by hand instead of pulling node-cron because (a) the
+// project's pattern is zero-dep where reasonable and (b) we only need
+// three cadence shapes, well-bounded.
+
+/**
+ * Returns wall-clock parts of `instant` interpreted in `tz` (an IANA tz name).
+ * Uses Intl.DateTimeFormat (built into Node 18+) — no external deps.
+ */
+export function partsInTz(instant, tz) {
+  const d = instant instanceof Date ? instant : new Date(instant);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map(p => [p.type, p.value]));
+  // Intl returns "24" instead of "00" for midnight in some Node versions; normalise.
+  const hour = parts.hour === "24" ? 0 : Number(parts.hour);
+  const dayOfWeek = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(parts.weekday);
+  return {
+    year: Number(parts.year), month: Number(parts.month), day: Number(parts.day),
+    hour, minute: Number(parts.minute), second: Number(parts.second),
+    day_of_week: dayOfWeek,
+  };
+}
+
+/**
+ * For the monthly "last-thursday" rule: given a year + month (1-12) in `tz`,
+ * return the day-of-month (1-31) that is the LAST Thursday. Other rules:
+ *   - "last-day"   = the last calendar day of the month
+ *   - "first-day"  = the 1st
+ */
+export function resolveMonthlyDay(year, month1to12, rule) {
+  if (rule === "first-day") return 1;
+  // Compute last day of month (in any tz — month boundaries are calendar-only)
+  const lastDay = new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
+  if (rule === "last-day") return lastDay;
+  if (rule === "last-thursday") {
+    // Walk backwards from the last day until we find a Thursday in any tz.
+    // Month-boundaries are tz-stable; weekday of (y,m,d) is the same in every tz.
+    for (let d = lastDay; d >= lastDay - 6; d--) {
+      // Sun=0..Sat=6 — Thursday=4
+      const dow = new Date(Date.UTC(year, month1to12 - 1, d)).getUTCDay();
+      if (dow === 4) return d;
+    }
+  }
+  return lastDay;
+}
+
+/**
+ * Decide whether a cadence should fire RIGHT NOW given the current instant
+ * and the most-recent prior fire. Uses the cadence's local time + tz.
+ *
+ * Logic: convert "now" to local parts, check the cadence's trigger condition
+ * matches the current minute, AND the last fire was at least (cadence period
+ * minus 5 minutes) ago — guards against double-fires from a 60s poll loop.
+ *
+ * Returns { fire: boolean, reason: string }.
+ */
+export function shouldFireCadence(kind, cadence, tz, now, lastFiredAt) {
+  if (!cadence?.enabled) return { fire: false, reason: "disabled" };
+  const [h, m] = String(cadence.time_local || "00:00").split(":").map(Number);
+  const local = partsInTz(now, tz || "Asia/Kolkata");
+
+  // Wall clock must match the configured hour:minute (ignore seconds — we tick once a minute)
+  if (local.hour !== h || local.minute !== m) return { fire: false, reason: "off-clock" };
+
+  // Day filter
+  if (kind === "weekly") {
+    const targetDow = typeof cadence.day_of_week === "number" ? cadence.day_of_week : 4;
+    if (local.day_of_week !== targetDow) return { fire: false, reason: "wrong-weekday" };
+  } else if (kind === "monthly") {
+    const targetDay = resolveMonthlyDay(local.year, local.month, cadence.day_rule || "last-thursday");
+    if (local.day !== targetDay) return { fire: false, reason: "wrong-monthday" };
+  }
+  // Daily: any day matches as long as the time-of-day matches.
+
+  // Dedupe — never fire twice within (period - 5 min)
+  if (lastFiredAt) {
+    const sinceMs = (now instanceof Date ? now.getTime() : new Date(now).getTime()) - new Date(lastFiredAt).getTime();
+    const minMs = kind === "daily" ? 23 * 3600_000 : kind === "weekly" ? 6 * 86400_000 + 23 * 3600_000 : 25 * 86400_000;
+    if (sinceMs < minMs) return { fire: false, reason: "deduped" };
+  }
+  return { fire: true, reason: "ok" };
 }

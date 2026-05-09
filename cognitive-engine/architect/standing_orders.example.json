@@ -6,7 +6,37 @@
     "research_depth": "standard",
     "research_dispatcher": "stub",
     "auto_watch_enabled": true,
-    "auto_watch_disabled_ids": []
+    "auto_watch_disabled_ids": [],
+    "timezone": "Asia/Kolkata",
+    "paused": false,
+    "cadences": {
+      "daily": {
+        "enabled": false,
+        "time_local": "22:00",
+        "report_enabled": false,
+        "budget_usd": 0.5,
+        "depth": "light",
+        "dispatcher": "stub"
+      },
+      "weekly": {
+        "enabled": false,
+        "day_of_week": 4,
+        "time_local": "22:00",
+        "report_enabled": true,
+        "budget_usd": 2.0,
+        "depth": "standard",
+        "dispatcher": "stub"
+      },
+      "monthly": {
+        "enabled": true,
+        "day_rule": "last-thursday",
+        "time_local": "22:00",
+        "report_enabled": true,
+        "budget_usd": 8.0,
+        "depth": "deep",
+        "dispatcher": "stub"
+      }
+    }
   },
   "custom_direction": {
     "effective_period": {
