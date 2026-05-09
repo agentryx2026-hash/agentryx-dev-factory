@@ -155,6 +155,34 @@ async function readRequestBody(req) {
   });
 }
 
+// ─── Phase 12-B Tier B: flag-override persistence ────────────────────────
+// The admin-substrate registry reads flags from process.env. To make UI
+// toggles "live" without a restart, we maintain a small JSON override file
+// at <repo>/_factory_runtime/flag_overrides.json. On telemetry startup we
+// apply the persisted overrides into process.env. Subsequent reads (incl.
+// the architect daemon, child-process spawns that inherit env) see the
+// new values immediately.
+const RUNTIME_DIR = path.join(REPO_ROOT, '_factory_runtime');
+const FLAG_OVERRIDES_FILE = path.join(RUNTIME_DIR, 'flag_overrides.json');
+
+function loadFlagOverrides() {
+  try { return JSON.parse(fs.readFileSync(FLAG_OVERRIDES_FILE, 'utf-8')); } catch { return {}; }
+}
+function saveFlagOverrides(overrides) {
+  fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+  const tmp = FLAG_OVERRIDES_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(overrides, null, 2) + '\n');
+  fs.renameSync(tmp, FLAG_OVERRIDES_FILE);
+}
+function applyFlagOverrides() {
+  const overrides = loadFlagOverrides();
+  for (const [envVar, value] of Object.entries(overrides)) {
+    if (value === 'on') process.env[envVar] = 'true';
+    else if (value === 'off') process.env[envVar] = 'false';
+  }
+}
+applyFlagOverrides(); // run once at module load
+
 // Seeding Standing Orders from example: the architect ships a hand-edited
 // `standing_orders.example.yaml` (schema source-of-truth, comments preserved
 // for the human reader), and a sibling `standing_orders.example.json` (same
@@ -891,6 +919,177 @@ const server = http.createServer((req, res) => {
         res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
       }
     }); return;
+  }
+
+  // ─── Phase 12-B Tier B (Admin) — flags / configs / audit / modules / queue / cost ─────
+  // All routes namespaced /api/factory-admin/* (frontend hits via /telemetry/factory-admin/*).
+  // Distinct from the existing /admin/api/* on port 4402 (the Phase 2.5 Key Console),
+  // distinct from the architect routes. Read-only for v1 except flag toggles.
+
+  if (req.url === '/api/factory-admin/flags' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { snapshotAllFlags } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'feature-flags.js')).href);
+        applyFlagOverrides(); // ensure process.env reflects persisted overrides
+        const snap = snapshotAllFlags();
+        const overrides = loadFlagOverrides();
+        // augment with override-source metadata so the UI can show "set via UI" vs "default"
+        return jsonResponse(res, 200, {
+          flags: snap.map(s => ({ ...s, override_source: overrides[s.flag.env_var] ? 'ui' : null })),
+          overrides_path: FLAG_OVERRIDES_FILE,
+        });
+      } catch (err) {
+        console.error('[factory-admin/flags GET]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.match(/^\/api\/factory-admin\/flags\/([^/]+)\/toggle$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const envVar = req.url.match(/^\/api\/factory-admin\/flags\/([^/]+)\/toggle$/)[1];
+        const body = await readRequestBody(req);
+        const targetState = body.to === 'on' ? 'on' : body.to === 'off' ? 'off' : null;
+        if (!targetState) return jsonResponse(res, 400, { error: 'body.to must be "on" or "off"' });
+
+        const { isKnownFlag, readFlag } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'feature-flags.js')).href);
+        if (!isKnownFlag(envVar)) return jsonResponse(res, 404, { error: `unknown flag: ${envVar}` });
+
+        // Persist override + apply to running process
+        const overrides = loadFlagOverrides();
+        overrides[envVar] = targetState;
+        saveFlagOverrides(overrides);
+        process.env[envVar] = targetState === 'on' ? 'true' : 'false';
+
+        // Best-effort audit (lib append; non-blocking)
+        try {
+          const { appendAudit } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'audit.js')).href);
+          await appendAudit({
+            actor: body.actor || 'founder',
+            action: 'flag.toggle',
+            target: envVar,
+            details: { to: targetState, prior: readFlag(envVar) },
+          });
+        } catch {}
+
+        addLog('system', `🚦 Flag ${envVar} → ${targetState}`);
+        broadcast();
+        return jsonResponse(res, 200, { env_var: envVar, effective: targetState, persisted: true });
+      } catch (err) {
+        console.error('[factory-admin/flags toggle]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/factory-admin/configs' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { CONFIG_ENTRIES } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'registry.js')).href);
+        const { snapshotConfig } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'config-store.js')).href);
+        const out = [];
+        for (const entry of CONFIG_ENTRIES) {
+          let value = null;
+          try { value = await snapshotConfig(entry.id); } catch {}
+          out.push({ entry, value });
+        }
+        return jsonResponse(res, 200, { configs: out });
+      } catch (err) {
+        console.error('[factory-admin/configs]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.startsWith('/api/factory-admin/audit') && req.method === 'GET') {
+    (async () => {
+      try {
+        const url = new URL(req.url, 'http://localhost');
+        const { readAudit } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'admin-substrate', 'audit.js')).href);
+        const entries = await readAudit({
+          actor: url.searchParams.get('actor') || undefined,
+          action: url.searchParams.get('action') || undefined,
+          target: url.searchParams.get('target') || undefined,
+          limit: Number(url.searchParams.get('limit')) || 100,
+        });
+        return jsonResponse(res, 200, { entries });
+      } catch (err) {
+        console.error('[factory-admin/audit]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/factory-admin/modules' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { createMarketplaceStore } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'marketplace', 'store.js')).href);
+        const store = createMarketplaceStore(REPO_ROOT);
+        // store may need to be initialized; built-ins live in the registry
+        const list = typeof store.list === 'function' ? store.list() : [];
+        const stats = typeof store.stats === 'function' ? store.stats() : null;
+        // If the store is empty (built-ins haven't been registered in this telemetry process),
+        // surface the catalogue manifests directly so the UI isn't blank.
+        let modules = list;
+        if (!modules.length) {
+          try {
+            const { BUILTIN_MANIFESTS } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'marketplace', 'catalogue.js')).href);
+            modules = BUILTIN_MANIFESTS.map(m => ({ ...m, status: 'catalogued' }));
+          } catch (e) { console.warn('[factory-admin/modules] catalogue fallback failed:', e?.message); }
+        }
+        return jsonResponse(res, 200, { modules, stats });
+      } catch (err) {
+        console.error('[factory-admin/modules]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url === '/api/factory-admin/queue' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { createQueue } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+        const queue = createQueue(REPO_ROOT);
+        const [stats, queued, inFlight] = await Promise.all([
+          queue.stats(),
+          queue.listQueued(),
+          queue.listInFlight(),
+        ]);
+        return jsonResponse(res, 200, { stats, queued, in_flight: inFlight });
+      } catch (err) {
+        console.error('[factory-admin/queue]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.startsWith('/api/factory-admin/cost') && req.method === 'GET') {
+    (async () => {
+      try {
+        const url = new URL(req.url, 'http://localhost');
+        const { getRollup } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'cost-tracker', 'service.js')).href);
+        const since = url.searchParams.get('since') || undefined;
+        const until = url.searchParams.get('until') || undefined;
+        const rollup = await getRollup({
+          workspace_root: REPO_ROOT,
+          since,
+          until,
+        }, { source: 'artifacts' });
+        return jsonResponse(res, 200, { rollup, period: { since, until } });
+      } catch (err) {
+        console.error('[factory-admin/cost]', err);
+        // Cost-tracker may have no data yet — return an empty rollup rather than 500
+        return jsonResponse(res, 200, { rollup: null, error: err?.message || String(err) });
+      }
+    })();
+    return;
   }
 
   // ─── Phase 21-A: Master Architect ─────────────────────────────────────

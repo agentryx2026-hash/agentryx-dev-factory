@@ -15,7 +15,7 @@ const navItems: { page: Page; icon: string; label: string }[] = [
   { page: 'analytics', icon: '📈', label: 'Analytics & Insights' },
   { page: 'skills', icon: '🧠', label: 'Skill Memory' },
   { page: 'system', icon: '📊', label: 'System Resources' },
-  { page: 'settings', icon: '⚙️', label: 'Configuration' },
+  { page: 'settings', icon: '⚙️', label: 'Admin · Configuration' },
   { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
   { page: 'cost-panel', icon: '💰', label: 'Cost Panel' },
 ];

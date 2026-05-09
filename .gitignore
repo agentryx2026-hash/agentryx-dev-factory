@@ -46,6 +46,9 @@ out/
 # proposals, passes). Per-deployment, never committed.
 /_kb/
 /_proposals/
+/_factory_runtime/
+# Phase 12-A admin audit — runtime state, not source
+/_admin-audit.jsonl
 
 # ============================================================
 # Logs
