@@ -1073,6 +1073,51 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Phase 13-B Tier B — Replay (read-only visualization) ─────────────
+  // The execution path (LLM stub + cross-pipeline replay) is full 13-B and
+  // needs OpenRouter credit; today we surface the read side: list past runs
+  // + return a single run's artifact graph for timeline rendering.
+  // Workspace root for replay is the agent-workspace where Pre-Dev / Dev /
+  // Post-Dev pipelines actually deposit artifacts — different from REPO_ROOT.
+  const AGENT_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+
+  if (req.url === '/api/factory-admin/replay/runs' && req.method === 'GET') {
+    (async () => {
+      try {
+        const { listRunIds } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'run-collector.js')).href);
+        const runIds = await listRunIds(AGENT_WORKSPACE);
+        return jsonResponse(res, 200, {
+          runs: runIds.map(id => ({ id })),
+          workspace: AGENT_WORKSPACE,
+          flag_required: 'USE_ARTIFACT_STORE',
+          note: runIds.length === 0
+            ? 'No past runs visible — Phase 6-B (USE_ARTIFACT_STORE) is OFF, so pipeline runs aren\'t writing replayable artifacts yet.'
+            : null,
+        });
+      } catch (err) {
+        console.error('[factory-admin/replay/runs]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  if (req.url?.match(/^\/api\/factory-admin\/replay\/runs\/([^/]+)$/) && req.method === 'GET') {
+    (async () => {
+      try {
+        const runId = decodeURIComponent(req.url.match(/^\/api\/factory-admin\/replay\/runs\/([^/]+)$/)[1]);
+        const { collectRun } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'run-collector.js')).href);
+        const snapshot = await collectRun(AGENT_WORKSPACE, runId);
+        if (!snapshot) return jsonResponse(res, 404, { error: `run not found: ${runId}` });
+        return jsonResponse(res, 200, { snapshot });
+      } catch (err) {
+        console.error('[factory-admin/replay/runs/:id]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   if (req.url?.startsWith('/api/factory-admin/audit') && req.method === 'GET') {
     (async () => {
       try {

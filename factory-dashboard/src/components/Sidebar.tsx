@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-type Page = 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
+type Page = 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
 
 interface SidebarProps {
   activePage: Page;
@@ -12,6 +12,7 @@ const navItems: { page: Page; icon: string; label: string }[] = [
   { page: 'factory', icon: '🏭', label: '2. Live Dev Floor' },
   { page: 'post-dev', icon: '🚀', label: '3. Releases (Ship)' },
   { page: 'architect', icon: '👑', label: '4. Master Architect' },
+  { page: 'replay', icon: '🎬', label: '5. Replay (debug)' },
   { page: 'analytics', icon: '📈', label: 'Analytics & Insights' },
   { page: 'skills', icon: '🧠', label: 'Skill Memory' },
   { page: 'system', icon: '📊', label: 'System Resources' },

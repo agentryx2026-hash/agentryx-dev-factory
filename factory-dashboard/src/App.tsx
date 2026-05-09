@@ -11,8 +11,9 @@ import AnalyticsInsights from './components/AnalyticsInsights';
 import AdminKeys from './components/AdminKeys';
 import CostPanel from './components/CostPanel';
 import MasterArchitect from './components/MasterArchitect';
+import Replay from './components/Replay';
 
-type Page = 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
+type Page = 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('pre-dev');
@@ -27,6 +28,8 @@ function App() {
         return <PostDev />;
       case 'architect':
         return <MasterArchitect />;
+      case 'replay':
+        return <Replay />;
       case 'analytics':
         return <AnalyticsInsights />;
       case 'skills':
