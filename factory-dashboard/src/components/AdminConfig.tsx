@@ -359,11 +359,41 @@ const ModulesPanel: React.FC = () => {
 const QueuePanel: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitFlash, setSubmitFlash] = useState<string | null>(null);
+  const [submitKind, setSubmitKind] = useState<'pre_dev' | 'dev' | 'post_dev'>('pre_dev');
+  const [submitProject, setSubmitProject] = useState('');
+  const [submitPayloadJson, setSubmitPayloadJson] = useState('{}');
 
   const refresh = () => fetch('/telemetry/factory-admin/queue')
     .then(r => r.ok ? r.json() : Promise.reject(new Error(`queue returned ${r.status}`)))
     .then(setData)
     .catch(e => setErr(e?.message || 'failed'));
+
+  const submitJob = async () => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      let payload = {};
+      try { payload = JSON.parse(submitPayloadJson || '{}'); } catch (e: any) {
+        throw new Error(`payload must be valid JSON: ${e?.message}`);
+      }
+      const r = await fetch('/telemetry/factory-admin/queue/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: submitKind, project_id: submitProject, payload }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `submit failed: ${r.status}`);
+      setSubmitFlash(`✅ Enqueued ${d.job?.kind} job ${d.job?.id} for project "${d.job?.project_id}"`);
+      setTimeout(() => setSubmitFlash(null), 6000);
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || 'submit failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -377,10 +407,39 @@ const QueuePanel: React.FC = () => {
   return (
     <div className="glass-panel">
       <div className="panel-header">
-        <h3 className="panel-title">📊 Phase 14-A queue + worker pool</h3>
+        <h3 className="panel-title">📊 Phase 14-A queue + worker pool (14-B Tier B: pre_dev / dev / post_dev handlers registered)</h3>
         <span style={{ color: '#64748b', fontSize: '0.7rem' }}>auto-refresh every 5s</span>
       </div>
       <div className="panel-body">
+        {submitFlash && <div style={{ marginBottom: 12, padding: 10, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', borderRadius: 6, color: '#34d399', fontSize: '0.8rem' }}>{submitFlash}</div>}
+        {/* Submit-job form */}
+        <details style={{ marginBottom: 18, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(168,85,247,0.2)', borderRadius: 8, padding: 12 }}>
+          <summary style={{ cursor: 'pointer', color: '#c4b5fd', fontWeight: 600, fontSize: '0.85rem' }}>📥 Submit a job to the queue</summary>
+          <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '120px 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>Kind</span>
+              <select value={submitKind} onChange={e => setSubmitKind(e.target.value as any)} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '6px 8px', color: '#e2e8f0', fontSize: '0.78rem' }}>
+                <option value="pre_dev">pre_dev</option>
+                <option value="dev">dev</option>
+                <option value="post_dev">post_dev</option>
+              </select>
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>Project ID</span>
+              <input type="text" value={submitProject} onChange={e => setSubmitProject(e.target.value)} placeholder="e.g. 2026-05-10_test-project" style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '6px 8px', color: '#e2e8f0', fontSize: '0.78rem' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>Payload (JSON)</span>
+              <input type="text" value={submitPayloadJson} onChange={e => setSubmitPayloadJson(e.target.value)} placeholder='e.g. {"task":"build a TODO app"}' style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '6px 8px', color: '#e2e8f0', fontSize: '0.78rem', fontFamily: 'monospace' }} />
+            </label>
+            <button onClick={submitJob} disabled={submitting || !submitProject.trim()} style={{ padding: '6px 16px', background: submitting || !submitProject.trim() ? 'rgba(100,116,139,0.2)' : 'linear-gradient(135deg, #a855f7, #7c3aed)', border: 'none', borderRadius: 4, color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: submitting || !submitProject.trim() ? 'not-allowed' : 'pointer' }}>
+              {submitting ? '⏳' : '📥 Submit'}
+            </button>
+          </div>
+          <p style={{ marginTop: 8, color: '#64748b', fontSize: '0.7rem' }}>
+            <strong>pre_dev</strong> needs <code style={inlineCode}>{`{"task":"<FRS text>"}`}</code>; <strong>dev</strong> + <strong>post_dev</strong> need <code style={inlineCode}>{`{"project":"<dir-name>"}`}</code>. Worker leases jobs every ~1s and spawns the corresponding graph; round-robin fairness across project_id.
+          </p>
+        </details>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
           <Stat label="Queued" value={data.stats?.queue ?? 0} mono />
           <Stat label="In flight" value={data.stats?.['in-flight'] ?? 0} mono />

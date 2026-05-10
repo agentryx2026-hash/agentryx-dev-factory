@@ -70,6 +70,59 @@ function pickDispatcher(A, dispatcherKey) {
   return A.createStubDispatcher();
 }
 
+// ─── Phase 14-B Tier B — factory queue worker boot ──────────────────────
+// Runs alongside the architect cadence daemon. Polls the Phase 14-A
+// queue (under <repo>/_jobs/) for jobs of kind pre_dev / dev / post_dev,
+// leases them, dispatches via the registered handlers (each spawns the
+// corresponding graph subprocess). Round-robin fairness across project_id
+// shields multi-project queues from head-of-line blocking.
+//
+// `runSchedulerOnce({ drainOnly: false })` runs a long-lived worker loop
+// that polls every 50ms when idle. We start it in the background and
+// don't await — telemetry server stays responsive while jobs flow.
+let queueWorkerStarted = false;
+const QUEUE_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+async function bootQueueWorker() {
+  if (queueWorkerStarted) return;
+  queueWorkerStarted = true;
+  try {
+    const [queueMod, registryMod, schedulerMod, handlersMod] = await Promise.all([
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+    ]);
+    const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+    const registry = registryMod.createHandlerRegistry();
+    handlersMod.registerFactoryHandlers(registry, {
+      onLog: (kind, line, jobId) => {
+        // Pipe job output into the existing Live Trace SSE stream so
+        // the Dev-Hub sidebar shows pipeline activity.
+        try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+      },
+    });
+
+    // drainOnly: false → keeps the worker loop alive forever, polling.
+    // parallelism: 2 → up to 2 concurrent graph spawns. Matches Phase
+    // 14-A defaults; tunable via cadenceConfig if/when 14-B exposes it.
+    schedulerMod.runSchedulerOnce({
+      queue,
+      registry,
+      workspaceRoot: QUEUE_WORKSPACE,
+      drainOnly: false,
+      config: { parallelism: 2, policy: 'round_robin', poll_interval_ms: 1000 },
+    }).catch(err => {
+      console.error('[queue.worker] crashed:', err);
+      queueWorkerStarted = false;
+    });
+
+    console.log(`📥 Queue worker started — kinds: ${registry.list().join(', ')} · workspace: ${QUEUE_WORKSPACE}`);
+  } catch (err) {
+    console.error('[queue.worker] boot failed:', err);
+    queueWorkerStarted = false;
+  }
+}
+
 // ─── Architect cadence daemon ─────────────────────────────────────────────
 // Boots once on telemetry startup. Each tick reads Standing Orders and fires
 // any cadence whose configured local time/day matches the current minute.
@@ -1408,6 +1461,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Phase 14-B Tier B — submit a job into the queue.
+  // Body: { kind: 'pre_dev'|'dev'|'post_dev', project_id: string, payload?: {...}, priority?: number }
+  // Worker (booted at telemetry startup) leases + dispatches via the
+  // handler registry. Founder watches Admin → Queue panel for state.
+  if (req.url === '/api/factory-admin/queue/submit' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const kind = body.kind;
+        const project_id = body.project_id;
+        if (!kind || !project_id) {
+          return jsonResponse(res, 400, { error: 'body.kind and body.project_id required' });
+        }
+        const VALID_KINDS = new Set(['pre_dev', 'dev', 'post_dev']);
+        if (!VALID_KINDS.has(kind)) {
+          return jsonResponse(res, 400, { error: `kind must be one of ${[...VALID_KINDS].join(', ')}` });
+        }
+        const { createQueue } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+        const queue = createQueue(QUEUE_WORKSPACE);
+        const job = await queue.enqueue({
+          project_id,
+          kind,
+          payload: body.payload || {},
+          priority: body.priority ?? 50,
+          max_attempts: body.max_attempts ?? 3,
+        });
+        addLog('system', `📥 Queue: enqueued ${kind} job ${job.id} for project "${project_id}"`);
+        broadcast();
+        // Make sure the worker is running (idempotent). Don't await — fire and forget.
+        bootQueueWorker().catch(() => {});
+        return jsonResponse(res, 200, { ok: true, job });
+      } catch (err) {
+        console.error('[factory-admin/queue/submit]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   if (req.url === '/api/factory-admin/queue' && req.method === 'GET') {
     (async () => {
       try {
@@ -1851,4 +1943,7 @@ server.listen(PORT, '0.0.0.0', () => {
   // Phase 21-A.1 — boot the architect cadence daemon. Failures are
   // logged but don't crash the telemetry server (architect is optional).
   bootCadenceDaemon().catch(err => console.error('[architect.daemon] boot error:', err));
+  // Phase 14-B Tier B — boot the queue worker so jobs of kind
+  // pre_dev/dev/post_dev get processed automatically.
+  bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
