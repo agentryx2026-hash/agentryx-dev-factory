@@ -58,3 +58,27 @@
 - **Decouples job identity from project identity**: a project may have many jobs; each gets its own working dir. Cleanup can be per-job rather than per-project.
 
 **Tradeoff**: `_jobs/work/` grows unbounded without cleanup. 14-B should add a "delete work dir on done" or "archive after N days" policy. Today (14-A), nothing cleans up — acceptable for tests since smoke test rms its tmp dir afterwards.
+
+## D211 — 14-B Tier B: handlers as a separate module + worker boot inside telemetry process (added 2026-05-10)
+
+**What**: Phase 14-B Tier B registers `pre_dev` / `dev` / `post_dev` handlers via a dedicated module (`cognitive-engine/concurrency/handlers/factory-handlers.js`) rather than inline in the queue substrate or in telemetry. The long-lived worker daemon (`runSchedulerOnce({ drainOnly: false })`) boots inside the existing `factory-telemetry.service` process alongside the Phase 21-A.1 architect cadence daemon — no new systemd unit.
+
+**Why a separate handlers module**:
+- Handler implementations are *content* (what each kind does); the queue substrate is *machinery* (how kinds get scheduled). Mixing them violates Phase 14-A's D138 separation.
+- Phase 16-B (training_gen) and Phase 17-B (training_video_render) and Phase 19-B (project_intake) each add their own handler kind. Each can land in its own file under `concurrency/handlers/` without touching `concurrency/queue.js` or `concurrency/scheduler.js`.
+- Test ergonomics: handler registry is test-injectable. Smoke tests can stub all three handlers without spawning real graphs.
+- The `onLog` hook on `registerFactoryHandlers(registry, { onLog })` decouples the handler from telemetry's SSE stream — handlers don't import from `factory-dashboard/server/telemetry.mjs`. Telemetry passes the hook in at boot time. Same dependency-injection pattern as Phase 9-A `fixRouter`, Phase 13-A `nodeStubs`, Phase 14-A `handlerRegistry`, Phase 15-A `proposer`.
+
+**Why worker daemon inside telemetry process**:
+- Same reasoning as Phase 21-A.1's cadence daemon (D202): zero-dep, no new systemd unit, no new supervision setup, no new restart story.
+- The `factory-telemetry.service` is already managed by systemd with `Restart=on-failure`; the worker inherits that resilience.
+- For v0.0.1 single-VM single-founder, in-process is the right scale. Multi-host worker pool waits for v3 multi-tenant pressure.
+- Fail-open: `runSchedulerOnce(...).catch(...)` so a worker crash doesn't take telemetry down; `queueWorkerStarted` resets to allow re-boot.
+
+**Tradeoff**: telemetry process gets two long-lived loops (cadence daemon + queue worker). If either holds the event loop synchronously, both stall. Mitigation: both await all I/O; both rely on per-call timeouts. If a worker call hangs (e.g. a `spawn()` that never exits), it blocks one of two parallelism slots; the other slot keeps processing. At parallelism=2, full deadlock is unlikely.
+
+## Decision counter (Phase 14)
+
+- D135–D139 — Phase 14-A (queue substrate, scheduler, handler-registry pattern, scheduling policies, per-job working dir)
+- D211 — Phase 14-B Tier B (handlers module + worker-in-telemetry boot)
+- Future Phase 14 work continues from D212.
