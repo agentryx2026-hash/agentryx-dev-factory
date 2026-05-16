@@ -1,9 +1,10 @@
-# Phase 14 — Status: 14-A + 14-B Tier B COMPLETE ✅  (14-B remainder DEFERRED — quotas + legacy-path migration + 16-B/17-B/19-B handler kinds)
+# Phase 14 — Status: 14-A + 14-B Tier B + per-project quotas COMPLETE ✅  (14-B remainder DEFERRED — legacy-path migration + 16-B/17-B/19-B handler kinds)
 
 **Phase started**: 2026-04-23
 **Phase 14-A closed**: 2026-04-23 (substrate — filesystem queue + worker pool + atomic POSIX-rename leasing + round-robin fairness)
 **Phase 14-B Tier B closed**: 2026-05-10 (`pre_dev` / `dev` / `post_dev` handlers registered + long-lived worker daemon + submit endpoint + UI form)
-**Duration**: 14-A single session; 14-B Tier B ~30 min over the substrate
+**Phase 14-B per-project quotas closed**: 2026-05-10 (HTTP 429 budget gate at `/api/factory-admin/queue/submit`, fail-open)
+**Duration**: 14-A single session; 14-B Tier B ~30 min over the substrate; quotas ~20 min
 
 ---
 
@@ -42,12 +43,40 @@
 
 Per `04_B_Tier_Marathon.md`: 14-B unlocks **16-B, 17-B, 19-B** (training-gen, training-videos, customer-portal). Each of those phases needs queue infrastructure before they can ship; with 14-B Tier B in place, they each register their own handler kind on the same registry without re-doing the worker work. Plus multi-project concurrency activates: round-robin fairness across `project_id` shields multi-tenant work from head-of-line blocking.
 
+## Phase 14-B per-project quotas — what shipped (2026-05-10)
+
+**`cognitive-engine/cost-tracker/project-quota.js`** (new, ~150 lines):
+- `checkProjectQuota({ project_id, workspaceRoot, thresholds?, now?, getRollupFn? })` → `{ ok: true } | { ok: false, breach: { key, window, hard_cap_usd, current_usd } }`
+- `windowRange(window, now)` — UTC bounds for `daily` / `weekly` (ISO Mon-Sun) / `monthly` / `all_time`
+- `loadThresholds(path?)` — reads `configs/cost-thresholds.json`, defaults to empty list if missing (no policy → implicit pass)
+- `QuotaExceededError` for callers that prefer throw-based flow
+- Pure stub-injectable `getRollupFn` for tests — no fixture filesystem needed
+- Scope rule: consults `global` + `project:*` only; `agent:*` and `model:*` deliberately skipped (queue doesn't know which model a job will use; those remain post-call alerts)
+
+**`/api/factory-admin/queue/submit` gate** in `factory-dashboard/server/telemetry.mjs`:
+- Before `queue.enqueue`, lazy-imports the quota helper and runs it against `QUEUE_WORKSPACE`
+- On breach → HTTP 429 with `{ error: 'quota exceeded', breach: {...} }`; Live Trace logs `🚫 Queue: refused <kind> for "<id>" — quota breached (...)`
+- Fail-open: a broken cost-thresholds.json or rollup error logs a warning and lets the submission through (better to over-spend than to block legitimate work because of a config typo)
+
+**`configs/cost-thresholds.json`** seed:
+- Added `project:_example` daily entry with inline documentation describing the copy-and-rename usage pattern
+- Top-level `_key_format` + `_gate_scope` comments explain which keys the 14-B gate honors
+
+**Smoke test** — `cognitive-engine/cost-tracker/project-quota.smoke.js`:
+- **31 assertions** across windowRange math, threshold loading, breach detection, scope rules, boundary case (`current_usd === hard_cap_usd` counts as breach), agent-threshold-skipped, empty-thresholds-list, argument validation, QuotaExceededError shape
+- All pass — no filesystem fixtures required (rollup stubbed via `getRollupFn` injection)
+
+**Why "fail-open at the HTTP boundary" instead of "fail-closed inside queue.enqueue"**:
+- Decision D212. The concurrency module stays unaware of cost tracking — keeps queue.js standalone, matches D139 (handler-registry-as-DI) philosophy.
+- The HTTP submit endpoint is the only path that takes externally-originated jobs; internal scheduler.lease() doesn't need the gate (it operates on already-vetted jobs).
+- Fail-open posture is intentional: a broken thresholds.json should never make the queue inaccessible. Cost overruns are recoverable (we can refund / reroute); queue downtime during a customer demo isn't.
+
 ## What stays for 14-B remainder
 
-- **Per-project quotas** wired to Phase 11-A budget gates (today the queue accepts unlimited jobs per project)
-- **Crash recovery** via lease timeout (Phase 14-A already supports this; production needs the timeout configured)
+- **Crash recovery** via lease timeout (Phase 14-A already supports this; production needs the timeout configured + an orphan-reaper that runs on telemetry boot)
 - **Real handler registration** for `training_gen` (16-B) / `training_video_render` (17-B) / `project_intake` (19-B) — same registry pattern, lands when those phases ship
 - **Migrate legacy paths** — `/api/factory/{pre-dev,dev,post-dev}` in telemetry.mjs still inline-spawn; today both paths exist (legacy + queue-based), but legacy can retire when 16-B/17-B/19-B make queue-based the only path
+- **Warn-tier notifications** — quota gate honors `hard_cap_usd` (refuse). `warn_usd` (alert via Courier without refusing) is a Phase 10-B follow-on once Courier backends are live.
 
 ---
 

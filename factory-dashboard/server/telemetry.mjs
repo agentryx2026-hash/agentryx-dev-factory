@@ -1478,6 +1478,23 @@ const server = http.createServer((req, res) => {
         if (!VALID_KINDS.has(kind)) {
           return jsonResponse(res, 400, { error: `kind must be one of ${[...VALID_KINDS].join(', ')}` });
         }
+        // Phase 14-B per-project quota gate. Reads configs/cost-thresholds.json
+        // and refuses if the project has hit its daily/monthly hard_cap_usd
+        // (or the global cap). Implicit pass when no matching threshold exists.
+        try {
+          const { checkProjectQuota } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'cost-tracker', 'project-quota.js')).href);
+          const quota = await checkProjectQuota({ project_id, workspaceRoot: QUEUE_WORKSPACE });
+          if (!quota.ok) {
+            addLog('system', `🚫 Queue: refused ${kind} for "${project_id}" — quota breached (${quota.breach.key} ${quota.breach.window} $${quota.breach.current_usd.toFixed(2)} / $${quota.breach.hard_cap_usd.toFixed(2)})`);
+            broadcast();
+            return jsonResponse(res, 429, { error: 'quota exceeded', breach: quota.breach });
+          }
+        } catch (qErr) {
+          // Fail-open: a broken quota check should never block the queue.
+          // The breach (if any) will resurface on the next submission once
+          // thresholds.json is fixed.
+          console.warn('[factory-admin/queue/submit] quota check skipped:', qErr?.message || qErr);
+        }
         const { createQueue } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
         const queue = createQueue(QUEUE_WORKSPACE);
         const job = await queue.enqueue({

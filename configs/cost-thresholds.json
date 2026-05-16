@@ -1,5 +1,7 @@
 {
-  "_comment": "Cost thresholds consumed by Phase 11 cost-tracker. 11-A defines the shape; 11-B implements warn alerting + hard-cap refusal. Schema documented in cognitive-engine/cost-tracker/README.md.",
+  "_comment": "Cost thresholds consumed by Phase 11 cost-tracker + Phase 14-B queue gate. 11-A defines the shape; 11-B implements warn alerting; 14-B remainder uses hard_cap_usd at queue.enqueue time. Schema documented in cognitive-engine/cost-tracker/README.md.",
+  "_key_format": "global | project:<project_id> | agent:<name> | model:<provider:model>",
+  "_gate_scope": "14-B queue gate consults 'global' + 'project:*' only. 'agent:*' and 'model:*' are post-call alerts.",
   "schema_version": 1,
   "thresholds": [
     {
@@ -15,6 +17,13 @@
       "warn_usd": 50.00,
       "hard_cap_usd": 200.00,
       "description": "Monthly budget ceiling"
+    },
+    {
+      "key": "project:_example",
+      "window": "daily",
+      "warn_usd": 2.00,
+      "hard_cap_usd": 5.00,
+      "description": "Phase 14-B remainder example — per-project daily cap. Copy this entry and replace the suffix with a real project_id to enforce a cap; queue.enqueue (via /api/factory-admin/queue/submit) returns HTTP 429 when current daily spend reaches hard_cap_usd."
     },
     {
       "key": "agent:troi",

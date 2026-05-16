@@ -77,8 +77,31 @@
 
 **Tradeoff**: telemetry process gets two long-lived loops (cadence daemon + queue worker). If either holds the event loop synchronously, both stall. Mitigation: both await all I/O; both rely on per-call timeouts. If a worker call hangs (e.g. a `spawn()` that never exits), it blocks one of two parallelism slots; the other slot keeps processing. At parallelism=2, full deadlock is unlikely.
 
+## D212 — Per-project quota gate at the HTTP boundary, not inside queue.enqueue (added 2026-05-10)
+
+**What**: Phase 14-B per-project quotas live in `cost-tracker/project-quota.js` and are invoked from `/api/factory-admin/queue/submit` *before* `queue.enqueue(...)`. The `concurrency/queue.js` module is unchanged — it has no knowledge of cost tracking, thresholds, or budgets.
+
+**Why HTTP boundary, not inside the queue**:
+- **Module-level separation**: `concurrency/` is machinery (how jobs flow). `cost-tracker/` is policy (how much they can cost). Mixing them inside `queue.enqueue` would make the concurrency module impossible to test or reuse without a cost-tracker.
+- **Mirrors D139's DI pattern**: handlers are injected, not imported globally; quotas follow the same posture — the gate is a *caller's* responsibility, not the queue's.
+- **Internal callers don't need the gate**: scheduler.lease() operates on jobs that have already passed the gate (or were enqueued by trusted internal code). Putting the gate in enqueue would force every internal caller to either disable it or worry about quotas they don't conceptually own.
+- **Future endpoints get the gate by composition**: when Phase 19-B's customer portal adds its own submission path, it imports `checkProjectQuota` directly — no queue-coupling required.
+
+**Why fail-open**:
+- A broken `cost-thresholds.json` (typo, missing file, parser error) currently throws inside the gate. Fail-closed would make a single config mistake take down all job submission across the factory.
+- Cost overruns are recoverable (we can refund, alert, reroute). Queue downtime during a customer demo isn't.
+- The breach (if there's a real one) resurfaces on the next submission once thresholds.json is fixed — short window of over-spend, but no lockout.
+
+**Why `global` + `project:*` only (not `agent:*` / `model:*`)**:
+- At enqueue time we don't yet know which agent or which model the job will eventually invoke (handler chooses at runtime via `pickDispatcher`).
+- `agent:*` and `model:*` are post-call alerts already wired through `cost-tracker/service.js` rollups + Phase 11-B Courier (when 11-B ships).
+- Conflating pre-flight gates with post-call alerts in the same keying scheme would be confusing; the scope rule keeps each layer's intent obvious.
+
+**Tradeoff**: a project that's projected to over-spend on its *next* call still gets that call accepted (gate looks at *current* spend, not predicted spend). Acceptable for v0.0.1 — predictive caps would need per-handler cost-model annotations that aren't built yet.
+
 ## Decision counter (Phase 14)
 
 - D135–D139 — Phase 14-A (queue substrate, scheduler, handler-registry pattern, scheduling policies, per-job working dir)
 - D211 — Phase 14-B Tier B (handlers module + worker-in-telemetry boot)
-- Future Phase 14 work continues from D212.
+- D212 — Phase 14-B per-project quotas (HTTP-boundary gate + fail-open + global/project-only scope)
+- Future Phase 14 work continues from D213.
