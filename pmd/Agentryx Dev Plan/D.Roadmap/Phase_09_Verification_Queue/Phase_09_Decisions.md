@@ -51,3 +51,33 @@
 - **Retry is a 9-B or later concern.** 9-A captures the failure + logs; 9-B can add a retry queue if reliability warrants it.
 
 **Rejection case**: invalid feedback payloads (validation failures in `handleFeedback`) return `{ok: false, error}` so the eventual HTTP handler can respond 400. That's *payload-level* fail-closed, not *network-level*. Different problem, different semantics.
+
+## D213 — Webhook auth deferred; plan-don't-execute the fix route (added 2026-05-10)
+
+**What**: The Phase 9-B webhook substrate at `POST /api/factory-admin/verify/webhook` ships with two intentional deferrals:
+1. **No auth on the endpoint** — accepts any well-formed `FeedbackPayload`; HMAC verification against a shared secret is a full-9-B item.
+2. **Plans the fix route but does not execute it** — `handleFeedback` returns a `FixRoute` (`{lane, agent, reason}`); the webhook persists it, logs it, ships it back in the response, but does NOT invoke the agent automatically.
+
+**Why no auth (yet)**:
+- v0.0.1 single-VM single-founder: the telemetry server is bound to localhost-via-nginx; no external Verify-stg is calling it yet.
+- The Verify portal itself isn't deployed for multi-app mode yet; until that lands the webhook is a contract surface, not a production endpoint.
+- Adding HMAC now requires a shared-secret rotation story, a Key Console entry, and a Verify-side signer — all of which belong to the same coordinated 9-B remainder ship.
+- Auth IS required before any external Verify-stg deploy; this decision is "wait until there's something to authenticate," not "skip auth."
+
+**Why plan-don't-execute**:
+- The route depends on per-project context (project dir, last-known dev-graph state, OpenRouter credit) that the webhook doesn't currently load.
+- Auto-routing a `partial`/`fail` decision into a fresh `tuvok`/`spock`/`data` invocation is a meaningful spend without founder sign-off — better to surface the route in the UI and let the founder confirm-and-trigger via the existing Phase 14-B queue submit panel for now.
+- This matches D117's posture from 9-A: "Fix-cycle routing stubbed in 9-A, real in 9-B" — the substrate is here, the auto-invocation is the last 9-B mile.
+
+**Tradeoff**: a Verify reviewer who flags a fail today still requires founder action (one queue submit) before the fix cycle runs. Acceptable while real factory cycles cost real OpenRouter dollars; the auto-router lands once budget guardrails (Phase 14-B per-project quotas, just shipped via D212) are paired with an explicit `verify_auto_route: true` flag per project.
+
+## D214 — Append-only JSONL log for webhook audit (added 2026-05-10)
+
+**What**: Every webhook hit (success OR failure) appends one JSON record to `_factory_runtime/verify_feedback.jsonl`. The Verify panel reads the tail of this file to show "recent feedback."
+
+**Why JSONL over Postgres or in-memory**:
+- Matches Phase 11-A and Phase 14-A conventions: filesystem-first, observable via `tail -f`, no DB dependency.
+- Idempotent restart: telemetry can restart without losing the visible history.
+- Rotates trivially once it matters (`logrotate` or a Phase 14-A-style sweep — not needed at v0.0.1 volumes).
+
+**Why log failures too**: a 400 response from the webhook IS evidence — likely a Verify-side schema drift. Persisting the failure (with `ok: false, error`) puts it in the founder's UI alongside successes so contract regressions are caught early.

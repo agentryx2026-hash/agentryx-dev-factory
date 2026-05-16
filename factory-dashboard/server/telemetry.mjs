@@ -244,6 +244,10 @@ async function readRequestBody(req) {
 // new values immediately.
 const RUNTIME_DIR = path.join(REPO_ROOT, '_factory_runtime');
 const FLAG_OVERRIDES_FILE = path.join(RUNTIME_DIR, 'flag_overrides.json');
+// Phase 9-B substrate — append-only audit log of feedback webhook hits.
+// Read by GET /api/factory-admin/verify/state (tail of the JSONL) so the
+// Verify panel can show a "recent feedback" list alongside the bundle list.
+const VERIFY_FEEDBACK_LOG = path.join(RUNTIME_DIR, 'verify_feedback.jsonl');
 
 function loadFlagOverrides() {
   try { return JSON.parse(fs.readFileSync(FLAG_OVERRIDES_FILE, 'utf-8')); } catch { return {}; }
@@ -1166,11 +1170,22 @@ const server = http.createServer((req, res) => {
         ]);
         const client = getVerifyClient();
         const recent_bundles = typeof client._inspectStore === 'function' ? client._inspectStore() : [];
+        // Phase 9-B substrate — tail the feedback log (append-only JSONL).
+        // Cheap O(n) read; the log gets rotated when 14-B remainder's
+        // crash-recovery cleanup ships.
+        let recent_feedback = [];
+        try {
+          const raw = fs.readFileSync(VERIFY_FEEDBACK_LOG, 'utf-8');
+          recent_feedback = raw.split('\n').filter(Boolean).slice(-20).map(line => {
+            try { return JSON.parse(line); } catch { return null; }
+          }).filter(Boolean).reverse();
+        } catch { /* file may not exist yet — fine, empty list */ }
         return jsonResponse(res, 200, {
           enabled: verifyEnabled(),
           flag_required: 'USE_VERIFY_INTEGRATION',
           client_kind: client.kind,
           verify_url: process.env.VERIFY_URL || null,
+          webhook_url: `${process.env.PUBLIC_TELEMETRY_BASE || ''}/api/factory-admin/verify/webhook`,
           review_decisions: [...REVIEW_DECISIONS],
           recent_bundles: recent_bundles.slice(-20).map(b => ({
             build_id: b.build_id,
@@ -1178,12 +1193,99 @@ const server = http.createServer((req, res) => {
             received_at: b.received_at,
             seq: b.seq,
           })),
+          recent_feedback,
           note: client.kind === 'mock'
-            ? 'Mock client active — bundles publish to an in-memory store (resets on telemetry restart). Real Verify portal requires VERIFY_URL + auth_token (Phase 9-B).'
-            : 'HTTP client active.',
+            ? 'Mock client active — bundles publish to an in-memory store (resets on telemetry restart). Real Verify portal requires VERIFY_URL + auth_token (Phase 9-B). Webhook is live: POST to /api/factory-admin/verify/webhook with a FeedbackPayload.'
+            : 'HTTP client active. Webhook live at /api/factory-admin/verify/webhook.',
         });
       } catch (err) {
         console.error('[factory-admin/verify/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Phase 9-B substrate — Verify portal feedback webhook ───────────
+  // POST body: {
+  //   build_id, decision (pass|partial|fail), reviewer, reviewed_at,
+  //   review_item_id?, requirement_id?, comments?, screenshot_urls?,
+  //   project_id?       // optional — falls back to "unknown"; the
+  //                     // Verify portal SHOULD include it for proper
+  //                     // observation scoping.
+  // }
+  //
+  // Pipeline: validateFeedbackPayload → handleFeedback (writes a
+  // user_note observation + computes a FixRoute). The route is logged
+  // but NOT auto-executed yet (real fix-cycle agent invocation is
+  // 9-B remainder — needs OpenRouter and project_id-aware project
+  // dir lookup). Every webhook hit is appended to
+  // _factory_runtime/verify_feedback.jsonl so the Verify panel can
+  // show a "recent feedback" list parallel to "recent bundles".
+  if (req.url === '/api/factory-admin/verify/webhook' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const project_id = body.project_id || 'unknown';
+
+        const [typesMod, recvMod, memMod] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'types.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'feedback-receiver.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href),
+        ]);
+
+        // Strip the optional project_id before validating — types.js
+        // only knows about the canonical FeedbackPayload schema.
+        const { project_id: _drop, ...payload } = body;
+        const vErr = typesMod.validateFeedbackPayload(payload);
+        if (vErr) {
+          return jsonResponse(res, 400, { error: vErr });
+        }
+
+        const memory = memMod.getMemoryService();
+        const result = await recvMod.handleFeedback(payload, { memory, projectId: project_id });
+
+        // Persist to the audit log regardless of memory success — every
+        // webhook hit needs to be visible in the UI.
+        try {
+          fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+          const record = {
+            received_at: new Date().toISOString(),
+            project_id,
+            build_id: payload.build_id,
+            decision: payload.decision,
+            reviewer: payload.reviewer,
+            review_item_id: payload.review_item_id || null,
+            comments_preview: (payload.comments || '').slice(0, 200),
+            ok: result.ok,
+            route_lane: result.route?.lane || null,
+            route_agent: result.route?.agent || null,
+            observation_id: result.observation_id || null,
+            error: result.error || null,
+          };
+          fs.appendFileSync(VERIFY_FEEDBACK_LOG, JSON.stringify(record) + '\n');
+        } catch (logErr) {
+          console.warn('[verify/webhook] feedback log append failed:', logErr?.message || logErr);
+        }
+
+        if (!result.ok) {
+          addLog('system', `⚠️ Verify webhook: ${payload.build_id} → ${result.error}`);
+          broadcast();
+          return jsonResponse(res, 400, { error: result.error });
+        }
+
+        const lane = result.route?.lane || 'none';
+        const agent = result.route?.agent ? ` → ${result.route.agent}` : '';
+        addLog('system', `✅ Verify webhook: ${payload.build_id} (${payload.decision}) by ${payload.reviewer} → lane=${lane}${agent}`);
+        broadcast();
+        return jsonResponse(res, 200, {
+          ok: true,
+          observation_id: result.observation_id,
+          route: result.route,
+          router_result: result.router_result,
+        });
+      } catch (err) {
+        console.error('[factory-admin/verify/webhook]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
       }
     })();

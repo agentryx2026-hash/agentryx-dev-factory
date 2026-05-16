@@ -1,9 +1,10 @@
-# Phase 9 — Status: 9-A + 9-B Tier B (read UI) COMPLETE ✅  (9-B remainder DEFERRED — needs Verify-stg auth)
+# Phase 9 — Status: 9-A + 9-B Tier B (read UI) + 9-B webhook substrate COMPLETE ✅  (9-B remainder DEFERRED — Verify-stg auth + real http client + auto-routed fix cycle)
 
 **Phase started**: 2026-04-22
 **Phase 9-A closed**: 2026-04-22 (substrate — bundle/feedback contract, mock client, fix-router)
 **Phase 9-B Tier B closed**: 2026-05-09 (Verify tab in Admin · Configuration; same session as the visible-factory sprint)
-**Duration**: 9-A single session; 9-B Tier B ~10 min composition
+**Phase 9-B webhook substrate closed**: 2026-05-10 (POST /api/factory-admin/verify/webhook live — receives FeedbackPayload, writes user_note observation, plans FixRoute, audits to JSONL log; Verify panel now shows recent feedback alongside recent bundles)
+**Duration**: 9-A single session; 9-B Tier B ~10 min composition; 9-B webhook ~30 min
 
 ---
 
@@ -13,12 +14,34 @@ Backend `GET /api/factory-admin/verify/state` returns enabled flag, client kind 
 
 Frontend ✅ Verify sub-tab (in Admin · Configuration): 3-stat strip + REVIEW_DECISIONS pills + recent-bundles list + friendly note explaining what 9-B-full unlocks.
 
+## Phase 9-B webhook substrate — what shipped (2026-05-10)
+
+**`POST /api/factory-admin/verify/webhook`** (new endpoint in `factory-dashboard/server/telemetry.mjs`):
+- Body: canonical `FeedbackPayload` shape plus an *optional* `project_id` field (Verify portal SHOULD include it for proper observation scoping; defaults to `"unknown"` when missing)
+- Pipeline: `validateFeedbackPayload` → `handleFeedback({memory, projectId})` → append to `_factory_runtime/verify_feedback.jsonl`
+- 400 on bad payload (validator error in `error`); 200 on success with `{ok, observation_id, route, router_result}`
+- Every hit (success or failure) is logged to the JSONL audit log AND surfaced in Live Trace (`✅ Verify webhook: <build_id> (<decision>) by <reviewer> → lane=<lane> → <agent>`)
+- Route is **planned but not executed** — full 9-B's "real fix-cycle agent invocation" is the missing piece; today the route lives in the response + the JSONL record where the founder (or full-9-B's auto-router) can act on it
+
+**`GET /api/factory-admin/verify/state` extension**:
+- New `recent_feedback: [...]` field — reverse-tail of the last 20 JSONL records
+- New `webhook_url: "<base>/api/factory-admin/verify/webhook"` — gives Verify-stg admins a copy-pasteable target without grepping the source
+
+**Frontend `VerifyPanel`** (Admin · Configuration → ✅ Verify):
+- New "📥 Feedback webhook" card showing the POST URL + expected body shape
+- New "Recent feedback received" list — color-coded decision pill (pass=green, partial=amber, fail=red), reviewer, timestamp, planned fix lane + agent, optional comment preview, error display if the webhook returned 400
+- The two lists (bundles published → feedback received) sit side by side, giving the founder a "what we sent / what came back" panel for the Verify integration
+
+**Smoke test** — `cognitive-engine/verify-integration/webhook-integration.smoke.js`:
+- **27 assertions** across 6 scenarios — invalid payload → 400 + no log entry; valid pass → 200 + observation persisted + scoped + tagged + log line with correct shape; fail+doc-complaint → docs/data lane; partial+test-complaint → tests/tuvok lane; missing project_id → `"unknown"` fallback; recent-feedback tail-read produces most-recent-first shape with all required fields
+- Reproduces the telemetry handler's logic in-process — no HTTP server spin-up needed, uses tmp memory + tmp log dir
+
 ## What stays for 9-B remainder
 
-- Real `createHttpClient()` activation (needs `VERIFY_URL` env + auth_token from Key Console)
-- Webhook receiver in `factory-dashboard/server/telemetry.mjs` for FeedbackPayload
-- Multi-app mode in the Verify portal itself (Verify-stg-side work)
-- Real fix-cycle agent invocation when feedback comes back
+- **Real `createHttpClient()` activation** — needs `VERIFY_URL` env + `auth_token` from Key Console; client.js already has the hooks
+- **Multi-app mode** in the Verify portal itself (Verify-stg-side work — not factory-side)
+- **Auto-executed fix cycle** — today the route is planned + logged; full 9-B walks the route into the appropriate agent (Spock/Tuvok/Data/Picard) automatically and re-runs the affected pipeline node. Requires OpenRouter credit + the per-project working dir already provided by Phase 14-A.
+- **Webhook authentication** — current endpoint is open; full 9-B adds an `X-Verify-Signature` HMAC check against a shared secret from Key Console. Acceptable for v0.0.1 single-VM single-founder; required before any real Verify-stg deploys
 
 ---
 

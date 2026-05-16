@@ -590,10 +590,12 @@ const VerifyPanel: React.FC = () => {
   if (err) return <div className="glass-panel"><div className="panel-body"><div style={errorBar}>{err}</div></div></div>;
   if (!data) return <div className="glass-panel"><div className="panel-body" style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>Loading…</div></div>;
 
+  const decisionColor = (d: string) => d === 'pass' ? '#22c55e' : d === 'partial' ? '#f59e0b' : '#ef4444';
+
   return (
     <div className="glass-panel">
       <div className="panel-header">
-        <h3 className="panel-title">✅ Verify Integration (Phase 9-A)</h3>
+        <h3 className="panel-title">✅ Verify Integration (Phase 9-A + 9-B webhook)</h3>
         <span style={{ color: '#64748b', fontSize: '0.7rem' }}>flag: <code style={inlineCode}>{data.flag_required}</code></span>
       </div>
       <div className="panel-body">
@@ -610,6 +612,15 @@ const VerifyPanel: React.FC = () => {
             ))}
           </div>
         </div>
+        {data.webhook_url && (
+          <div style={{ marginBottom: 14, padding: 10, background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, fontSize: '0.78rem' }}>
+            <div style={{ color: '#22c55e', fontWeight: 600, marginBottom: 4 }}>📥 Feedback webhook</div>
+            <code style={{ ...inlineCode, color: '#cbd5e1', display: 'block', wordBreak: 'break-all' }}>POST {data.webhook_url || '/api/factory-admin/verify/webhook'}</code>
+            <div style={{ color: '#94a3b8', marginTop: 4, fontSize: '0.72rem' }}>
+              Body: <code style={inlineCode}>{'{ build_id, decision, reviewer, reviewed_at, project_id?, comments?, screenshot_urls?, review_item_id? }'}</code>
+            </div>
+          </div>
+        )}
         <div style={{ padding: 10, background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, color: '#fbbf24', fontSize: '0.78rem', marginBottom: 14 }}>
           {data.note}
         </div>
@@ -622,6 +633,32 @@ const VerifyPanel: React.FC = () => {
             <span style={{ color: '#cbd5e1' }}>{b.project_id}</span>
             <span style={{ color: '#64748b' }}>{b.received_at ? new Date(b.received_at).toLocaleString() : ''}</span>
             <span style={{ color: '#a855f7', fontFamily: 'monospace' }}>seq {b.seq}</span>
+          </div>
+        ))}
+        <h4 style={{ color: '#a855f7', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5, margin: '18px 0 6px' }}>
+          Recent feedback received ({data.recent_feedback?.length || 0})
+        </h4>
+        {(!data.recent_feedback || data.recent_feedback.length === 0) ? (
+          <p style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center', padding: 20 }}>(none — webhook live but no hits yet; POST to the URL above to test)</p>
+        ) : data.recent_feedback.map((f: any, i: number) => (
+          <div key={`${f.build_id}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '8px 0', fontSize: '0.78rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'center' }}>
+              <code style={inlineCode}>{f.build_id}</code>
+              <span style={{ color: decisionColor(f.decision), fontWeight: 700, textTransform: 'uppercase', fontSize: '0.72rem' }}>{f.decision}</span>
+              <span style={{ color: '#94a3b8' }}>{f.reviewer}</span>
+              <span style={{ color: '#64748b' }}>{f.received_at ? new Date(f.received_at).toLocaleString() : ''}</span>
+            </div>
+            {(f.route_lane && f.route_lane !== 'none') && (
+              <div style={{ color: '#a855f7', fontSize: '0.72rem', marginTop: 2 }}>
+                → lane=<code style={inlineCode}>{f.route_lane}</code>{f.route_agent ? <> · agent=<code style={inlineCode}>{f.route_agent}</code></> : null}
+              </div>
+            )}
+            {f.comments_preview && (
+              <div style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '0.72rem', marginTop: 2 }}>"{f.comments_preview}"</div>
+            )}
+            {!f.ok && f.error && (
+              <div style={{ color: '#ef4444', fontSize: '0.72rem', marginTop: 2 }}>⚠️ {f.error}</div>
+            )}
           </div>
         ))}
       </div>
