@@ -2,7 +2,8 @@ import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { MemorySaver } from "@langchain/langgraph";
 import { HumanMessage } from "@langchain/core/messages";
-import { fileReadTool, fileWriteTool, terminalTool } from "./tools.js";
+import { fileReadTool, fileWriteTool } from "./tool-selector.js"; // Phase 5-B: USE_MCP_TOOLS-aware
+import { terminalTool } from "./tools.js";
 import 'dotenv/config';
 
 console.log("Initializing Gemini 1.5 Pro Cognitive Engine...");

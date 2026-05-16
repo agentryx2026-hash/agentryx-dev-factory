@@ -63,3 +63,39 @@
 - Closing 5-A clean now keeps the phase boundary crisp. 5-B opens when validation is possible (same trigger as Phase 4 E2E: credit top-up or architect-tier downshift).
 
 **Cost estimate for 5-B**: ~1 session, ~$0.50-2 in LLM costs for validation run (on Opus) or ~$0.10-0.30 on Haiku.
+
+## D215 — 5-B uses a tool-selector module, not per-graph flag checks (added 2026-05-10)
+
+**What**: Phase 5-B rewires graphs by introducing `cognitive-engine/tool-selector.js` — a single module that re-exports `fileReadTool` / `fileWriteTool` / `fileListTool` from either `tools.js` (default) or `mcp/bridge.js` (when `USE_MCP_TOOLS=true`). Graphs import file tools from the selector and everything else from `tools.js` as before. The selector resolves at module load.
+
+**Why one selector module, not per-graph `if (USE_MCP_TOOLS)` checks**:
+- **Single switch surface**: flipping the flag affects every graph identically — no risk of `pre_dev_graph` going MCP while `dev_graph` stays on tools.js because someone forgot to thread the check through every node.
+- **Diff is one line per graph** (vs ~5-10 if every node had its own ternary). Smaller blast radius if the rewire needs reverting.
+- **Drop-in replacement preserved**: D95 already required bridge tools to share names with tools.js. The selector compounds that — graphs aren't even aware which backend they got. Adding a new MCP-backed tool category (e.g. `terminalTool`) later means extending the selector + bridge; graphs need no further change.
+- **Mirrors Phase 14-A `handlerRegistry` / Phase 9-A `fixRouter` / Phase 13-A `nodeStubs` DI pattern**: dependency choice happens at one well-defined seam, not scattered through consumer code.
+
+**Why module-load resolution (not per-call)**:
+- Matches Phase 12-B `applyFlagOverrides()` which runs once at boot.
+- Per-call would require re-importing the right module on every tool invocation — slow + breaks Node's module cache semantics.
+- Every other flag in the factory already requires telemetry restart to take effect; this is consistent. Flag changes via Admin · Configuration still trigger a "🔄 Restart telemetry to apply" hint (existing Phase 12-B UX).
+
+**Tradeoff acknowledged**: a partial-MCP graph (e.g. tuvok runs MCP, torres doesn't) isn't expressible. Not currently a real use case — the substrate gives us all-or-nothing today, and per-agent backend selection would need new config shape. Acceptable defer.
+
+## D216 — Graph files are not import-safe; smoke tests use `node --check` (added 2026-05-10)
+
+**What**: Every graph file (`pre_dev_graph.js`, `dev_graph.js`, `post_dev_graph.js`, `factory_graph.js`, `graph.js`) ends with `main().catch(...)` so that running `node <graph>.js` from the CLI executes the pipeline. A naive `import("./pre_dev_graph.js")` from a smoke test therefore tries to run the full pipeline (which hangs waiting for an LLM call or fails on missing API keys).
+
+**Decision**: Smoke tests verify graphs by syntax-check (`node --check`) and regex-grep of the import lines, NOT by `import()`. This proves the rewire compiles and points at the new module without paying the auto-run cost.
+
+**Why not refactor the graphs to guard `main()` with `if (import.meta.url === ...)`**:
+- That refactor touches 5 production files in service of a smoke test — disproportionate.
+- The current CLI ergonomic is genuinely useful (`node dev_graph.js "..."` is how graphs get run today and from queue handlers in Phase 14-B).
+- The smoke test's job is to catch import-line typos and wrong-module errors, not to validate runtime behaviour. Syntax-check + grep nails both at a fraction of the cost.
+
+**Recorded as a constraint for future smoke tests**: any test that needs to actually exercise graph runtime must spawn the graph as a subprocess with a controlled environment (mock LLM, test workspace dir, etc.) — never `import()` it in-process.
+
+## Decision counter (Phase 5)
+
+- D92–D96 — Phase 5-A substrate decisions
+- D215, D216 — Phase 5-B rewire pattern + smoke-test constraint
+- Future Phase 5 work continues from D217.

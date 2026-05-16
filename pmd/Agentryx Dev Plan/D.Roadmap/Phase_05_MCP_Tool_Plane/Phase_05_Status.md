@@ -1,8 +1,42 @@
-# Phase 5 — Status: 5-A COMPLETE ✅  (5-B DEFERRED)
+# Phase 5 — Status: 5-A + 5-B COMPLETE ✅  (end-to-end LLM validation deferred until OpenRouter cycle)
 
 **Phase started**: 2026-04-21
-**Phase 5-A closed**: 2026-04-21
-**Duration**: single session
+**Phase 5-A closed**: 2026-04-21 (substrate — MCP SDK, client, bridge, filesystem server catalogued)
+**Phase 5-B closed**: 2026-05-10 (flag-aware tool-selector + 5 graphs rewired + 32-assertion smoke)
+**Duration**: 5-A single session; 5-B ~30 min over the substrate
+
+## Phase 5-B — what shipped (2026-05-10)
+
+**`cognitive-engine/tool-selector.js`** (new, ~45 lines):
+- Re-exports `fileReadTool` / `fileWriteTool` / `fileListTool` from either `tools.js` (default) or `mcp/bridge.js` based on `USE_MCP_TOOLS` at module-load time
+- `activeBackend()` introspection helper returns `"tools"` or `"mcp"` for UI / smoke-test consumption
+- Non-filesystem tools (`terminalTool`, `gitTool`, telemetry helpers, `setProjectDir` / `getProjectDir`, `readTemplate`, `cleanProjectForDev`) stay in `tools.js` — they don't have MCP equivalents yet and the substrate doesn't try to invent them
+
+**5 graphs rewired** to import file tools from `tool-selector.js`:
+- `pre_dev_graph.js`, `dev_graph.js`, `post_dev_graph.js`, `factory_graph.js`, `graph.js`
+- Each file: 1-line import change (file tools from selector; everything else from tools.js as before)
+- Zero behaviour change when `USE_MCP_TOOLS` is off (default) — selector re-exports the exact same DynamicTool instances tools.js already exports
+
+**Smoke test** — `cognitive-engine/tool-selector.smoke.js`:
+- **32 assertions** total
+  - 7 verify selector with flag off → tools.js instances + correct names
+  - 7 verify selector with flag on → bridge.js instances + correct names
+  - 15 across the 5 graphs: each parses cleanly (`node --check`), imports from `./tool-selector.js`, and no longer imports `file*Tool` from `./tools.js` (regression guard)
+  - 3 verify tools.js exports are unchanged (the 11 expected symbols)
+- Two child Node processes test both flag states honestly — selector resolves at module load, so an in-process flag flip wouldn't take effect
+- Graph files are NOT imported by the smoke test — each has `main().catch(...)` at the bottom which would auto-run the pipeline on import (lesson learned mid-implementation). `node --check` (syntax-only) is the right tool
+
+**Why module-load resolution (not per-call)**:
+- Matches Phase 12-B `applyFlagOverrides()` which also runs once at boot
+- Per-call would require re-importing the right module on every tool invocation (slow + cache-busting)
+- Flag changes already require telemetry restart for every other flag in the factory — this is consistent
+
+## What stays for the full 5-B validation pass
+
+- **Real MCP server install**: `npx -y @modelcontextprotocol/server-filesystem` runs on demand at first tool call. Founder action — flip `USE_MCP_TOOLS=true`, run a pipeline once, confirm filesystem ops go through the subprocess (process tree should show the MCP server alongside the graph)
+- **End-to-end LLM run** with flag on: needs OpenRouter credit. Confirms parity (same project structure produced) and measures any latency hit (MCP stdio round-trip vs in-process function call)
+- **Disconnect lifecycle**: MCP client caches connections forever (Phase 5-A README notes this). 5-B's rewire doesn't change that; if the founder leaves `USE_MCP_TOOLS=true` long-term, a `disconnectAll()` hook on telemetry shutdown becomes worth wiring (small cleanup, low priority)
+- **Other MCP servers** (git, github, postgres): catalogued but disabled. Each gets enabled when its consuming phase ships (e.g. git when repo-in-project-dir pattern lands; github when 10-B Courier wires its app install)
 
 ## Subphase progress
 
@@ -15,7 +49,10 @@
 | 5-A.5 | `mcp/README.md` — catalog, env flag, lifecycle, rollback notes | ✅ done |
 | 5-A.6 | `USE_MCP_TOOLS` flag documented (no runtime effect in 5-A) | ✅ done |
 | 5-A.7 | Smoke test: real filesystem MCP server spawn + list_directory | ✅ done — 14 tools advertised, directory listing returned |
-| 5-B | Wire graph nodes to import from bridge under flag | ⏳ DEFERRED |
+| 5-B.1 | `tool-selector.js` — flag-aware file tool re-exports | ✅ done |
+| 5-B.2 | Rewire 5 graphs to import file tools from selector | ✅ done |
+| 5-B.3 | `tool-selector.smoke.js` — 32 assertions (selector + graph parse + tools.js regression) | ✅ done — all pass |
+| 5-B.4 | End-to-end LLM validation with flag on | ⏳ deferred until OpenRouter cycle |
 
 ## What shipped
 

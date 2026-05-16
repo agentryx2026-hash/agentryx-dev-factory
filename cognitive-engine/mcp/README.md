@@ -2,24 +2,42 @@
 
 Model Context Protocol (MCP) subsystem for the cognitive-engine. Provides an alternative tool backend to `../tools.js`, feature-flagged via `USE_MCP_TOOLS`.
 
-## Status: Phase 5-A scaffolding
+## Status: Phase 5-A scaffolding + 5-B graph rewire
 
-Built but **not wired into graph nodes**. Flag defaults off. Flipping the flag without wiring changes currently has no effect — see Phase 5-B for integration.
+Substrate shipped 2026-04-21 (5-A). Graph rewire shipped 2026-05-10 (5-B). Flag defaults off; flipping to `USE_MCP_TOOLS=true` makes the 5 graph files route filesystem ops through the MCP filesystem server instead of in-process Node fs. **End-to-end LLM validation pending** until OpenRouter credit allows a paid cycle on the flag-on path.
 
 ## Files
 
 - `client.js` — MCP client wrapper. Spawns stdio subprocess per server, caches connections, exposes `listTools` / `callTool` / `disconnectAll`.
 - `bridge.js` — LangChain `DynamicTool` instances that proxy to MCP servers. Drop-in API shape for `tools.js` names (`fileReadTool`, `fileWriteTool`, `fileListTool`).
 - `configs/servers.json` — Server catalog with launch config. Placeholders `${PROJECT_DIR}` and `${WORKSPACE_ROOT}` are resolved at connect time.
+- `../tool-selector.js` — Phase 5-B flag-aware re-export. Graphs import file tools from here.
+- `../tool-selector.smoke.js` — 32-assertion smoke for the rewire.
 
 ## Environment flag
 
 ```
-USE_MCP_TOOLS=true    # Phase 5-B onwards: graph nodes import from bridge instead of tools.js
-                      # Phase 5-A: flag has no runtime effect yet
+USE_MCP_TOOLS=true    # 5-B onwards: graphs route file_* tools through this bridge
+                      # 5-A only: substrate present, no graph used it yet
+                      # Default off — every existing pipeline keeps tools.js behaviour
 ```
 
-Flag is checked via `client.js`'s `isEnabled()` export.
+Flag is checked at module-load time inside `tool-selector.js`. Flipping the flag requires a telemetry restart for the new selection to take effect — consistent with every other factory flag.
+
+## Phase 5-B integration (active)
+
+Graphs no longer import file tools from `tools.js` directly:
+
+```js
+// Before (5-A and earlier)
+import { fileReadTool, fileWriteTool, fileListTool, terminalTool, ... } from "./tools.js";
+
+// After (5-B)
+import { fileReadTool, fileWriteTool, fileListTool } from "./tool-selector.js";
+import { terminalTool, ... } from "./tools.js";
+```
+
+The selector resolves to tools.js (flag off — same instances as before) or bridge.js (flag on) at module load. `terminalTool`, `gitTool`, telemetry helpers, `setProjectDir`, `getProjectDir`, `readTemplate`, `cleanProjectForDev` stay in `tools.js` — they have no MCP equivalents in 5-B's scope.
 
 ## Adding a new MCP server
 
