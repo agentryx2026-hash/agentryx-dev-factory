@@ -93,6 +93,29 @@ async function bootQueueWorker() {
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+
+    // Phase 14-B orphan reaper (D223) — on every telemetry boot, scan
+    // _jobs/in-flight/ for jobs whose lease is older than LEASE_TIMEOUT_MS
+    // (default 30 min). Stale ones are re-failed → existing fail()
+    // machinery requeues or moves to failed/ based on max_attempts.
+    // Fail-open: a reaper error must NEVER block worker boot.
+    try {
+      const reaperMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'orphan-reaper.js')).href);
+      const reapResult = await reaperMod.reapOrphans({
+        queue,
+        logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+      });
+      if (reapResult.scanned > 0 || reapResult.reaped > 0) {
+        const summary = `🩹 Orphan reaper: scanned=${reapResult.scanned} reaped=${reapResult.reaped} (requeued=${reapResult.requeued_ids.length} failed=${reapResult.failed_ids.length}) kept=${reapResult.kept}${reapResult.errors.length ? ` errors=${reapResult.errors.length}` : ''}`;
+        console.log(summary);
+        if (reapResult.reaped > 0) {
+          try { addLog('system', summary); broadcast(); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[queue.worker] orphan reaper failed (continuing):', err?.message || err);
+    }
+
     const registry = registryMod.createHandlerRegistry();
     handlersMod.registerFactoryHandlers(registry, {
       onLog: (kind, line, jobId) => {
