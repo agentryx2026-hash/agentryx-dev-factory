@@ -86,11 +86,18 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod] = await Promise.all([
+    const [
+      queueMod, registryMod, schedulerMod, handlersMod,
+      videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
+    ] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-video-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'providers', 'registry.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
     const registry = registryMod.createHandlerRegistry();
@@ -101,6 +108,27 @@ async function bootQueueWorker() {
         try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
       },
     });
+
+    // Phase 17-B Tier B — training_video_render handler. Same registration
+    // pattern as 14-B / 16-B / 21-B.2. Default providerChoice is all-null
+    // (substrate works at $0); real ElevenLabs/Puppeteer/ffmpeg backends
+    // become opt-in per-job via payload.providerChoice once full 17-B
+    // lands credentials.
+    if (videoHandlerMod && videoStoreMod && videoProviderRegistryMod && videoPipelineMod) {
+      try {
+        videoHandlerMod.registerTrainingVideoRenderHandler(registry, {
+          createVideoStore: videoStoreMod.createVideoStore,
+          createProviderRegistry: videoProviderRegistryMod.createProviderRegistry,
+          renderFromPhase17Payload: videoPipelineMod.renderFromPhase17Payload,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_videos-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_video_render:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_video_render handler not registered:', err?.message || err);
+      }
+    }
 
     // drainOnly: false → keeps the worker loop alive forever, polling.
     // parallelism: 2 → up to 2 concurrent graph spawns. Matches Phase
