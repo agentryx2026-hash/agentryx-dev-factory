@@ -1225,7 +1225,36 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/factory-admin/verify/webhook' && req.method === 'POST') {
     (async () => {
       try {
-        const body = await readRequestBody(req);
+        // Phase 9-B HMAC verification (D218). Read raw bytes first so
+        // the HMAC sees exactly what Verify-stg signed. The dev-mode
+        // bypass (no VERIFY_WEBHOOK_SECRET set) preserves the substrate
+        // behaviour from the initial 9-B ship — explicit opt-in to
+        // enforcement by setting the env var.
+        const rawBytes = await new Promise((resolve, reject) => {
+          const chunks = [];
+          req.on('data', c => chunks.push(c));
+          req.on('end', () => resolve(Buffer.concat(chunks)));
+          req.on('error', reject);
+        });
+
+        const hmacMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'hmac.js')).href);
+        const auth = hmacMod.authorizeWebhookRequest(
+          rawBytes,
+          req.headers[hmacMod.HMAC_HEADER_NAME],
+          process.env.VERIFY_WEBHOOK_SECRET
+        );
+        if (!auth.ok) {
+          addLog('system', `🔒 Verify webhook: rejected — ${auth.reason}`);
+          broadcast();
+          return jsonResponse(res, 401, { error: 'webhook authorization failed', reason: auth.reason });
+        }
+        if (auth.bypassed) {
+          console.warn('[verify/webhook]', auth.warning);
+        }
+
+        let body;
+        try { body = rawBytes.length ? JSON.parse(rawBytes.toString('utf-8')) : {}; }
+        catch (parseErr) { return jsonResponse(res, 400, { error: `invalid JSON: ${parseErr.message}` }); }
         const project_id = body.project_id || 'unknown';
 
         const [typesMod, recvMod, memMod] = await Promise.all([

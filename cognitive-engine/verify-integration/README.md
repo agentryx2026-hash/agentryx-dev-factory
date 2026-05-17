@@ -14,6 +14,8 @@ Mock client + 9-A substrate shipped 2026-04-22; read UI shipped 2026-05-09; webh
 - `feedback-receiver.js` — `handleFeedback(payload, {memory, projectId, fixRouter})` → observation + route
 - `smoke-test.js` — 30 assertions across builder, client, validation, routing, full cycle, fail-open
 - `webhook-integration.smoke.js` — Phase 9-B substrate: 27 assertions reproducing the telemetry webhook handler in-process (validation, observation persistence, route planning, JSONL log append, tail-read shape)
+- `hmac.js` — Phase 9-B HMAC verification helper (`computeHmacSignature` / `verifyHmacSignature` / `authorizeWebhookRequest` + `HMAC_HEADER_NAME` constant); industry-standard HMAC-SHA256-of-raw-body pattern
+- `hmac.smoke.js` — 31 assertions covering happy path + 8 failure modes + dev-mode bypass discrimination + Buffer/string equivalence
 
 ## Phase 9-B webhook endpoint (telemetry.mjs)
 
@@ -45,6 +47,8 @@ Side-effects on every hit:
 - Tail of the JSONL log is exposed by `GET /api/factory-admin/verify/state.recent_feedback[]` for the Verify panel UI
 
 Route is **planned, not executed** — see D213 for the reasoning.
+
+**HMAC verification (D218, added 2026-05-11)**: when `VERIFY_WEBHOOK_SECRET` is set in the environment, the endpoint requires an `X-Verify-Signature: <hex>` header where `<hex>` is the HMAC-SHA256 of the raw request body using the secret. Reject → 401 with `{error, reason: "missing_signature" | "invalid_signature"}`. When the secret is unset (or empty), verification is bypassed with a warn log on every request — preserves the substrate's open-endpoint dev behaviour as an explicit opt-out. Raw bytes are HMAC'd before JSON.parse (same convention as Slack/Stripe/GitHub) so canonicalisation drift can't cause silent mismatches.
 
 ## Boundary contract
 
