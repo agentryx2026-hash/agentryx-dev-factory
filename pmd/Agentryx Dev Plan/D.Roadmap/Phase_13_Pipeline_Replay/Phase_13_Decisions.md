@@ -66,3 +66,27 @@
 - Wired-but-empty discipline: Replay returns `[]` today because `USE_ARTIFACT_STORE` is OFF. Empty-state UI explains the next step (flip the flag → pipeline run → populates). When 6-B + OpenRouter land, the surface lights up automatically.
 
 **Tradeoff**: founder might expect to "click Replay → see something" and get an empty list today. Mitigation: the empty-state banner explains exactly what's missing and how to get there.
+
+## D221 — 13-B LLM-stub: re-produce, don't re-decide; dispatcher defaults to in-process stub (added 2026-05-11)
+
+**What**: Phase 13-B ships `cognitive-engine/replay/llm-stub.js` as the default Phase 13-A `NodeStub` implementation for the `POST /api/factory-admin/replay/runs/:id/execute` endpoint. The stub takes the original artifact + resolved parents and asks the LLM to produce a fresh variant *of the same step*. Default dispatcher is an in-process stub (no LLM spend); founder opts into real Sonnet/Opus per-request via `body.dispatcher`.
+
+**Why "re-produce, don't re-decide"**:
+- Replay's purpose is to expose sampling variance + the effect of substitutions, not to give the LLM a chance to rethink the architecture. Letting the stub re-decide would make replay results inconsistent with their `parent_ids` lineage — the new artifact would no longer plausibly *be* what was produced at that step.
+- Preserves D133's contract from 13-A — same kind, same role, fresh sample.
+- Per-agent system prompts (`DEFAULT_AGENT_SYSTEM_PROMPTS`) reinforce this for each named agent (10 of them; unknown agents fall back to a generic "produce a fresh variant" prompt).
+
+**Why default dispatcher is in-process stub**:
+- Substrate ship must work at $0 with no credentials. `dispatcher: "stub"` produces a valid `ReplayResult` shape without touching the LLM router — useful for endpoint smoke tests, contract validation, and offline development.
+- Real-LLM mode is per-request opt-in (`dispatcher: "sonnet"` or `"opus"`) — mirrors D209's pattern (architect dispatcher is per-cadence, not a global flag). Founder gets to decide whether each replay is worth spending on.
+- Dispatcher failure falls open to stub: if `loadArchitect()` + `pickDispatcher()` throws (e.g. llm-router missing), the endpoint still returns a successful replay using the stub. Substrate availability must not depend on LLM infra health.
+
+**Why per-agent system prompts (not a single generic prompt)**:
+- Each agent role (Picard / Sisko / Spock / etc.) has a distinct "what does this output look like" contract. Generic prompts produce generic outputs; agent-specific prompts let the LLM stay in character even when replaying.
+- `DEFAULT_AGENT_SYSTEM_PROMPTS` is exported so callers can override per-agent at instantiation — useful for test ergonomics and for project-specific tuning later.
+
+**Why a separate module (not inline in executor)**:
+- Phase 13-A `executor.js` deliberately took `nodeStubs` as a dep (D-implicit-DI) so different consumers can provide different stubs. The LLM stub is one consumer; the smoke-test stubs are another; future "Anthropic agent SDK" stub would be a third. Each lives in its own module.
+- Easier to test in isolation: 39 assertions stub the `llmCall` function and exercise every branch of the prompt builder + return-shape contract.
+
+**Tradeoff acknowledged**: the LLM stub doesn't load parent artifact *content* from disk — the executor's `resolveParent` returns artifact records without content. To get content into the prompt, the parents need their content pre-loaded (`_loaded_content` field). Full 13-B may add a content-loading helper that the executor calls before passing parents to the stub; today the stub gracefully handles missing content by saying "(content not loaded)" in the prompt.

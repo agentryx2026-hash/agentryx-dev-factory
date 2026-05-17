@@ -1,8 +1,39 @@
-# Phase 13 — Status: 13-A + 13-B Tier B COMPLETE ✅  (13-B remainder DEFERRED — needs OpenRouter)
+# Phase 13 — Status: 13-A + 13-B Tier B + 13-B LLM-stub substrate COMPLETE ✅  (full 13-B close-out: real Sonnet cycle validation + side-by-side diff UI deferred)
 
 **Phase started**: 2026-04-23
 **Phase 13-A closed**: 2026-04-23 (replay engine: collector / planner / executor)
 **Phase 13-B Tier B closed**: 2026-05-09 (read-only Replay UI, same session as the visible-factory sprint after Phase 21-A.1)
+**Phase 13-B LLM-stub substrate closed**: 2026-05-11 (default NodeStub + execute endpoint + smoke; dispatcher defaults to in-process stub, opts into real Sonnet/Opus via body.dispatcher)
+
+## Phase 13-B LLM-stub substrate — what shipped (2026-05-11)
+
+**`cognitive-engine/replay/llm-stub.js`** (new, ~175 lines):
+- `createLLMNodeStub({llmCall, agentSystemPrompts?, maxOriginalChars?, maxParentChars?})` — returns a Phase 13-A `NodeStub`-shaped function. Builds prompt from original artifact + resolved parents; calls injected `llmCall`; returns `{kind, content, agent, model, node, cost_usd, latency_ms}`.
+- `buildReplayPrompt({original, parents, agentSystemPrompts, maxOriginalChars, maxParentChars})` — pure prompt-builder (exported separately for testability + reuse).
+- `createLLMNodeStubsForPlan(plan, snapshot, deps)` — convenience: produces a `{agent_name → stub}` map for every unique agent in the plan's replay set.
+- `DEFAULT_AGENT_SYSTEM_PROMPTS` — per-agent prompt for all 10 named agents (Picard / Sisko / Troi / Jane / Spock / Torres / Tuvok / Data / Crusher / O'Brien); unknown agents fall back to `GENERIC_SYSTEM_PROMPT`.
+- Truncation defaults: 4000 chars for ORIGINAL, 1500 chars per parent — keeps prompt budget tight; override per-call if needed.
+- **Re-produce, don't re-decide** (preserves D133): the stub is asked to produce a fresh sample of the same step, not to revise the architecture.
+
+**`POST /api/factory-admin/replay/runs/:id/execute`** in `factory-dashboard/server/telemetry.mjs`:
+- Body: `{ replay_from_artifact_id, substitutions?, dispatcher?, project_dir? }`
+- Loads snapshot → builds plan → constructs `nodeStubs` map via `createLLMNodeStubsForPlan` → calls `executeReplay`
+- Dispatcher selection:
+  - `dispatcher: "stub"` (default) — in-process stub `llmCall`; `$0` cost, fast, no LLM dependency
+  - `dispatcher: "sonnet"` / `"opus"` — routes through `loadArchitect()` + `pickDispatcher()` + the Phase 21-B LLM dispatcher (same machinery the cadence cycles use). Fails open to stub if dispatcher init fails (substrate must not block on LLM infra failure).
+- Logs `🔁 Replay started ... (N steps)` + `✅/⚠️ Replay complete ...` to Live Trace.
+- Returns the `ReplayResult` from `executeReplay`.
+
+**Smoke test** — `cognitive-engine/replay/llm-stub.smoke.js`:
+- **39 assertions** across 10 scenarios — buildReplayPrompt (agent-specific + generic-fallback + truncation); createLLMNodeStub (happy path + invalid result + missing fields + cost/latency defaults + dep validation + custom prompts merge); createLLMNodeStubsForPlan (one-stub-per-unique-agent); DEFAULT_AGENT_SYSTEM_PROMPTS roster completeness (10 agents)
+- All pass; no real LLM, no real artifact store
+
+## What stays for full 13-B close-out
+
+- **First real LLM cycle through the endpoint** — founder action: flip `USE_ARTIFACT_STORE=on`, run a real pipeline that produces replayable artifacts, then POST to the execute endpoint with `dispatcher: "sonnet"`. Validates the LLM stub produces sensible replay output end-to-end.
+- **Side-by-side diff UI** — Replay page extension that compares original artifact content vs replayed content for any replayed step. Visual confirmation that "same step, fresh sample" produces interesting variation.
+- **Cross-pipeline replay UI** — `substitutions` parameter is plumbed at the executor level (D134) but lacks a UI to construct cross-pipeline plans.
+- **Cost aggregation in UI** — replays have `cost_usd` per artifact; Replay UI doesn't yet aggregate "this replay cost $X total" — small addition.
 **Duration**: 13-A single session; 13-B Tier B ~10 minutes elapsed (composition over `listRunIds` + `collectRun`)
 
 ---
