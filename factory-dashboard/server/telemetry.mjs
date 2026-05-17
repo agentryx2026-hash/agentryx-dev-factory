@@ -86,11 +86,15 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod] = await Promise.all([
+    const [queueMod, registryMod, schedulerMod, handlersMod, trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-gen-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
     const registry = registryMod.createHandlerRegistry();
@@ -101,6 +105,27 @@ async function bootQueueWorker() {
         try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
       },
     });
+
+    // Phase 16-B Tier B — training_gen handler. Registered on the same
+    // registry so post-dev graphs (today) and Verify auto-fix (full 9-B)
+    // can both enqueue training-artifact generation. Substrate uses
+    // Phase 16-A's template generators; LLM-backed generators land via
+    // the same DI seam when OpenRouter cycle validates parity.
+    if (trainingGenHandlerMod && trainingGenStoreMod && trainingGenRegistryMod && trainingGenPipelineMod) {
+      try {
+        trainingGenHandlerMod.registerTrainingGenHandler(registry, {
+          createTrainingStore: trainingGenStoreMod.createTrainingStore,
+          createGeneratorRegistry: trainingGenRegistryMod.createGeneratorRegistry,
+          runPipeline: trainingGenPipelineMod.runPipeline,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_training-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_gen:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_gen handler not registered:', err?.message || err);
+      }
+    }
 
     // drainOnly: false → keeps the worker loop alive forever, polling.
     // parallelism: 2 → up to 2 concurrent graph spawns. Matches Phase

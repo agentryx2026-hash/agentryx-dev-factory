@@ -66,3 +66,22 @@
 - **Matches 15-A's heuristic proposer discipline**: both modules ship template-driven substrate, then 16-B / 15-B layer LLM brains behind the same interface. Pattern is now the default for "new-agent scaffolding" phases.
 
 **Tradeoff**: template prose is obviously template prose. A voiceover scripted by 16-A templates is useful for testing Phase 17's rendering pipeline but shouldn't be published without 16-B's LLM polish. This is fine; 16-A isn't meant to ship user-facing content.
+
+## D219 — 16-B Tier B: training_gen handler as its own module under concurrency/handlers/ (added 2026-05-11)
+
+**What**: Phase 16-B Tier B registers `training_gen` as a Phase 14-A queue kind via a dedicated module (`cognitive-engine/concurrency/handlers/training-gen-handler.js`) rather than extending `factory-handlers.js`. Same pattern as D211 (factory pipeline handlers) and D217 (architect_research). The handler is registered at telemetry boot inside `bootQueueWorker` alongside the existing 3 kinds.
+
+**Why a separate handler module**:
+- Phase 16-A is a separate domain (training-artifact generation) from Phase 14-B's pipeline graphs (pre_dev / dev / post_dev) and Phase 21-B.2's architect cycles. Each domain owns its handler file. Same posture D211 named explicitly.
+- Test ergonomics: 23-assertion smoke test stubs every Phase 16-A dep without spinning up store / generators / pipeline. Isolated test = fast iteration when 16-A internals evolve.
+- Adding `training_gen` to `factory-handlers.js` would have leaked Phase 16-A's `ProjectContext` / `TrainingKind` types into the pipeline-handlers file. Separation keeps both files focused.
+
+**Why no flag gates the substrate**:
+- The handler is dormant until enqueued. Today no caller enqueues — post-dev graph still does inline training-gen. The registration is *capability*, not *behaviour change*. No regression risk → no flag needed.
+- Full 16-B (the post-dev graph rewire) may want a `USE_TRAINING_GEN_QUEUE` flag to gate the switch from inline to enqueue, same shape as 21-B.2's `USE_ARCHITECT_QUEUE`. That decision waits for full 16-B.
+
+**Why DI on substrate factories (`createTrainingStore`, `createGeneratorRegistry`, `runPipeline`) rather than direct import**:
+- Keeps the handler module decoupled from `cognitive-engine/training-gen/` paths — easier to test (stub all three in one object literal) and easier to swap when full 16-B replaces template generators with LLM versions.
+- Mirrors Phase 21-B.2's architect-handler approach (`A` loadArchitect result injected).
+
+**Tradeoff acknowledged**: post-dev graph still inline-invokes training-gen today. The handler is wire-only until that rewire happens. Acceptable: substrate-now / behaviour-change-later, same pattern as the 14-B handlers existing for weeks before pipeline graphs started enqueueing.
