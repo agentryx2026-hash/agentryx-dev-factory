@@ -12,8 +12,10 @@ Rollup library + threshold config shape shipped. **No HTTP endpoint yet** and **
 - `artifact-source.js` — `rollupFromArtifacts(workspaceRoot, filter)` — filesystem-only, works today
 - `db-source.js` — `rollupFromDb(pool, filter)` — SQL against `llm_calls`, matches Phase 2 schema
 - `service.js` — `getRollup(filter, opts)` — unified entry point, chooses source by env
+- `project-quota.js` — `checkProjectQuota({project_id, workspaceRoot})` — Phase 14-B pre-flight quota gate for `queue.enqueue` (HTTP 429 on breach)
 - `smoke-test.js` — 22 assertions across artifact rollup, filters, error cases
-- `../configs/cost-thresholds.json` — threshold config (consumed by 11-B)
+- `project-quota.smoke.js` — 31 assertions covering window math, threshold loading, breach detection, scope rules
+- `../configs/cost-thresholds.json` — threshold config (consumed by 11-B + the 14-B queue gate)
 
 ## `CostRollup` shape
 
@@ -94,10 +96,31 @@ const rMerged = await getRollup(
 }
 ```
 
-Key formats match the `scope` convention from `memory-layer/types.js`: `global`, `agent:<id>`, `project:<id>`.
+Key formats match the `scope` convention from `memory-layer/types.js`: `global`, `agent:<id>`, `project:<id>`, `model:<provider:model>`.
 
 **Phase 11-A**: config shape defined, file shipped with reasonable defaults. No enforcement yet.
 **Phase 11-B**: `warn_usd` triggers Courier notification; `hard_cap_usd` plugs into `llm-router` alongside Phase 2E's project/daily caps.
+**Phase 14-B remainder** (this ship): `hard_cap_usd` for `global` + `project:*` entries is enforced at `queue.enqueue` time via the `/api/factory-admin/queue/submit` endpoint — over-budget submissions return HTTP 429 with `{ error, breach }`. `agent:*` and `model:*` keys are intentionally skipped by the gate (the queue doesn't yet know which agent/model a job will use); they remain post-call alerts.
+
+## Per-project queue quota gate (Phase 14-B)
+
+```js
+import { checkProjectQuota } from "./cost-tracker/project-quota.js";
+
+const result = await checkProjectQuota({
+  project_id: "2026-05-10_payments-api",
+  workspaceRoot: "/home/.../agent-workspace",
+});
+// → { ok: true }                              when no matching threshold OR under cap
+// → { ok: false, breach: {                    when at-or-over cap
+//      key:           "project:2026-05-10_payments-api",
+//      window:        "daily",
+//      hard_cap_usd:  5,
+//      current_usd:   5.42
+//   }}
+```
+
+Resolution order: consult every threshold whose `key` is `global` or `project:<project_id>`; return the *first* breach found, else `{ ok: true }`. Implementation is fail-open in the HTTP layer: a broken cost-thresholds.json never blocks the queue (logs a warning instead).
 
 ## Environment
 
