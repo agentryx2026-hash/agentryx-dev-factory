@@ -1,10 +1,11 @@
-# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler + HTTP surface shipped (React UI + back-feed + password auth still deferred)
+# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler + HTTP surface + back-feed wrapper shipped (React UI + Courier + password auth still deferred)
 
 **Phase started**: 2026-04-24
 **Phase 19-A closed**: 2026-04-24
 **Phase 19-B Tier B handler closed**: 2026-05-18 (`project_intake` queue handler — walks submitted→accepted→in_progress + enqueues downstream pre_dev)
 **Phase 19-B HTTP surface closed**: 2026-05-18 (6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake)
-**Duration**: 19-A single session; 19-B handler ~30 min; 19-B HTTP surface ~45 min over the substrate
+**Phase 19-B back-feed wrapper closed**: 2026-05-18 (`wrapForCustomerBackfeed` — pre_dev completion transitions submission to `delivered`; closes the customer-side lifecycle for v0.0.1)
+**Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min over the substrate
 
 ## Subphase progress
 
@@ -20,7 +21,8 @@
 | 19-A.8 | `customer-portal/README.md` + `USE_CUSTOMER_PORTAL` flag registered in admin-substrate | ✅ done |
 | 19-B Tier B | `project_intake` queue handler — submission state-machine walk + downstream pre_dev enqueue | ✅ done 2026-05-18 |
 | 19-B HTTP surface | 6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake | ✅ done 2026-05-18 |
-| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth + pre_dev → delivered back-feed | ⏳ DEFERRED |
+| 19-B back-feed wrapper | `wrapForCustomerBackfeed` wraps pre_dev → on completion transitions submission `in_progress → delivered` + records timeline event; fail-isolated | ✅ done 2026-05-18 |
+| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth | ⏳ DEFERRED |
 
 ## Phase 19-B Tier B handler — what shipped (2026-05-18)
 
@@ -82,10 +84,52 @@
   - Quota enforcement (free tier max 1 active → 2nd submit hits QUOTA_EXCEEDED → 429)
 - All pass; no HTTP server spin-up needed — the auto-enqueue logic is re-implemented in the test (mirrors webhook-integration.smoke.js pattern)
 
+## Phase 19-B back-feed wrapper — what shipped (2026-05-18)
+
+**`cognitive-engine/concurrency/handlers/customer-backfeed-wrapper.js`** (new, ~155 lines):
+- `wrapForCustomerBackfeed(originalHandler, { portal, finalKind?, phaseKinds?, onLog? })` — takes any Phase 14-A handler and returns a wrapped handler (`(job, ctx) → result`). Inner handler runs unchanged; result always propagates.
+- After successful inner-handler completion, if `job.payload.customer_id` + `job.payload.submission_id` are set, back-feeds the parent customer submission:
+  - Job `kind === finalKind` (default `"pre_dev"` for v0.0.1): transition `in_progress → delivered` + record `delivered` timeline event + patch `delivered_by_job_id` onto the submission.
+  - Job `kind ∈ phaseKinds` (default `["dev","post_dev"]`): record `phase_completed` timeline event only (no transition; the final transition lands when `finalKind` fires).
+  - Anything else (no customer refs, unrecognised kind, already-terminal status): pass-through.
+- **Fail-isolated**: a back-feed lookup or transition error does NOT propagate to the queue. Inner-handler result is still returned (queue marks job done); error is logged via `onLog` + `console.warn` so ops can recover the submission manually. Rationale: the customer's downstream work succeeded — failing the queue job over a bookkeeping issue would re-run expensive pre_dev.
+- **Terminal-status short-circuit**: if submission is already `delivered` / `rejected` / `cancelled`, skip all back-feed action. Handles retry idempotency + parallel admin actions cleanly.
+- Module-level exports: `wrapForCustomerBackfeed`, `DEFAULT_FINAL_KIND` (`"pre_dev"`), `DEFAULT_PHASE_KINDS` (`["dev","post_dev"]`).
+
+**`bootQueueWorker` extension** in `factory-dashboard/server/telemetry.mjs`:
+- Lazy-imports `customer-backfeed-wrapper.js` alongside other handler modules (fail-tolerant `.catch(() => null)`)
+- Hoists `sharedCustomerPortal` creation up to the top of the registration block so the same instance is reused by both the back-feed wrapper AND the project_intake handler — single portal hook + single source of truth.
+- After `registerFactoryHandlers`, retrieves the existing `pre_dev` handler from the registry, wraps it via `wrapForCustomerBackfeed(originalPreDev, { portal: sharedCustomerPortal, onLog })`, and re-registers under the same kind. For non-customer pre_dev jobs (regular factory pipeline), the wrapper is a no-op pass-through.
+- New Live Trace log prefix: `[queue:pre_dev:backfeed:<jobId>]`
+
+**Smoke test** — `cognitive-engine/concurrency/handlers/customer-backfeed-wrapper.smoke.js`:
+- **78 assertions** across 15 scenarios using stubbed portal + stubbed inner handler:
+  - Module exports + defaults (3)
+  - Dep validation — 5 invalid-input variants throw (1)
+  - Inner handler runs unchanged + result propagates (4)
+  - Inner handler throws → propagates, no back-feed attempt (5)
+  - Job without customer refs → pass through, portal untouched (4 + 1)
+  - finalKind happy path — pre_dev on in_progress → delivered + delivered event (10)
+  - Phase kind `dev` on in_progress → phase_completed event only (5)
+  - Phase kind `post_dev` on in_progress → phase_completed event only (4)
+  - Unrecognised kind (`architect_research`) → no transition, no event, log mentions skip (3)
+  - Terminal-status short-circuit — verified for all 3 terminal states: delivered, rejected, cancelled (15)
+  - Submission not found → log + pass through (4)
+  - Submission lookup throws → fail-isolated; inner result returned (4)
+  - transitionSubmission throws → fail-isolated; inner result returned (4)
+  - recordTimelineEvent throws on phase kind → fail-isolated (3)
+  - Custom finalKind override (`finalKind="post_dev"` makes pre_dev intermediate) (6)
+  - Every recorded timeline event uses a valid TIMELINE_EVENT_KINDS entry (D226 guard) (2)
+- All pass; stub `recordTimelineEvent` imports `TIMELINE_EVENT_KINDS` and rejects invalid kinds (D226 lesson applied).
+
+**What's now LIVE on telemetry boot** (post-deploy):
+- pre_dev handler is wrapped — customer-tagged pre_dev jobs auto-transition their parent submission to `delivered` on completion
+- Regular factory pre_dev jobs (no customer refs in payload) are unaffected — wrapper is a no-op for them
+- Shared `sharedCustomerPortal` instance used by 3 callers: project_intake handler, pre_dev wrapper, HTTP routes (via the existing `getCustomerPortal()` lazy getter, which constructs its own instance — both point at the same `_customer-portal/` filesystem root, so consistency is filesystem-guaranteed)
+
 ## What stays for full 19-B
 
 - **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer; consumes the 6 HTTP endpoints above
-- **Pre_dev → delivered back-feed** — a wrapper handler that on `pre_dev` completion finds the parent submission (via `payload.customer_id/submission_id` threaded through this Tier B ship) and transitions to `delivered` + records timeline event
 - **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook)
 - **Budget gate** (11-B follow-on) — pre-flight check against the customer's tier `budget_cap_usd` before enqueueing downstream work
 - **Verify linkage** (9-B full) — on a Verify reviewer rejection, route a fix-cycle for the customer's submission

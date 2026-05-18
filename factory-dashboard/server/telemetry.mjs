@@ -125,7 +125,7 @@ async function bootQueueWorker() {
       queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod,
       trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod,
       videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
-      intakeHandlerMod, customerPortalMod,
+      intakeHandlerMod, customerPortalMod, backfeedWrapperMod,
     ] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
@@ -142,6 +142,7 @@ async function bootQueueWorker() {
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'project-intake-handler.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'portal.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'customer-backfeed-wrapper.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
 
@@ -175,6 +176,46 @@ async function bootQueueWorker() {
         try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
       },
     });
+
+    // Shared customer portal instance — used by both the back-feed
+    // wrapper (re-registers pre_dev below) and the project_intake
+    // handler (later in this function). Filesystem-backed, so even if
+    // two callers held separate instances they'd see consistent state;
+    // sharing is just a small efficiency + a single hook for ops.
+    // Fail-tolerant: if customer-portal module is unavailable, both the
+    // wrapper and the intake handler skip registration silently.
+    let sharedCustomerPortal = null;
+    if (customerPortalMod) {
+      try {
+        sharedCustomerPortal = customerPortalMod.createCustomerPortal({ rootDir: QUEUE_WORKSPACE });
+      } catch (err) {
+        console.warn('[queue.worker] shared customer portal init failed:', err?.message || err);
+      }
+    }
+
+    // Phase 19-B Tier B (D227) — wrap pre_dev so that after the existing
+    // factory pre_dev handler completes successfully, if the job has
+    // customer_id+submission_id (threaded through by project_intake),
+    // the parent submission transitions in_progress → delivered. For
+    // non-customer pre_dev jobs (regular factory pipeline), this is a
+    // no-op passthrough. Wrapper is fail-isolated: a back-feed error
+    // does NOT propagate to the queue, so the job is still marked done.
+    if (backfeedWrapperMod && sharedCustomerPortal) {
+      try {
+        const originalPreDev = registry.get('pre_dev');
+        if (typeof originalPreDev === 'function') {
+          const wrappedPreDev = backfeedWrapperMod.wrapForCustomerBackfeed(originalPreDev, {
+            portal: sharedCustomerPortal,
+            onLog: (line, jobId) => {
+              try { addLog('system', `[queue:pre_dev:backfeed:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+            },
+          });
+          registry.register('pre_dev', wrappedPreDev);
+        }
+      } catch (err) {
+        console.warn('[queue.worker] customer back-feed wrapper not installed:', err?.message || err);
+      }
+    }
 
     // Phase 21-B.2 — architect_research handler.
     try {
@@ -238,13 +279,10 @@ async function bootQueueWorker() {
     // surface. Handler walks submission through submitted→accepted→
     // in_progress and enqueues a downstream pre_dev job. Fail-tolerant
     // import: customer-portal module is optional at boot.
-    if (intakeHandlerMod && customerPortalMod) {
+    if (intakeHandlerMod && sharedCustomerPortal) {
       try {
-        const portal = customerPortalMod.createCustomerPortal({
-          rootDir: QUEUE_WORKSPACE,
-        });
         intakeHandlerMod.registerProjectIntakeHandler(registry, {
-          portal,
+          portal: sharedCustomerPortal,
           queue,  // same queue instance so downstream pre_dev jobs land here
           onLog: (line, jobId) => {
             try { addLog('system', `[queue:project_intake:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}

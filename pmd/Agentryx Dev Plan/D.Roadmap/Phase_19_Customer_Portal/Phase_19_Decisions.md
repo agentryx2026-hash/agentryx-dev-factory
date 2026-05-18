@@ -168,3 +168,47 @@ Three substantive design decisions captured here, beyond "just wire portal metho
 - Handler idempotency is a queue-substrate requirement, not a nice-to-have. Phase 14-A's lease-then-fail-then-retry semantics means EVERY handler must tolerate "I've run partway before; the state reflects that; what do I do?"
 
 **Pattern to extend**: the other 6 handlers (factory pre_dev/dev/post_dev, architect_research, training_gen, training_video_render) should be audited for the same retry-idempotency property. They're mostly safe by accident (spawning a subprocess is mostly idempotent; LLM calls are stateless), but the rule is now explicit: handlers MUST be safe to re-fire from any partial-completion state. Future handlers should structure work as `(check current state) → (advance from there)`, not `(assume initial state) → (advance through fixed sequence)`.
+
+## D227 — Back-feed wrapper closes the customer lifecycle without touching pipeline handlers (added 2026-05-18)
+
+**What**: A new module `cognitive-engine/concurrency/handlers/customer-backfeed-wrapper.js` exports `wrapForCustomerBackfeed(originalHandler, deps)`. It takes any Phase 14-A handler (signature `(job, ctx) → result`) and returns a wrapped handler that runs the inner handler unchanged, then — if the job's payload carries `customer_id` + `submission_id` — back-feeds the parent customer submission state:
+
+- For `finalKind` (default `"pre_dev"` for v0.0.1): transitions submission `in_progress → delivered` + records a `delivered` timeline event + patches `delivered_by_job_id` onto the submission.
+- For `phaseKinds` (default `["dev","post_dev"]`): records a `phase_completed` timeline event only, no transition (the final transition lands when `finalKind` fires).
+- Anything else (no customer refs, unrecognised kind, already-terminal status): pass-through, no portal action.
+
+Telemetry wires it in `bootQueueWorker`: after `registerFactoryHandlers`, it retrieves the existing `pre_dev` handler from the registry, wraps it, and re-registers under the same kind. A shared `sharedCustomerPortal` instance is now created once at the top of the registration block (hoisted up from inside the project_intake block) and reused by both the wrapper and the intake handler — keeps a single portal hook + simplifies future ops.
+
+**Why a wrapper instead of editing `factory-handlers.js`**:
+- `factory-handlers.js` belongs to the **pipeline-graph domain** (D211). Mixing customer-portal state-machine knowledge into it would couple two unrelated subsystems. The wrapper composes them externally so neither domain leaks into the other — same separation principle as D224 (project_intake as its own module).
+- A separate module is independently testable (in this ship: 78-assertion smoke with stubbed portal — no filesystem, no real handlers).
+- Future-proof: when `dev` and `post_dev` get customer refs threaded through (next phase), the same wrapper can wrap them too — change the registration to `wrapForCustomerBackfeed(originalDev, { ..., phaseKinds: ["dev"], finalKind: "post_dev" })` and so on. No code change in the wrapper itself.
+
+**Why `finalKind = "pre_dev"` for v0.0.1 (not `"post_dev"`)**:
+- The v0.0.1 customer flow currently stops at pre_dev. `project_intake` (D224) enqueues only a single downstream pre_dev job, not the full pre_dev → dev → post_dev chain. So for v0.0.1, **a customer submission is "delivered" when pre_dev completes**.
+- When the full chain gets wired in a later phase, change `finalKind` to `"post_dev"` at registration time + add `phaseKinds: ["dev"]` (or use the defaults). The wrapper code doesn't change.
+- This keeps the wrapper config a deployment-time concern, not a code-time one. Solo-founder v0.0.1 ergonomics.
+
+**Why fail-isolated back-feed (transition error doesn't propagate to queue)**:
+- The customer's downstream work succeeded (pre_dev produced artifacts). Failing the QUEUE job because of a back-feed bookkeeping issue would:
+  1. Put the job in `failed/` even though the actual work succeeded.
+  2. Trigger a retry that re-runs the expensive pre_dev (LLM tokens, time).
+  3. Either succeed on retry (after the bookkeeping issue self-resolves) or hit max_attempts and be permanently `failed/` despite the work having succeeded.
+- All three outcomes are wasteful. Better: the inner handler's result is always returned (queue marks job done), the back-feed error is logged via `onLog` + `console.warn` so ops can recover the submission manually.
+- The lesson here is "bookkeeping failures shouldn't fail the work they're bookkeeping for" — same shape as D211's choice not to fail a graph run when telemetry write fails.
+
+**Why the idempotent terminal-status short-circuit**:
+- D226 idempotency lesson applied: if the same wrapped pre_dev job retries (e.g., transient FS error after the back-feed already fired), the second attempt sees the submission in `delivered` state. We must NOT attempt `delivered → delivered` (would throw `illegal transition`). Short-circuit instead.
+- Also handles parallel admin actions: if the founder manually `rejected` or `cancelled` a submission while pre_dev was running, we don't override their decision.
+- `TERMINAL = new Set(["delivered", "rejected", "cancelled"])` — the canonical terminal set from `customer-portal/types.js`.
+
+**Why duplicate timeline events are tolerated, but duplicate state transitions aren't**:
+- Timeline is append-only JSONL with `at` timestamps. A duplicate `delivered` event is harmless (and even useful for forensics — "back-feed retried at T1 and T2"). No dedupe needed.
+- Submission state transitions are strict — the state machine in `submissions.js` refuses illegal moves. Dedupe via the terminal-status check, not via event-log scanning.
+
+**Why a fresh smoke (not stub-reuse from project_intake)**:
+- The wrapper is a different shape from the intake handler — it composes another handler, not just stubs. The smoke needs to verify (1) inner handler always runs, (2) inner result always propagates, (3) inner errors propagate (no back-feed attempt), (4) back-feed runs only when customer refs are present, (5) back-feed errors do NOT propagate. That's its own contract.
+- 78 assertions covering: module exports + defaults, dep validation, inner-handler-always-runs, inner-error-propagates, no-customer-refs pass-through, partial-customer-refs (only customer_id) pass-through, finalKind happy path, both phase-kind variants (dev / post_dev), unrecognised kind, terminal short-circuit (all 3 terminal states), missing submission, lookup throw, transition throw, timeline-record throw, custom finalKind override.
+- D226 stub-validation lesson applied: the stub `recordTimelineEvent` imports `TIMELINE_EVENT_KINDS` and rejects invalid kinds — would catch any future regression where the wrapper drifts to an invalid event kind.
+
+**Tradeoff acknowledged**: the wrapper config is per-handler (pre_dev gets one wrapper, dev would get another). If we wanted, we could wrap all 3 pipeline kinds in one go via a tiny helper. Not worth it for v0.0.1 — explicit per-kind registration reads cleaner and matches the existing per-handler pattern in `bootQueueWorker`.
