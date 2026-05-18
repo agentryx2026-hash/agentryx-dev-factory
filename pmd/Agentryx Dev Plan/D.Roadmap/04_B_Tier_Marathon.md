@@ -1,7 +1,41 @@
 # B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-05-09 (Phase 2.76 close — Beta Playground established + release-band schedule revised)
+**Snapshot date**: 2026-05-11 (large substrate sweep — Cohort 1 and Cohort 2 substrate work mostly closed; validation remains)
 **Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
+
+## 2026-05-11 update — substrate sweep ✅
+
+Two autonomous sessions (2026-05-10 + 2026-05-11) closed the substrate for most of Cohort 1 and the unblocked half of Cohort 2. **What changed since 2026-05-09**:
+
+**Cohort 1 — substrate complete; validation pending**
+- **5-B** ✅ substrate — `tool-selector.js` + 5 graphs rewired under `USE_MCP_TOOLS` (PR pending)
+- **8-B** ✅ substrate — `dev_graph.js` rewire under `USE_PARALLEL_DEV_GRAPH`; tuvok ∥ data after torres + join_review barrier (PR pending)
+- **15-B** 🟡 proposer shipped (LLM-backed); comparators still need real artifact deltas (PR #42)
+- **16-B** ✅ Tier B — `training_gen` handler registered on Phase 14-A queue (PR pending)
+- **17-B** ✅ Tier B — `training_video_render` handler with all-null provider defaults (PR pending)
+- 7-E ✅ shipped (sync-from-artifacts; PR #42)
+- 6-B ✅ shipped (RouterChatModel chokepoint; PR #42)
+
+**Cohort 2 — UI sprint mostly done**
+- **9-B** 🟡 read UI ✅ (PR #42) + webhook receiver ✅ + HMAC ✅ (PR pending). Remainder: real http client + auto-routed fix cycle (needs Verify-stg deploy + LLM cycle)
+- **10-B** 🟡 read UI ✅ (PR #42). Remainder: real backends (Slack/SMTP/GitHub creds)
+- **11-B** 🟡 read UI ✅ (PR #42). Remainder: per-tenant charts + threshold alerts via 10-B Courier
+- **12-B** ✅ full done — 8 Admin sub-tabs live (PR #42)
+- **13-B** ✅ Tier B (read UI) + LLM-stub substrate (PR pending). Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle
+- **14-B** ✅ Tier B + per-project quotas (PR pending). Remainder: legacy-path retirement + 19-B handler kind
+- **18-B** 🟡 catalogue read UI ✅ (PR #42). Remainder: remote fetch + signature verification
+
+**Cohort 3** — unchanged (scale-gated). **Cohort 4** — unchanged (v3 release work).
+
+**New phase ships**
+- **Phase 21-A.1** ✅ Platform Evolution Roadmap + Founder R&D Brief + Seven onboarded (PR #42)
+- **Phase 21-B** ✅ Real Sonnet/Opus dispatcher, opt-in per cadence (PR #42)
+- **Phase 21-B.2** ✅ Architect cadence → Phase 14-A queue under `USE_ARCHITECT_QUEUE` (PR pending)
+
+**Lab profile updates**
+- Hermes re-evaluated 2026-05-11 → PASS for now, RE-EVALUATE 2026-06-10. Roadmap adjustment: when 7-E opens, prefer **direct Honcho adoption** (now stable plugin) over the original pattern-steal plan.
+
+**See also**: [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md) for the concrete founder action to validate the new substrate end-to-end.
 
 This is a living doc. Update it after every B-subphase ships, after every Lab profile graduation, and at every release-band cut.
 
@@ -22,16 +56,16 @@ The B-tier marathon spans v0.0.1 → v3. Lab profile graduations are *parallel* 
 
 ## 1. The shape of the marathon
 
-A-tier shipped 16 modules. **17 deferred B-subphases** + **5 active Beta Playground profiles** are what stand between v0.0.1 and v3 production. The B-subphases cluster into 4 cohorts by blocker; Lab profiles run in parallel:
+A-tier shipped 16 modules. **17 originally-deferred B-subphases** + **5 active Beta Playground profiles** stood between v0.0.1 and v3 production at 2026-05-09. As of 2026-05-11 most C1 + half of C2 substrate has shipped — what stands now is **validation + external credentials + v3 release work**:
 
-| Cohort | Phases | Blocker | Unlock unit | Cost to unlock |
+| Cohort | Phases | Status (2026-05-11) | Blocker | Cost to unlock |
 |---|---|---|---|---|
-| **C1** | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B | OpenRouter credit + TTS credentials | 1 budget top-up + 1 ElevenLabs key | ~$15-40 LLM/TTS validation |
-| **C2** | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | UI sprint + ops credentials (Slack/GitHub/SMTP) | React dev sprint + per-channel creds | 2-3 dev-weeks |
-| **C3** | 7-B, 7-C, 7-D | Scale-dependent (memory backends) | Trigger: 100+ observations / multi-host / semantic-search demand | $0 until demand shows up |
-| **C4** | 20-B | Stripe + S3/R2 + external pen-test | Stripe acct + cloud bucket + security budget | ~$5-15K (pen test) + ongoing infra |
+| **C1** | 5-B, 6-B, 7-E, 8-B, 15-B, 16-B, 17-B | ✅ substrate; 🟡 validation pending | First real LLM cycle (~$5-15 total) | OpenRouter cycle + ElevenLabs key for 17-B real backends |
+| **C2** | 9-B, 10-B, 11-B, 12-B, 13-B, 14-B, 18-B, 19-B | ✅ mostly substrate; 🟡 ops creds + 19-B multi-session pending | Slack/GitHub/SMTP creds, Verify-stg deploy, 19-B design | React work for 19-B + Stripe-adjacent decisions |
+| **C3** | 7-B, 7-C, 7-D | ⏳ scale-gated | 100+ observations / multi-host / semantic-search demand | $0 until demand shows up |
+| **C4** | 20-B | ⏳ v3 release | Stripe + S3/R2 + external pen-test | ~$5-15K (pen test) + ongoing infra |
 
-Each cohort unlocks independently. Order is a strategy choice, not a technical dependency (with one exception: 14-B handler registration is a soft prereq for 16-B and 17-B, both of which run async via the queue).
+Each cohort unlocks independently. **Soft prereq satisfied**: 14-B handler registration was the gate for 16-B / 17-B / 19-B handler kinds; 14-B handlers + 16-B + 17-B Tier B all shipped 2026-05-10 / 2026-05-11.
 
 **Beta Playground in parallel** (Phase 2.76, D181): 5 active profiles with Tier 1 (hermes-agent, honcho, deep-agents, anthropic-agent-teams) targeting graduation to stable as `exploring` → `testing` → `adopting` over the next 1-3 monthly reviews. Tier 2 watching profile (thinking-machines-tinker) tracks Mira Murati's lab. **Lab graduations directly resolve B-subphases**: e.g., honcho adoption closes Phase 7-E; deep-agents adoption shapes Phase 9 implementation; hermes-agent capability adoptions slot into 7-E (memory), 9 (Kanban patterns), 10 (Courier), 18-B (Curator).
 
@@ -185,15 +219,21 @@ Three viable sequences, depending on what's available:
 
 ### Sequence A — credentials-first (fastest path to "factory works end-to-end")
 ```
-1. OpenRouter top-up        →  6-B (1 session, ~$3)
-2. Then 14-B               →  (1 session)
-3. Then 16-B + 17-B        →  (~3 sessions, needs ElevenLabs key)
-4. Then 7-E + 8-B + 15-B   →  (~3 sessions)
-5. UI sprint               →  C2
-6. Stripe + ceremony       →  20-B
+1. OpenRouter top-up        →  ✅ done (2026-05-10, $9.91 balance + auto top-up)
+2. 14-B substrate           →  ✅ done (Tier B + quotas; PR pending)
+3. 6-B chokepoint           →  ✅ done (RouterChatModel.invoke hook; PR #42)
+4. 5-B / 7-E / 8-B / 15-B substrate → ✅ done (all PRs pending)
+5. 16-B / 17-B Tier B       →  ✅ done (handler registrations; PRs pending)
+
+──── ALL SUBSTRATE NOW SHIPPED ────
+
+6. First real validation cycle  → ⏳ founder action (see [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md))
+7. PR merges + tag closes        → ⏳ founder action
+8. Cohort 2 remainder (9-B/10-B/11-B/19-B)  → needs creds + multi-session work
+9. Stripe + ceremony (20-B)      → v3 release work
 ```
-**Time to first real factory run**: 1 session after credit top-up.
-**Time to R1**: ~10-12 weeks elapsed.
+**Time to first real factory run**: 1 founder action (flip flags + click "Run cycle now").
+**Time to R1**: ~6-8 weeks elapsed from a validated first cycle.
 
 ### Sequence B — UI-first (operator-friendly path)
 ```
