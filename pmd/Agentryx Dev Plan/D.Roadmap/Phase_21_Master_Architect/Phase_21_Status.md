@@ -1,10 +1,45 @@
-# Phase 21 — Status: 21-A + 21-A.1 + 21-B COMPLETE ✅  (Phase 22 DEFERRED to v2→v3)
+# Phase 21 — Status: 21-A + 21-A.1 + 21-B + 21-B.2 COMPLETE ✅  (Phase 22 DEFERRED to v2→v3)
 
 **Phase started**: 2026-05-09
 **Phase 21-A closed**: 2026-05-09 (substrate)
 **Phase 21-A.1 closed**: 2026-05-09 (Platform Evolution Roadmap + Founder R&D Brief + Seven onboarded — same day, same session, after founder direction during the 21-A close call)
 **Phase 21-B closed**: 2026-05-09 (real LLM research dispatcher — Sonnet/Opus via the LLM router; opt-in via cadence/brief `dispatcher` field; same session)
-**Duration**: single session (immediately after Phase 2.76 close)
+**Phase 21-B.2 closed**: 2026-05-11 (architect cadence cycles run as Phase 14-A queue jobs under `USE_ARCHITECT_QUEUE=true` — crash-resilient + observable in Admin → Queue)
+**Duration**: 21-A/.1/-B single session 2026-05-09; 21-B.2 single session 2026-05-11 (stacked on Phase 14-B Tier B)
+
+## Phase 21-B.2 — what shipped (2026-05-11)
+
+**`cognitive-engine/concurrency/handlers/architect-handler.js`** (new, ~170 lines):
+- `runArchitectPass({A, kb, proposalStore, cadenceKind, cadenceConfig, pickDispatcher})` — extracted the per-cycle work (researcher/proposer/architect construction + `runPass` + optional report synthesis) out of `telemetry.mjs:runCadencePass`. Pure function; every dep injected; testable in isolation.
+- `registerArchitectResearchHandler(registry, deps)` — registers an `architect_research` job kind on the Phase 14-A handler registry. Handler reads `job.payload.{cadence_kind, cadence_config}`, runs the pass, fires `onReportProduced(report)` if a report was synthesized.
+- `ARCHITECT_RESEARCH_KIND` export — convenience constant for callers.
+- onReportProduced thrown errors are caught + warned (don't fail the job).
+
+**`bootQueueWorker` extension** in `factory-dashboard/server/telemetry.mjs`:
+- Lazy-imports `architect-handler.js` alongside `factory-handlers.js`.
+- After registering the 3 factory handlers, also loads architect + constructs a KB + proposal store, then registers `architect_research` with the same `pickDispatcher` selector + an `onReportProduced` hook that logs `👑 Architect cycle report ready (via queue): <id> (<cadence>)` and broadcasts.
+- Wrapped in try/catch — a broken architect module shouldn't take down pipeline handlers.
+
+**`bootCadenceDaemon.runCadencePass` enqueue path** (flag-gated):
+- When `USE_ARCHITECT_QUEUE=true`, the daemon enqueues an `architect_research` job (`project_id: "architect"`, priority 30, max_attempts 1) instead of running the pass inline. Returns a sentinel `{pass: {id: "queued:<job_id>", queued: true}}` so the daemon's bookkeeping (`lastCadenceFire` timestamp) still records.
+- Pipeline jobs (priority 50) preempt architect cycles — pre_dev / dev / post_dev get the worker slot first.
+- `max_attempts: 1` — a failed cycle waits for the next cadence to retry rather than spinning. Cadence is the natural backoff.
+- Enqueue failure → falls through to the inline path (fail-open: if the queue isn't healthy, the architect still runs).
+- Default off → preserves Phase 21-A.1 inline behaviour. Flag flip is per-environment.
+
+**Smoke test** — `cognitive-engine/concurrency/handlers/architect-handler.smoke.js`:
+- **31 assertions** across 9 scenarios — runArchitectPass with report_enabled (full path), without report (no writeReport call), weekly (no Criteria section vs monthly), arg validation; registered handler kind + lookup; valid job → fires onReportProduced; report-disabled config → no onReportProduced; missing payload fields throw; onReportProduced throwing doesn't fail the job; dep validation
+- All pass — no real architect / kb / dispatcher / queue needed (every dep stubbed)
+
+**Why a flag and not a hard switch**:
+- The inline path is battle-tested via Phase 21-A.1's daemon. The enqueue path is new. Default-off ships D217's posture: prove parity in production before retiring inline.
+- Per-environment opt-in: founder can flip on the production VM after observing one or two enqueued cycles complete cleanly via Admin → Queue panel, while staging stays inline if desired.
+
+## What stays for full 21-B.2 close-out
+
+- **Flip flag in production** after observing one or two cycles complete via Admin → Queue. Decision is observational, not blocking.
+- **Delete inline `runCadencePass` body** when the flag is permanently on. Today both paths exist; future cleanup.
+- **Crash-recovery test**: kill telemetry mid-pass, restart, confirm the in-flight `architect_research` job is re-leased per Phase 14-A lease timeout. Needs an OpenRouter cycle to produce a job long enough to interrupt.
 
 ## What shipped
 
