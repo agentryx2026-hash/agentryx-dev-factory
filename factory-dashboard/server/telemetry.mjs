@@ -1638,6 +1638,89 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Phase 13-B full — execute a replay via the LLM-stub.
+  // POST body: { replay_from_artifact_id, substitutions?, dispatcher?, project_dir? }
+  // Returns: ReplayResult { ok, new_run_id, new_artifact_ids, produced, duration_ms, error? }
+  if (req.url?.match(/^\/api\/factory-admin\/replay\/runs\/([^/]+)\/execute$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const runId = decodeURIComponent(req.url.match(/^\/api\/factory-admin\/replay\/runs\/([^/]+)\/execute$/)[1]);
+        const body = await readRequestBody(req);
+        if (!body?.replay_from_artifact_id) {
+          return jsonResponse(res, 400, { error: 'body.replay_from_artifact_id required' });
+        }
+        const [collectorMod, plannerMod, executorMod, llmStubMod] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'run-collector.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'planner.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'executor.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'replay', 'llm-stub.js')).href),
+        ]);
+        const snapshot = await collectorMod.collectRun(AGENT_WORKSPACE, runId);
+        if (!snapshot) return jsonResponse(res, 404, { error: `run not found: ${runId}` });
+
+        const plan = plannerMod.buildReplayPlan(snapshot, {
+          replayFromArtifactId: body.replay_from_artifact_id,
+          substitutions: body.substitutions || {},
+        });
+        if (!plan?.replay_artifact_ids?.length) {
+          return jsonResponse(res, 400, { error: 'plan empty — replay_from_artifact_id not found in snapshot' });
+        }
+
+        const dispatcherKey = body.dispatcher || 'stub';
+        let llmCall;
+        if (dispatcherKey === 'stub') {
+          llmCall = async ({ user }) => ({
+            content: `[stub replay] (dispatcher=stub — no real LLM spend.)\n\n${user.substring(0, 500)}\n\n...`,
+            cost_usd: 0,
+            model: 'stub:replay',
+            latency_ms: 1,
+          });
+        } else {
+          try {
+            const A = await loadArchitect();
+            const dispatcher = pickDispatcher(A, dispatcherKey);
+            llmCall = async ({ system, user, agent, kind }) => {
+              const r = await dispatcher.dispatch({
+                topic: `replay:${agent}:${kind}`,
+                question: `${system}\n\n${user}`,
+                area: 'replay',
+                depth: 'standard',
+                budget_usd: 1.0,
+              });
+              return {
+                content: r?.summary || r?.text || JSON.stringify(r).slice(0, 4000),
+                cost_usd: r?.cost_usd ?? 0,
+                model: r?.model || dispatcherKey,
+                latency_ms: r?.latency_ms ?? 0,
+              };
+            };
+          } catch (dErr) {
+            console.warn('[replay/execute] dispatcher init failed; falling back to stub:', dErr?.message || dErr);
+            llmCall = async () => ({ content: '[stub fallback]', cost_usd: 0, latency_ms: 1 });
+          }
+        }
+
+        const nodeStubs = llmStubMod.createLLMNodeStubsForPlan(plan, snapshot, { llmCall });
+        const projectDir = body.project_dir || (snapshot.project_id ? path.join(AGENT_WORKSPACE, snapshot.project_id) : null);
+        if (!projectDir) return jsonResponse(res, 400, { error: 'project_dir not resolvable' });
+
+        addLog('system', `🔁 Replay started: ${runId} from ${body.replay_from_artifact_id} (dispatcher=${dispatcherKey}, ${plan.replay_artifact_ids.length} steps)`);
+        broadcast();
+
+        const result = await executorMod.executeReplay(plan, { projectDir, nodeStubs, snapshot });
+
+        const verdict = result.ok ? '✅' : '⚠️';
+        addLog('system', `${verdict} Replay complete: ${result.new_run_id} (${result.new_artifact_ids.length} artifacts, ${result.duration_ms}ms)${result.error ? ' — ' + result.error : ''}`);
+        broadcast();
+        return jsonResponse(res, result.ok ? 200 : 500, result);
+      } catch (err) {
+        console.error('[factory-admin/replay/runs/:id/execute]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   if (req.url?.startsWith('/api/factory-admin/audit') && req.method === 'GET') {
     (async () => {
       try {
