@@ -82,6 +82,10 @@ Mirrors Phase 5-A / 6-A pattern — parallel module, feature-flagged, no changes
 - Graph node integration (observations written post-LLM-call) (7-E)
 - Honcho / Letta / Graphiti evaluations (Phase 15 self-improvement band)
 
+**7-E Honcho note** (added 2026-05-11 per Seven re-evaluation of Hermes):
+
+When 7-E opens, prefer **direct Honcho adoption** over the original "pattern-steal" plan. Rationale: Hermes v0.7+ (April 2026) restored Honcho to plugin parity with profile-scoped host/peer resolution. Honcho is now one of 8 supported memory providers, and its plugin contract is stable. Adopting directly (vs reimplementing the dialectic-reasoning pattern from scratch) saves ~2-3 days of bespoke work and keeps us on the upstream upgrade path. See `playground/profiles/hermes-agent/PROFILE.md` 2026-05-11 entry for the full assessment.
+
 ## Why this scope is right
 
 - **Configurability-first (P1)**: the `MemoryService` interface lets us swap backends (fs ↔ sqlite ↔ pg ↔ vector) per project via admin UI later.

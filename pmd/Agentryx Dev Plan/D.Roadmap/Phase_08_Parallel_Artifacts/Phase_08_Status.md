@@ -13,7 +13,39 @@
 | 8-A.3 | `parallel/reducers.js` — 7 parallel-safe state mergers | ✅ done |
 | 8-A.4 | `parallel/smoke-test.js` — concurrency + state assertions | ✅ done — passed |
 | 8-A.5 | `USE_PARALLEL_DEV_GRAPH` flag documented | ✅ done |
-| 8-B | Wire `dev_graph.js` to use parallel topology under flag | ⏳ DEFERRED |
+| 8-B | Wire `dev_graph.js` to use parallel topology under flag | ✅ done 2026-05-11 |
+
+## Phase 8-B — what shipped (2026-05-11)
+
+**`dev_graph.js` rewire** under `USE_PARALLEL_DEV_GRAPH` flag (default OFF — zero behavioural change for existing users):
+- Added `branchesCompleted` field to `FactoryState` with a dedupe-set reducer (concat + Set, kept local in dev_graph.js to avoid coupling the graph file to `parallel/reducers.js`)
+- Added `joinReviewNode` — fan-in marker after tuvok + data. No LLM call; LangGraph's natural fan-in semantics provide the barrier (won't fire until both predecessors complete)
+- Modified `tuvokNode` to write `branchesCompleted: ['tuvok']` + route to `'join_review'` (parallel) or `'data'` (sequential)
+- Modified `dataNode` to:
+  - Write `branchesCompleted: ['data']` + route to `'join_review'` (parallel) or `'route_after_review'` (sequential)
+  - Handle the case when `qaReport` is unavailable (data running concurrently with tuvok): prompt drops the QA reference, system message drops "Test quality" criterion. The downstream `routeAfterReview` router is already the canonical combiner (reads BOTH `architectReview` AND `qaReport`), so the loop-or-deploy decision shape is unchanged.
+- Flag-gated graph topology:
+  - **Sequential (default)**: `jane → spock → torres → tuvok → data → (route)`
+  - **Parallel (USE_PARALLEL_DEV_GRAPH=true)**: `jane → spock → torres → [tuvok, data] → join_review → (route)`
+
+**Smoke test** — `cognitive-engine/parallel/dev-graph-topology.smoke.js`:
+- Reproduces the parallel topology using stub node fns (200ms each for tuvok+data) since `dev_graph.js` ends in `main().catch(...)` and can't be imported directly (lesson D216)
+- **17 assertions** prove:
+  - Wall-clock < 400ms (vs 450ms sequential lower bound) — concurrency proven
+  - Both branches' start times precede the other's end time (real overlap, not just async-without-parallelism)
+  - Both branches see `codeOutput` from torres (parents resolved before fan-out)
+  - `join_review` sees both branch tags in `branchesCompleted` (dedupe reducer works under concurrent writes)
+  - Router fires exactly once with both verdicts present
+  - Every node fires exactly once (no double-invocation under fan-in topology)
+- Live result: **324ms** wall-clock — well below the 450ms sequential lower bound
+
+## What stays for full 8-B validation
+
+- **First real LLM cycle with `USE_PARALLEL_DEV_GRAPH=true`** — founder action: flip the flag, run a real factory pipeline, observe parallel-mode behaviour end-to-end. Specifically watch for:
+  - Speedup on real LLM latency (synthetic test was 324ms vs 450ms; real LLM calls are 5-30s each — parallelism savings should be ~5-15s per dev cycle)
+  - Quality of data's review when it doesn't see qaReport (data's prompt now skips "Test quality" criterion under parallel mode — assess whether this materially weakens the review)
+  - Routing decisions under parallel — `routeAfterReview` already combines both verdicts, so behaviour should match sequential, but worth confirming
+- **Failure-isolation policy** (D110): what if tuvok fails but data succeeds (or vice versa)? Today the failed branch's error propagates; data + tuvok don't have shared error handling. Real LLM behaviour data needed before designing the right policy.
 
 ## What shipped
 
