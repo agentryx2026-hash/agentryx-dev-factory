@@ -24,7 +24,7 @@ In one session, **15 substrate PRs merged** to main + **9 phase-close tags** pus
 - **13-B substrate** ✅ in main (#64 = read UI from #42 + LLM-stub + execute endpoint). Tag `phase-13-b-substrate-closed`. Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle.
 - **14-B** ✅ in main (#56 = Tier B + quotas) + (#57 = orphan reaper). Tag `phase-14-b-closed`. Remainder: legacy-path retirement + 19-B handler.
 - **18-B** 🟡 catalogue read UI in main (#42). Remainder: remote fetch + signature verification.
-- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (#67, D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) + idempotency hotfix (#68, D226 — caught by live test) + **pre_dev → delivered back-feed wrapper (D227, 78-assertion smoke)** all shipped 2026-05-18. **Live end-to-end verified through pre_dev intake**: registered customer via HTTP → submitted project → project_intake handler ran clean on attempt 1 → downstream pre_dev job enqueued with customer-prefixed project_id. Wrapper is wired into bootQueueWorker; full-loop verification (submission → pre_dev → delivered) happens on next live run. **What remains**: React customer dashboard + Courier notifications + SLA breach scanner + admin auth (Phase 22).
+- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (#67, D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) + idempotency hotfix (#68, D226 — caught by live test) + **pre_dev → delivered back-feed wrapper (#70, D227, 78-assertion smoke)** + **SLA breach scanner daemon (D228, 86-assertion smoke; tick every 5 min; opt-out via `SLA_SCANNER_DISABLED=true`)** all shipped 2026-05-18. **Live end-to-end verified through pre_dev intake**: registered customer via HTTP → submitted project → project_intake handler ran clean on attempt 1 → downstream pre_dev job enqueued with customer-prefixed project_id. Wrapper is wired into bootQueueWorker; full-loop verification (submission → pre_dev → delivered) verified via real-portal integration script. Scanner emits `sla_breached` timeline events idempotently — ready to feed Courier notifications. **What remains**: React customer dashboard + Courier notifications + admin auth (Phase 22).
 
 **Cohort 3** — unchanged (scale-gated). **Cohort 4** — unchanged (v3 release work).
 
@@ -43,10 +43,11 @@ In one session, **15 substrate PRs merged** to main + **9 phase-close tags** pus
 - Queue worker registers 7 kinds: `pre_dev (back-feed-wrapped), dev, post_dev, architect_research, training_gen, training_video_render, project_intake`
 - Customer portal HTTP surface served at `/api/customer-portal/*` (6 endpoints; admin register/list open, customer submit/list/status/cancel bearer-gated)
 - Customer back-feed wrapper installed on pre_dev: customer-tagged jobs auto-transition parent submission `in_progress → delivered`; regular pipeline jobs unaffected; fail-isolated
-- Shared `sharedCustomerPortal` instance used by intake handler + back-feed wrapper (single hook into `_customer-portal/`)
+- **SLA breach scanner ticks every 5 min** (configurable via `SLA_SCANNER_INTERVAL_MS`; opt-out via `SLA_SCANNER_DISABLED=true`) — walks all customers' non-terminal submissions, emits `sla_breached` timeline events past `target_delivery_at`, idempotent via timeline dedup
+- Shared `sharedCustomerPortal` instance used by intake handler + back-feed wrapper (single hook into `_customer-portal/`); module-level `getCustomerPortal()` shared with HTTP routes + SLA scanner
 - Architect cadence daemon runs (inline by default; `USE_ARCHITECT_QUEUE=true` switches to queue mode)
 - Orphan reaper sweeps stale in-flight jobs on every boot
-- Graceful SIGTERM/SIGINT shutdown closes MCP connections + HTTP server with 8s grace
+- Graceful SIGTERM/SIGINT shutdown stops SLA scanner first, then closes MCP connections + HTTP server with 8s grace
 
 **Lab profile updates**
 - Hermes re-evaluated 2026-05-11 → PASS for now, RE-EVALUATE 2026-06-10. Roadmap adjustment: when 7-E opens (Cohort 3 trigger), prefer **direct Honcho adoption** over pattern-steal.

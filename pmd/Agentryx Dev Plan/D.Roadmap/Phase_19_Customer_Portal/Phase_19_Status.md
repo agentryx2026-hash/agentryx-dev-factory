@@ -1,11 +1,12 @@
-# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler + HTTP surface + back-feed wrapper shipped (React UI + Courier + password auth still deferred)
+# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler + HTTP surface + back-feed wrapper + SLA breach scanner shipped (React UI + Courier + password auth still deferred)
 
 **Phase started**: 2026-04-24
 **Phase 19-A closed**: 2026-04-24
 **Phase 19-B Tier B handler closed**: 2026-05-18 (`project_intake` queue handler — walks submitted→accepted→in_progress + enqueues downstream pre_dev)
 **Phase 19-B HTTP surface closed**: 2026-05-18 (6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake)
 **Phase 19-B back-feed wrapper closed**: 2026-05-18 (`wrapForCustomerBackfeed` — pre_dev completion transitions submission to `delivered`; closes the customer-side lifecycle for v0.0.1)
-**Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min over the substrate
+**Phase 19-B SLA breach scanner closed**: 2026-05-18 (`createSlaBreachScanner` — periodic background daemon emits `sla_breached` timeline events for non-terminal submissions past their target; idempotent via timeline dedup)
+**Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min; SLA scanner ~30 min over the substrate
 
 ## Subphase progress
 
@@ -22,7 +23,8 @@
 | 19-B Tier B | `project_intake` queue handler — submission state-machine walk + downstream pre_dev enqueue | ✅ done 2026-05-18 |
 | 19-B HTTP surface | 6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake | ✅ done 2026-05-18 |
 | 19-B back-feed wrapper | `wrapForCustomerBackfeed` wraps pre_dev → on completion transitions submission `in_progress → delivered` + records timeline event; fail-isolated | ✅ done 2026-05-18 |
-| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth | ⏳ DEFERRED |
+| 19-B SLA breach scanner | `createSlaBreachScanner` — periodic daemon scans non-terminal submissions, emits `sla_breached` timeline events past target; idempotent via timeline dedup; opt-out via `SLA_SCANNER_DISABLED=true` | ✅ done 2026-05-18 |
+| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + password auth | ⏳ DEFERRED |
 
 ## Phase 19-B Tier B handler — what shipped (2026-05-18)
 
@@ -127,13 +129,53 @@
 - Regular factory pre_dev jobs (no customer refs in payload) are unaffected — wrapper is a no-op for them
 - Shared `sharedCustomerPortal` instance used by 3 callers: project_intake handler, pre_dev wrapper, HTTP routes (via the existing `getCustomerPortal()` lazy getter, which constructs its own instance — both point at the same `_customer-portal/` filesystem root, so consistency is filesystem-guaranteed)
 
+## Phase 19-B SLA breach scanner — what shipped (2026-05-18)
+
+**`cognitive-engine/customer-portal/sla-breach-scanner.js`** (new, ~190 lines):
+- `createSlaBreachScanner({ portal, intervalMs?, onLog?, now? })` — returns `{ runOnce, start, stop }`.
+- On each tick (default 5 minutes), walks `portal.accounts.list()`, filters each customer's submissions to non-terminal, runs `portal.sla.findBreaches(subs, tiersByCustomer)`, and for each breach calls `portal.raiseSLABreach(customerId, submissionId, { note })` — but only if the submission's timeline does NOT already contain an `sla_breached` event (dedup).
+- Returns a structured `ScanResult` (`{scanned, submissions_checked, breaches_found, raised, deduped, raised_ids, errors, computed_at}`) — exposed via `runOnce()` for tests + admin debug.
+- **Fail-isolated at every level**: errors in `submissions.list`, `timeline.read`, `raiseSLABreach` are captured into `result.errors` and the scan continues. Only `accounts.list` failure is fail-fast (nothing else to scan).
+- `start()` uses `setInterval` + `timer.unref()`; the first tick fires after `intervalMs`, not immediately (matches architect cadence daemon).
+- `stop()` is idempotent + safe at any time.
+
+**`bootSlaBreachScanner` in `factory-dashboard/server/telemetry.mjs`** (new):
+- Lazy-imports the scanner module on `server.listen` boot (alongside `bootCadenceDaemon` + `bootQueueWorker`).
+- Reuses the module-level `getCustomerPortal()` lazy getter so the scanner shares the same portal instance with HTTP routes + queue handlers.
+- Env vars: `SLA_SCANNER_DISABLED=true` skips boot; `SLA_SCANNER_INTERVAL_MS=<n>` overrides the cadence.
+- Stops the scanner FIRST in the graceful-shutdown hook (before MCP disconnect) so the interval doesn't keep the event loop alive past `server.close()`.
+- Live Trace log prefix: `🛎️  [sla.scanner]`
+
+**Smoke test** — `cognitive-engine/customer-portal/sla-breach-scanner.smoke.js`:
+- **86 assertions** across 16 scenarios using stubbed portal + injectable clock:
+  - Dep validation — 5 invalid-input variants throw
+  - Empty world → 0 scanned, no errors
+  - Single breach happy path → raised: 1
+  - Dedup: submission with prior `sla_breached` event → deduped: 1
+  - Two-tick idempotency (raise → dedup) — proves D226 lesson applied
+  - Terminal-status ignored for all 3 (delivered/rejected/cancelled)
+  - on_track + at_risk submissions do not raise
+  - Multi-customer mixed states (3 customers × varied statuses → 2 fresh + 1 dedup)
+  - Fail-isolation: `submissions.list` throws for one customer → others still scanned + raised
+  - Fail-isolation: `timeline.read` throws for one breach → skip + continue with others
+  - Fail-isolation: `raiseSLABreach` throws for one submission → continue with others
+  - Fail-fast: `accounts.list` throws → scan returns with `errors[0]`, no raises
+  - `start()` / `stop()` lifecycle (idempotent both directions)
+  - `intervalMs` default (5 min) + invalid handling (0, negative → default)
+  - `onLog` hook fires for raised events
+- Stub `raiseSLABreach` mirrors real portal by appending to in-memory timeline, so the two-tick test reflects production behaviour.
+
+**What's now LIVE on telemetry boot** (post-deploy):
+- Scanner ticks every 5 minutes (configurable) for the entire telemetry lifetime
+- Customer-portal timelines accumulate `sla_breached` events as submissions actually breach — exactly once per breach (idempotent across restarts)
+- Foundation for 10-B Courier integration: when notifications are wired, they consume the `sla_breached` timeline events from this scanner
+
 ## What stays for full 19-B
 
 - **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer; consumes the 6 HTTP endpoints above
-- **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook)
+- **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook). The `sla_breached` source is now LIVE (D228); other event sources already in place.
 - **Budget gate** (11-B follow-on) — pre-flight check against the customer's tier `budget_cap_usd` before enqueueing downstream work
 - **Verify linkage** (9-B full) — on a Verify reviewer rejection, route a fix-cycle for the customer's submission
-- **SLA breach scanner** — periodic cron (every 5 min) that runs `portal.sla.findBreaches()` and emits `sla_breached` timeline + Courier events
 - **Password auth + email verification** — current 19-A/B uses opaque bearer tokens; full 19-B adds the user-friendly login layer on top
 - **Admin auth** — current admin endpoints (`/admin/customers`) are open; needs proper auth before any external exposure (Phase 22)
 

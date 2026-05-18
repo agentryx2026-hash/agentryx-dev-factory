@@ -428,6 +428,39 @@ async function bootCadenceDaemon() {
   return cadenceDaemonHandle;
 }
 
+// ─── SLA breach scanner (D228) ────────────────────────────────────────────
+// Periodic scan that emits sla_breached timeline events for non-terminal
+// customer submissions that have passed target_delivery_at without being
+// delivered/rejected/cancelled. Idempotent via timeline dedup.
+let slaBreachScannerHandle = null;
+async function bootSlaBreachScanner() {
+  if (slaBreachScannerHandle) return slaBreachScannerHandle;
+  if (process.env.SLA_SCANNER_DISABLED === 'true') {
+    console.log('🛎️  SLA breach scanner disabled (SLA_SCANNER_DISABLED=true)');
+    return null;
+  }
+  try {
+    const [scannerMod] = await Promise.all([
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'sla-breach-scanner.js')).href),
+    ]);
+    const portal = await getCustomerPortal();
+    const intervalMs = Number(process.env.SLA_SCANNER_INTERVAL_MS) || 5 * 60 * 1000;
+    slaBreachScannerHandle = scannerMod.createSlaBreachScanner({
+      portal,
+      intervalMs,
+      onLog: (line) => {
+        try { addLog('system', `🛎️  [sla.scanner] ${line.substring(0, 220)}`); broadcast(); } catch {}
+      },
+    });
+    const info = slaBreachScannerHandle.start();
+    console.log(`🛎️  SLA breach scanner started — interval=${info.intervalMs}ms`);
+  } catch (err) {
+    console.error('[sla.scanner] failed to boot:', err);
+    slaBreachScannerHandle = null;
+  }
+  return slaBreachScannerHandle;
+}
+
 function jsonResponse(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
@@ -2526,6 +2559,14 @@ server.listen(PORT, '0.0.0.0', () => {
   // Phase 14-B Tier B — boot the queue worker so jobs of kind
   // pre_dev/dev/post_dev get processed automatically.
   bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
+  // Phase 19-B (D228) — boot the SLA breach scanner. Periodically
+  // (default 5 min) scans every customer's non-terminal submissions
+  // and emits sla_breached timeline events for any that have aged
+  // past target_delivery_at without reaching a terminal state.
+  // Idempotent: existing sla_breached events dedup via timeline scan.
+  // Opt-out: SLA_SCANNER_DISABLED=true skips boot (used by tests +
+  // local dev where customer-portal data may not exist).
+  bootSlaBreachScanner().catch(err => console.error('[sla.scanner] boot error:', err));
 });
 
 // Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
@@ -2538,6 +2579,17 @@ async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n📡 ${signal} received — shutting down telemetry…`);
+
+  // Stop the SLA breach scanner first — it's a setInterval that would
+  // otherwise keep the event loop alive past server.close().
+  try {
+    if (slaBreachScannerHandle && typeof slaBreachScannerHandle.stop === 'function') {
+      slaBreachScannerHandle.stop();
+      console.log('🛎️  SLA breach scanner stopped.');
+    }
+  } catch (err) {
+    console.warn('[shutdown] SLA scanner stop failed (continuing):', err?.message || err);
+  }
 
   try {
     // Lazy import so the shutdown hook doesn't pin the MCP module
