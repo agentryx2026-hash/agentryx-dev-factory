@@ -94,6 +94,29 @@ async function bootQueueWorker() {
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'architect-handler.js')).href),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+
+    // Phase 14-B orphan reaper (D223) — on every telemetry boot, scan
+    // _jobs/in-flight/ for jobs whose lease is older than LEASE_TIMEOUT_MS
+    // (default 30 min). Stale ones are re-failed → existing fail()
+    // machinery requeues or moves to failed/ based on max_attempts.
+    // Fail-open: a reaper error must NEVER block worker boot.
+    try {
+      const reaperMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'orphan-reaper.js')).href);
+      const reapResult = await reaperMod.reapOrphans({
+        queue,
+        logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+      });
+      if (reapResult.scanned > 0 || reapResult.reaped > 0) {
+        const summary = `🩹 Orphan reaper: scanned=${reapResult.scanned} reaped=${reapResult.reaped} (requeued=${reapResult.requeued_ids.length} failed=${reapResult.failed_ids.length}) kept=${reapResult.kept}${reapResult.errors.length ? ` errors=${reapResult.errors.length}` : ''}`;
+        console.log(summary);
+        if (reapResult.reaped > 0) {
+          try { addLog('system', summary); broadcast(); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[queue.worker] orphan reaper failed (continuing):', err?.message || err);
+    }
+
     const registry = registryMod.createHandlerRegistry();
     handlersMod.registerFactoryHandlers(registry, {
       onLog: (kind, line, jobId) => {
@@ -2019,3 +2042,53 @@ server.listen(PORT, '0.0.0.0', () => {
   // pre_dev/dev/post_dev get processed automatically.
   bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
+<<<<<<< HEAD
+=======
+
+// Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
+// disconnect any cached MCP subprocesses before the Node process exits.
+// Without this, leaving USE_MCP_TOOLS=true long-term leaks subprocesses
+// on every restart cycle. Best-effort: a 5-second deadline prevents a
+// hung MCP server from delaying graceful shutdown indefinitely.
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n📡 ${signal} received — shutting down telemetry…`);
+
+  try {
+    // Lazy import so the shutdown hook doesn't pin the MCP module
+    // into the boot path if it's broken or missing.
+    //
+    // Relative ESM path keeps this independent of pathToFileURL +
+    // REPO_ROOT (both introduced by this same #42 ship); either form
+    // would work now, but the relative path is cheaper to reason about.
+    const mcpClient = await import('../../cognitive-engine/mcp/client.js');
+    if (typeof mcpClient.disconnectAll === 'function') {
+      await Promise.race([
+        mcpClient.disconnectAll(),
+        new Promise((resolve) => setTimeout(resolve, 5000)), // 5s deadline
+      ]);
+      console.log('📡 MCP connections closed.');
+    }
+  } catch (err) {
+    console.warn('[shutdown] MCP disconnect failed (continuing):', err?.message || err);
+  }
+
+  // Close the HTTP server so in-flight requests can finish (with a
+  // short grace period before forcibly exiting).
+  server.close(() => {
+    console.log('📡 HTTP server closed.');
+    process.exit(0);
+  });
+  // Hard exit after 8s total — well within typical systemd
+  // TimeoutStopSec=10 — so a stuck client request can't hold us forever.
+  setTimeout(() => {
+    console.warn('📡 Forcing exit after grace period.');
+    process.exit(0);
+  }, 8000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
+>>>>>>> origin/main

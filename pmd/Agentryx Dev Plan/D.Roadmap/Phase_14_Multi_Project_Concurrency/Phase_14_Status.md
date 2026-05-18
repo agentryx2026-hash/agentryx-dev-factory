@@ -71,12 +71,45 @@ Per `04_B_Tier_Marathon.md`: 14-B unlocks **16-B, 17-B, 19-B** (training-gen, tr
 - The HTTP submit endpoint is the only path that takes externally-originated jobs; internal scheduler.lease() doesn't need the gate (it operates on already-vetted jobs).
 - Fail-open posture is intentional: a broken thresholds.json should never make the queue inaccessible. Cost overruns are recoverable (we can refund / reroute); queue downtime during a customer demo isn't.
 
+## Phase 14-B orphan reaper — what shipped (2026-05-11)
+
+**`cognitive-engine/concurrency/orphan-reaper.js`** (new, ~120 lines):
+- `reapOrphans({queue, timeoutMs?, now?, logger?})` → `{scanned, reaped, kept, errors, requeued_ids, failed_ids}`
+- Scans `_jobs/in-flight/` once; for each job whose `leased_at` is older than `LEASE_TIMEOUT_MS` (default 30 min), calls `queue.fail(jobId, "lease expired")`. The existing `fail()` machinery handles the requeue-or-fail decision based on `max_attempts`.
+- `DEFAULT_LEASE_TIMEOUT_MS = 30 * 60 * 1000` — covers Opus-tier architect cycles (5-10 min) with 3x safety margin
+- Configurable via `LEASE_TIMEOUT_MS` env or per-call `timeoutMs` arg
+- Failure-isolated: per-job errors land in `errors[]`, reaper continues
+- Invalid `leased_at` (corrupt JSON) treated as immediately stale + warn-logged
+
+**`bootQueueWorker` wiring** in `factory-dashboard/server/telemetry.mjs`:
+- Reaper runs ONCE on every telemetry boot, before the worker pool starts polling
+- Logs `🩹 Orphan reaper: scanned=N reaped=M ...` summary (only when something was reaped, to avoid log noise on healthy boots)
+- Reaped count goes into Live Trace so the founder sees re-leased jobs during restart recovery
+- Fail-open: reaper exception logged + worker boot continues (NEVER blocks pipeline handlers)
+
+**Why one-shot on boot (not periodic)** — D223:
+- Real LLM cycles take 5-15 min; a periodic reaper would interrupt healthy long-running jobs
+- Telemetry crash is a one-time event per restart; once we reap on boot, the live worker loop manages everything else
+- "Periodic during long uptime" can wrap `reapOrphans` in `setInterval` later if a use case emerges (e.g. worker dies without telemetry dying)
+
+**Smoke test** — `cognitive-engine/concurrency/orphan-reaper.smoke.js`:
+- **30 assertions** across 8 scenarios using a real tmp queue (not stubs) — exercises actual filesystem rename + fail() interaction
+- Empty queue → no-op
+- 3 in-flight (2 stale, 1 fresh) → 2 reaped to queue/, 1 kept in in-flight/
+- Stale job at max_attempts → moved to failed/ (not requeued)
+- Idempotent: second reap after first finds nothing stale
+- Invalid `leased_at` → treated as stale
+- Custom `timeoutMs` honored (5-min-old job: kept under default 30-min; reaped under 1-min)
+- `LEASE_TIMEOUT_MS` env override works
+- Arg validation: 3 missing-dep variants throw
+- All pass
+
 ## What stays for 14-B remainder
 
-- **Crash recovery** via lease timeout (Phase 14-A already supports this; production needs the timeout configured + an orphan-reaper that runs on telemetry boot)
-- **Real handler registration** for `training_gen` (16-B) / `training_video_render` (17-B) / `project_intake` (19-B) — same registry pattern, lands when those phases ship
-- **Migrate legacy paths** — `/api/factory/{pre-dev,dev,post-dev}` in telemetry.mjs still inline-spawn; today both paths exist (legacy + queue-based), but legacy can retire when 16-B/17-B/19-B make queue-based the only path
+- **Real handler registration** for `project_intake` (19-B) — same registry pattern, lands when 19-B ships
+- **Migrate legacy paths** — `/api/factory/{pre-dev,dev,post-dev}` in telemetry.mjs still inline-spawn; today both paths exist (legacy + queue-based), but legacy can retire when 19-B makes queue-based the only path for customer-submitted work
 - **Warn-tier notifications** — quota gate honors `hard_cap_usd` (refuse). `warn_usd` (alert via Courier without refusing) is a Phase 10-B follow-on once Courier backends are live.
+- **Periodic reaper** (optional) — current reaper is one-shot on boot. Periodic mode (`setInterval` wrapping `reapOrphans`) lands if a worker-died-without-telemetry-dying case ever surfaces.
 
 ---
 
