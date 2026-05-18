@@ -110,3 +110,33 @@
 - The `_` separator (not `:` or `/`) keeps the project_id filesystem-safe (per the 14-A `project_id` regex requirement).
 
 **Tradeoff acknowledged**: the back-feed (pre_dev success → submission `delivered`) doesn't exist yet. Today, after the handler runs, the submission sits in `in_progress` until the founder (or full-19-B's back-feed handler) explicitly transitions it. Acceptable: substrate-now, behaviour-completion-later, same posture as D211 / D217 / D219 / D220.
+
+## D225 — 19-B HTTP surface: lazy shared portal + auto-enqueue project_intake on submit + no-auth admin (R&D posture) (added 2026-05-18)
+
+**What**: Phase 19-B HTTP surface adds 6 endpoints under `/api/customer-portal/*` in `factory-dashboard/server/telemetry.mjs`:
+- 2 admin (no auth in v0.0.1, same posture as the queue submit endpoint)
+- 4 customer-facing (Bearer-token auth via the Phase 19-A account store)
+
+Three substantive design decisions captured here, beyond "just wire portal methods to URLs":
+
+**Why a lazy shared portal instance** (`getCustomerPortal()`):
+- Both the HTTP routes AND the queue worker (D224's `project_intake` handler) need a portal instance. Two instances would risk write-write races against the same `_customer-portal/` filesystem store.
+- Lazy init on first call avoids forcing a module-load-time dependency on the customer-portal module (matches the rest of telemetry.mjs's lazy-import discipline — see D211 / D217 / D219 / D220 / D223 / D224).
+- Memoized in `_customerPortalInstance` after first construction; cleared on telemetry restart (acceptable — `_customer-portal/` is durable on disk).
+
+**Why auto-enqueue `project_intake` on successful POST /submit**:
+- Without auto-enqueue, the submission would land in `submitted` state and just sit there until the founder manually enqueued from Admin → Queue. That defeats the point of having a customer portal — customers expect submissions to be acted on without operator intervention.
+- Failure-isolated: if the auto-enqueue throws (queue unavailable, FS error), the submission persists (the customer's request isn't dropped) and the error is logged for the founder to recover. Better than rejecting a paid submission because of an internal queue hiccup.
+- Priority 40 chosen deliberately: between architect cycles (30) and pipeline work (50). Customer intake gets higher priority than background research, lower than active pipeline progress — fair share without preempting.
+
+**Why typed error codes (UNAUTHORIZED / FORBIDDEN / NOT_FOUND / QUOTA_EXCEEDED / VALIDATION) → HTTP status mapping in a single helper**:
+- Phase 19-A's portal.js already throws errors with `.code` fields. Per D167 ("typed auth errors"), the codes are the contract; HTTP layer just maps them.
+- `portalErrorToHttp(res, err)` collapses 5 error categories to 4 HTTP status codes (UNAUTHORIZED+FORBIDDEN+NOT_FOUND+QUOTA+VALIDATION → 401/403/404/429/400). Unknown codes fall to 500.
+- Keeps HTTP route bodies simple: every try/catch ends with `return portalErrorToHttp(res, err)` — no per-route status logic.
+
+**Why admin endpoints have no auth in v0.0.1**:
+- Same posture as Phase 14-B's queue submit endpoint (D211 implicit). v0.0.1 single-VM single-founder; nginx restricts external access; only the founder can hit `/api/factory-admin/*` and `/api/customer-portal/admin/*`.
+- Phase 22 (Action Boundary Enforcement, v2→v3) replaces with proper admin-token auth + role checks.
+- Tradeoff acknowledged: external pen-test pre-v3 must include this surface.
+
+**Why no React UI yet**: full 19-B is multi-session. The HTTP surface lets the founder + integration tests + any external client (curl) exercise the substrate today, and decouples backend completion from frontend completion. The React UI is the natural next visible-factory ship once the substrate has accumulated real customer submissions to render.

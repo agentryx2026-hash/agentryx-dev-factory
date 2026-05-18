@@ -1,9 +1,10 @@
-# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler shipped (HTTP/UI + back-feed + auth still deferred)
+# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler + HTTP surface shipped (React UI + back-feed + password auth still deferred)
 
 **Phase started**: 2026-04-24
 **Phase 19-A closed**: 2026-04-24
 **Phase 19-B Tier B handler closed**: 2026-05-18 (`project_intake` queue handler — walks submitted→accepted→in_progress + enqueues downstream pre_dev)
-**Duration**: 19-A single session; 19-B handler ~30 min over the substrate
+**Phase 19-B HTTP surface closed**: 2026-05-18 (6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake)
+**Duration**: 19-A single session; 19-B handler ~30 min; 19-B HTTP surface ~45 min over the substrate
 
 ## Subphase progress
 
@@ -18,7 +19,8 @@
 | 19-A.7 | Smoke test — 138 assertions across 12 test groups | ✅ done — all pass |
 | 19-A.8 | `customer-portal/README.md` + `USE_CUSTOMER_PORTAL` flag registered in admin-substrate | ✅ done |
 | 19-B Tier B | `project_intake` queue handler — submission state-machine walk + downstream pre_dev enqueue | ✅ done 2026-05-18 |
-| 19-B full | HTTP API + React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth + pre_dev → delivered back-feed | ⏳ DEFERRED |
+| 19-B HTTP surface | 6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake | ✅ done 2026-05-18 |
+| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth + pre_dev → delivered back-feed | ⏳ DEFERRED |
 
 ## Phase 19-B Tier B handler — what shipped (2026-05-18)
 
@@ -42,16 +44,54 @@
 - Queue worker registers a 7th kind: `project_intake`
 - Customer portal instance constructed once at boot (per-worker; same workspace root as queue + cost-tracker)
 
+## Phase 19-B HTTP surface — what shipped (2026-05-18)
+
+**Six endpoints** in `factory-dashboard/server/telemetry.mjs`:
+
+| Method | Path | Auth | Body | Purpose |
+|---|---|---|---|---|
+| POST | `/api/customer-portal/admin/customers` | none (v0.0.1) | `{email, display_name, tier?}` | Register customer; returns `{account, token}` (token shown ONCE) |
+| GET  | `/api/customer-portal/admin/customers` | none (v0.0.1) | — | List all customers (no secrets) |
+| POST | `/api/customer-portal/submit` | **Bearer** | `{project_title, intake_payload, tags?, meta?}` | Submit project → `SubmissionReceipt` + **auto-enqueue project_intake job** |
+| GET  | `/api/customer-portal/submissions` | **Bearer** | — | List the customer's own submissions |
+| GET  | `/api/customer-portal/submissions/:id` | **Bearer** | — | Full status (submission + timeline + SLA) |
+| POST | `/api/customer-portal/submissions/:id/cancel` | **Bearer** | `{note?}` | Cancel a non-terminal submission |
+
+**Lazy-loaded shared portal instance**: `getCustomerPortal()` constructs `createCustomerPortal({rootDir: QUEUE_WORKSPACE})` on first call; same instance reused across HTTP routes + the project_intake queue handler. Single source of truth for accounts + submissions + timeline.
+
+**Auth helpers** (`telemetry.mjs`, module-level functions):
+- `extractBearerToken(req)` — pulls token from `Authorization: Bearer <token>` (case-insensitive, trimmed)
+- `portalErrorToHttp(res, err)` — maps Phase 19-A typed error codes to HTTP status:
+  - `UNAUTHORIZED` → 401, `FORBIDDEN` → 403, `NOT_FOUND` → 404, `QUOTA_EXCEEDED` → 429, `VALIDATION` → 400, unknown → 500
+
+**Auto-enqueue behaviour on POST /submit**:
+- After `portal.submitProject` succeeds, the route enqueues a `project_intake` job (D224 handler picks it up): `{kind: 'project_intake', project_id: '<CUST-id>_<SUB-id>', payload: {customer_id, submission_id}, priority: 40, max_attempts: 2}`.
+- Priority 40 places intake **between** architect cycles (30) and pipeline work (50) — fair share without preempting customer work.
+- Auto-enqueue failure is **logged but doesn't reject the submission** — the submission persists in `submitted` state; the founder can manually enqueue from Admin → Queue.
+
+**Why no auth on admin endpoints**: same posture as Phase 14-B's `/api/factory-admin/queue/submit` (D211). v0.0.1 single-VM single-founder; nginx restricts external access; Phase 22 hardening replaces with proper auth.
+
+**Smoke test** — `cognitive-engine/customer-portal/http-integration.smoke.js`:
+- **46 assertions** across 8 scenarios using a **real portal + real queue** in a tmp dir (not stubs):
+  - `extractBearerToken` (7 header-shape variants including case-insensitive scheme + trimming)
+  - `portalErrorToHttp` (5 code mappings + unknown + plain Error)
+  - Full register → submit → auto-enqueue chain — verifies queue job has customer-prefixed `project_id`, `{customer_id, submission_id}` payload, priority 40
+  - List + status + timeline + SLA shape
+  - Cancel + re-cancel-rejected
+  - Auth errors (UNAUTHORIZED, VALIDATION) surface portal codes correctly
+  - Quota enforcement (free tier max 1 active → 2nd submit hits QUOTA_EXCEEDED → 429)
+- All pass; no HTTP server spin-up needed — the auto-enqueue logic is re-implemented in the test (mirrors webhook-integration.smoke.js pattern)
+
 ## What stays for full 19-B
 
-- **HTTP surface** at `/api/customer-portal/*` (Fastify-style routes mapping `portal.submitProject` / `portal.getStatus` / `portal.listMyProjects` / `portal.cancel`) with bearer-token auth using the Phase 19-A token system
-- **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer
+- **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer; consumes the 6 HTTP endpoints above
 - **Pre_dev → delivered back-feed** — a wrapper handler that on `pre_dev` completion finds the parent submission (via `payload.customer_id/submission_id` threaded through this Tier B ship) and transitions to `delivered` + records timeline event
 - **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook)
 - **Budget gate** (11-B follow-on) — pre-flight check against the customer's tier `budget_cap_usd` before enqueueing downstream work
 - **Verify linkage** (9-B full) — on a Verify reviewer rejection, route a fix-cycle for the customer's submission
 - **SLA breach scanner** — periodic cron (every 5 min) that runs `portal.sla.findBreaches()` and emits `sla_breached` timeline + Courier events
-- **Password auth + email verification** — current 19-A uses opaque bearer tokens (which the handler relies on); 19-B-full adds the user-friendly login layer on top of that
+- **Password auth + email verification** — current 19-A/B uses opaque bearer tokens; full 19-B adds the user-friendly login layer on top
+- **Admin auth** — current admin endpoints (`/admin/customers`) are open; needs proper auth before any external exposure (Phase 22)
 
 ## What shipped
 
