@@ -5,7 +5,7 @@
 **Phase 19-B Tier B handler closed**: 2026-05-18 (`project_intake` queue handler — walks submitted→accepted→in_progress + enqueues downstream pre_dev)
 **Phase 19-B HTTP surface closed**: 2026-05-18 (6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake)
 **Phase 19-B back-feed wrapper closed**: 2026-05-18 (`wrapForCustomerBackfeed` — pre_dev completion transitions submission to `delivered`; closes the customer-side lifecycle for v0.0.1)
-**Phase 19-B SLA breach scanner closed**: 2026-05-18 (`createSlaBreachScanner` — periodic background daemon emits `sla_breached` timeline events for non-terminal submissions past their target; idempotent via timeline dedup)
+**Phase 19-B SLA breach scanner closed**: 2026-05-18 (`createSlaBreachScanner` — periodic background daemon emits `sla_breached` timeline events for non-terminal submissions past their target; idempotent via timeline dedup; D229 hotfix injects customer_id into index entries after live-test catch — same D226 lesson re-applied)
 **Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min; SLA scanner ~30 min over the substrate
 
 ## Subphase progress

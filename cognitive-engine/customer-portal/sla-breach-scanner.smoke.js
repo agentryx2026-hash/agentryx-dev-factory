@@ -70,9 +70,14 @@ function buildPortal(world, opts = {}) {
         const spec = world[customerId];
         if (!spec) return [];
         if (spec.listFails) throw new Error(`simulated submissions.list failure for ${customerId}`);
+        // STRICT: mirror the real submissions.list which returns INDEX
+        // entries WITHOUT customer_id (per-customer subdir makes it
+        // implicit). The D228 hotfix added customer_id injection in the
+        // scanner because of this; this stub now enforces the contract
+        // so a future regression would surface in the smoke (lesson from
+        // D226 — permissive stubs let live bugs slip through).
         return spec.submissions.map(s => ({
           id: s.id,
-          customer_id: customerId,
           status: s.status,
           submitted_at: s.submitted_at,
           target_delivery_at: s.target_delivery_at,
