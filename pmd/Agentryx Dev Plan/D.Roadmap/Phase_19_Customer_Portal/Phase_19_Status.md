@@ -6,6 +6,7 @@
 **Phase 19-B HTTP surface closed**: 2026-05-18 (6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake)
 **Phase 19-B back-feed wrapper closed**: 2026-05-18 (`wrapForCustomerBackfeed` — pre_dev completion transitions submission to `delivered`; closes the customer-side lifecycle for v0.0.1)
 **Phase 19-B SLA breach scanner closed**: 2026-05-18 (`createSlaBreachScanner` — periodic background daemon emits `sla_breached` timeline events for non-terminal submissions past their target; idempotent via timeline dedup; D229 hotfix injects customer_id into index entries after live-test catch — same D226 lesson re-applied)
+**Phase 19-B portal notifier (scanner wiring) closed**: 2026-05-18 (`createPortalNotifier` — translates portal lifecycle events to Courier `customer.*` event dispatches; scanner-first wiring delivers `customer.sla_breached` on every fresh breach; other 3 sources wire per follow-on D231-D233 ships)
 **Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min; SLA scanner ~30 min over the substrate
 
 ## Subphase progress
@@ -24,7 +25,9 @@
 | 19-B HTTP surface | 6 endpoints at `/api/customer-portal/*` — admin register/list + customer submit/list/status/cancel; bearer auth + auto-enqueue project_intake | ✅ done 2026-05-18 |
 | 19-B back-feed wrapper | `wrapForCustomerBackfeed` wraps pre_dev → on completion transitions submission `in_progress → delivered` + records timeline event; fail-isolated | ✅ done 2026-05-18 |
 | 19-B SLA breach scanner | `createSlaBreachScanner` — periodic daemon scans non-terminal submissions, emits `sla_breached` timeline events past target; idempotent via timeline dedup; opt-out via `SLA_SCANNER_DISABLED=true` | ✅ done 2026-05-18 |
-| 19-B full | React UI + Courier notifications + budget gate + Verify linkage + password auth | ⏳ DEFERRED |
+| 19-B portal notifier (scanner-first wiring) | `createPortalNotifier({courier}).onSlaBreached` — translates portal events → Courier `customer.*` dispatches; SLA scanner wired first; 6 new event types + 6 routing rules; default backend=fake (in-memory history); opt-out via `NOTIFIER_DISABLED=true` | ✅ done 2026-05-18 |
+| 19-B portal notifier (other 3 sources wiring) | onSubmitted (HTTP /submit) + onCancelled (HTTP /cancel) + onAccepted + onDelivered (queue handlers); will wire D231-D233 | ⏳ in-progress (substrate ready) |
+| 19-B full | React UI + Courier per-customer notification prefs (19-C) + budget gate + Verify linkage + password auth | ⏳ DEFERRED |
 
 ## Phase 19-B Tier B handler — what shipped (2026-05-18)
 
@@ -170,10 +173,49 @@
 - Customer-portal timelines accumulate `sla_breached` events as submissions actually breach — exactly once per breach (idempotent across restarts)
 - Foundation for 10-B Courier integration: when notifications are wired, they consume the `sla_breached` timeline events from this scanner
 
+## Phase 19-B portal notifier (scanner-first wiring) — what shipped (2026-05-18)
+
+**`cognitive-engine/customer-portal/notifier.js`** (new, ~140 lines):
+- `createPortalNotifier({ courier, onLog? })` — returns an object with method `onSlaBreached({ account, submission, note? })` (more methods land per follow-on ships).
+- Each method translates portal lifecycle data into a Courier CourierEvent: type = `customer.<event>`, severity per-event (warn for breaches/rejections, info otherwise), title (short human-readable), body (markdown with submission + tier context), meta (`customer_id`, `submission_id`, `tier`, `target_delivery_at`, `submission_status`).
+- Internal `dispatchSafely(event, label)` wraps `courier.dispatch` — catches throws, maps `ok:false`, recognises `dropped:true` as not-an-error, normalises return shape to `{ ok, event_id?, channels?, dropped?, error? }`.
+- Validates input before dispatch: missing `account.id` / `account.email` / `submission.id` / `submission.target_delivery_at` → `{ok:false, error}` WITHOUT calling courier.
+- Fail-isolated: notifier methods never throw — every failure becomes a `{ ok:false }` return that callers can record into telemetry.
+
+**`cognitive-engine/courier/types.js` extended** — 6 new event types in `EVENT_TYPES`:
+- `customer.submission_received`, `customer.submission_accepted`, `customer.submission_delivered`, `customer.sla_breached`, `customer.submission_cancelled`, `customer.submission_rejected`
+- All routed in `configs/courier-routing.json` to `stdout` channel for v0.0.1 (founder log visibility). Severity-gated where appropriate (`customer.sla_breached` + `customer.submission_rejected` require min_severity=warn).
+- Per-customer notification prefs (real email/Slack targets) is a 19-C ship.
+
+**`cognitive-engine/customer-portal/sla-breach-scanner.js` extended**:
+- New optional `init.notifier` dep — when present and has `.onSlaBreached`, it's invoked after every successful `raiseSLABreach`.
+- New `result.notified` counter — counts notifier calls that returned `ok:true`. Failures (returned `ok:false` OR threw) land in `result.errors` with scope `notifier.onSlaBreached(<customer>/<submission>)`.
+- Notifier NOT called on deduped breaches (no re-notify) or raise failures (no event to notify about).
+- Backwards-compatible: scanner without `init.notifier` behaves exactly as before; D228 contract preserved.
+
+**`bootSlaBreachScanner` in `telemetry.mjs` extended**:
+- Lazy-imports `notifier.js` + `courier/service.js` alongside the scanner module (fail-tolerant `.catch(() => null)`).
+- Default `COURIER_BACKEND=fake` — in-memory event history, no external delivery.
+- `NOTIFIER_DISABLED=true` env var skips notifier wiring entirely (scanner still emits timeline events).
+- Boot log now shows `📨 Portal notifier wired (courier backend=fake)` + scanner status `(notifier=on|off)`.
+- Live Trace prefix: `📨 [portal.notifier]`.
+
+**Smoke tests**:
+- `notifier.smoke.js` (new, **51 assertions** across 7 scenarios): dep validation, event type registration check, happy path (verifies full CourierEvent shape via real `validateEvent`), input validation (4 missing-field variants), 3 fail-isolation modes (throw / ok:false / dropped), only-onSlaBreached-exported surface guard.
+- `sla-breach-scanner.smoke.js` extended (86 → **112 assertions**): 7 new scenarios for notifier integration — notifier-provided + fresh breach, no-notifier backwards-compat, deduped → no notify, notifier ok:false → errors recorded, notifier throws → scan continues, raise failure → no notify, notifier without onSlaBreached method → treated as null.
+- D226 stub-strictness: stub `courier.dispatch` calls real `validateEvent` from `courier/types.js` so any malformed notifier event surfaces at test time.
+
+**What's now LIVE on telemetry boot**:
+- Notifier is wired; every fresh SLA breach the scanner raises also dispatches a `customer.sla_breached` Courier event (currently to fake backend's in-memory history; observable via `courier.getHistory()`).
+- 6 `customer.*` event types are now registered + routable.
+- Foundation for D231-D233 (HTTP /submit + cancel + intake + back-feed wiring) is in place; each is a 3-5 line call to the same notifier.
+
 ## What stays for full 19-B
 
 - **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer; consumes the 6 HTTP endpoints above
-- **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook). The `sla_breached` source is now LIVE (D228); other event sources already in place.
+- **Notifier wiring for the other 3 sources (D231-D233)** — HTTP /submit (`onSubmitted`), HTTP /cancel (`onCancelled`), project_intake handler (`onAccepted`), back-feed wrapper (`onDelivered`), admin reject (`onRejected`). Substrate ready; each is a 1-source ship.
+- **Per-customer notification prefs (19-C)** — `account.notification_prefs` schema + notifier reads it before dispatch + per-channel target overrides. Routes `customer.*` events to the customer's real email/Slack instead of founder's stdout.
+- **Real Courier backends** (10-B follow-on) — set `COURIER_BACKEND=http` + provide Hermes gateway creds + Slack/email tokens.
 - **Budget gate** (11-B follow-on) — pre-flight check against the customer's tier `budget_cap_usd` before enqueueing downstream work
 - **Verify linkage** (9-B full) — on a Verify reviewer rejection, route a fix-cycle for the customer's submission
 - **Password auth + email verification** — current 19-A/B uses opaque bearer tokens; full 19-B adds the user-friendly login layer on top

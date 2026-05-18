@@ -85,6 +85,17 @@ export const EVENT_TYPES = Object.freeze([
   "cost.threshold_warn",
   "agent.error_rate_spike",
   "factory.smoke_test",
+  // Phase 19-B Tier B (D230) — customer-portal lifecycle events.
+  // These notify the customer (and/or ops) when their submission's
+  // state changes. Routing is defined in configs/courier-routing.json;
+  // for v0.0.1 all customer.* events route to `stdout` (founder log)
+  // until per-customer notification prefs land (19-C ship).
+  "customer.submission_received",
+  "customer.submission_accepted",
+  "customer.submission_delivered",
+  "customer.sla_breached",
+  "customer.submission_cancelled",
+  "customer.submission_rejected",
 ]);
 
 export const CHANNELS = Object.freeze([
