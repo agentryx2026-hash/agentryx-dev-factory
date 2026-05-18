@@ -729,7 +729,12 @@ async function gracefulShutdown(signal) {
   try {
     // Lazy import so the shutdown hook doesn't pin the MCP module
     // into the boot path if it's broken or missing.
-    const mcpClient = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'mcp', 'client.js')).href);
+    //
+    // Uses a relative ESM path (not pathToFileURL+REPO_ROOT) so this
+    // file works standalone against the current main — pathToFileURL
+    // and REPO_ROOT are introduced by PR #42, but this fix lets the
+    // shutdown hook function correctly regardless of merge order.
+    const mcpClient = await import('../../cognitive-engine/mcp/client.js');
     if (typeof mcpClient.disconnectAll === 'function') {
       await Promise.race([
         mcpClient.disconnectAll(),
