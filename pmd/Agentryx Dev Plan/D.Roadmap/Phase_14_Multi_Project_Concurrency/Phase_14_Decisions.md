@@ -105,3 +105,34 @@
 - D211 — Phase 14-B Tier B (handlers module + worker-in-telemetry boot)
 - D212 — Phase 14-B per-project quotas (HTTP-boundary gate + fail-open + global/project-only scope)
 - Future Phase 14 work continues from D213.
+
+## D223 — 14-B orphan reaper: one-shot on boot, fail-open, uses queue.fail() (added 2026-05-11)
+
+**What**: Phase 14-B orphan reaper (`cognitive-engine/concurrency/orphan-reaper.js`) runs on every telemetry boot. It scans `_jobs/in-flight/` once for jobs whose `leased_at` is older than `LEASE_TIMEOUT_MS` (default 30 min) and calls `queue.fail(jobId, "lease expired")` on each. The existing `fail()` machinery decides requeue-or-fail based on `max_attempts` — no new state-transition code, just composition.
+
+**Why one-shot on boot (not periodic)**:
+- Real LLM cycles take 5-15 minutes (Sonnet) or longer (Opus deep). A periodic reaper would risk interrupting healthy long-running jobs that legitimately hold a lease.
+- Telemetry crash is a one-time event per restart. Once we reap on boot, the live worker loop manages everything subsequently.
+- Periodic mode (wrapping `reapOrphans` in `setInterval`) is a trivial future extension if a "worker dies without telemetry dying" case ever surfaces. Today's reality doesn't demand it.
+
+**Why 30-minute default timeout**:
+- Longest legitimate LLM cycle in the factory today: Opus-tier architect pass at depth=deep, ~5-10 min.
+- 30 min gives ~3x safety margin against worst-case observed latency.
+- Configurable via `LEASE_TIMEOUT_MS` env for environments where cycles go deeper or LLM latency is higher.
+- Per-call override via `timeoutMs` arg for tests + ad-hoc tooling.
+
+**Why fail-open (reaper exception never blocks worker boot)**:
+- A broken reaper must not take down pipeline handlers. A factory that won't start because the reaper choked is worse than a factory that occasionally leaves an orphan in-flight.
+- Reaper exception logs a warning + worker boot continues; orphans accumulate until next reap (next boot) — acceptable degradation.
+
+**Why compose on queue.fail() instead of a new state-transition method**:
+- `fail()` already encodes the requeue-or-failed decision based on `max_attempts`. Re-implementing it in the reaper would duplicate logic + risk divergence.
+- The fail() error message ("lease expired (reaped at ...; leased_at=...)") becomes the job's `error` field — recoverable from the failed/ JSON for post-mortem.
+- Reaper stays a "policy applier," not a state machine.
+
+**Why per-job error isolation (errors[] continues)**:
+- A single corrupt in-flight file (unparseable JSON, missing on disk between listInFlight and fail) must not abort the entire reaper run.
+- Each per-job error lands in `errors[]` of the result; reaper continues to the next job.
+- Logged via `logger.warn` so ops sees the corruption without alarm.
+
+**Tradeoff acknowledged**: a stale job whose `leased_at` is *exactly* at the timeout boundary may flap between reaped (this run) and not-reaped (next run, after requeue) on quick restarts. Acceptable: the requeue path puts the job back in `queue/` immediately, so the next worker picks it up regardless — no work is lost.

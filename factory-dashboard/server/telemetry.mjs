@@ -86,13 +86,49 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod] = await Promise.all([
+    const [
+      queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod,
+      trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod,
+      videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
+    ] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'architect-handler.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-gen-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-video-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'providers', 'registry.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+
+    // Phase 14-B orphan reaper (D223) — on every telemetry boot, scan
+    // _jobs/in-flight/ for jobs whose lease is older than LEASE_TIMEOUT_MS
+    // (default 30 min). Stale ones are re-failed → existing fail()
+    // machinery requeues or moves to failed/ based on max_attempts.
+    // Fail-open: a reaper error must NEVER block worker boot.
+    try {
+      const reaperMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'orphan-reaper.js')).href);
+      const reapResult = await reaperMod.reapOrphans({
+        queue,
+        logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+      });
+      if (reapResult.scanned > 0 || reapResult.reaped > 0) {
+        const summary = `🩹 Orphan reaper: scanned=${reapResult.scanned} reaped=${reapResult.reaped} (requeued=${reapResult.requeued_ids.length} failed=${reapResult.failed_ids.length}) kept=${reapResult.kept}${reapResult.errors.length ? ` errors=${reapResult.errors.length}` : ''}`;
+        console.log(summary);
+        if (reapResult.reaped > 0) {
+          try { addLog('system', summary); broadcast(); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[queue.worker] orphan reaper failed (continuing):', err?.message || err);
+    }
+
     const registry = registryMod.createHandlerRegistry();
     handlersMod.registerFactoryHandlers(registry, {
       onLog: (kind, line, jobId) => {
@@ -101,6 +137,63 @@ async function bootQueueWorker() {
         try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
       },
     });
+
+    // Phase 21-B.2 — architect_research handler.
+    try {
+      const A = await loadArchitect();
+      const archKb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
+      const archProposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+      archHandlerMod.registerArchitectResearchHandler(registry, {
+        A,
+        kb: archKb,
+        proposalStore: archProposalStore,
+        pickDispatcher,
+        onReportProduced: (report) => {
+          try {
+            addLog('system', `👑 Architect cycle report ready (via queue): ${report.id} (${report.cadence})`);
+            broadcast();
+          } catch {}
+        },
+      });
+    } catch (err) {
+      console.warn('[queue.worker] architect_research handler not registered:', err?.message || err);
+    }
+
+    // Phase 16-B Tier B — training_gen handler.
+    if (trainingGenHandlerMod && trainingGenStoreMod && trainingGenRegistryMod && trainingGenPipelineMod) {
+      try {
+        trainingGenHandlerMod.registerTrainingGenHandler(registry, {
+          createTrainingStore: trainingGenStoreMod.createTrainingStore,
+          createGeneratorRegistry: trainingGenRegistryMod.createGeneratorRegistry,
+          runPipeline: trainingGenPipelineMod.runPipeline,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_training-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_gen:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_gen handler not registered:', err?.message || err);
+      }
+    }
+
+    // Phase 17-B Tier B — training_video_render handler. Same pattern.
+    // All-null provider defaults (substrate at $0); real ElevenLabs/
+    // Puppeteer/ffmpeg become opt-in per-job via payload.providerChoice.
+    if (videoHandlerMod && videoStoreMod && videoProviderRegistryMod && videoPipelineMod) {
+      try {
+        videoHandlerMod.registerTrainingVideoRenderHandler(registry, {
+          createVideoStore: videoStoreMod.createVideoStore,
+          createProviderRegistry: videoProviderRegistryMod.createProviderRegistry,
+          renderFromPhase17Payload: videoPipelineMod.renderFromPhase17Payload,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_videos-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_video_render:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_video_render handler not registered:', err?.message || err);
+      }
+    }
 
     // drainOnly: false → keeps the worker loop alive forever, polling.
     // parallelism: 2 → up to 2 concurrent graph spawns. Matches Phase
@@ -141,6 +234,27 @@ async function bootCadenceDaemon() {
       recordCadenceFire:  (k, p) => kb.recordCadenceFire(k, p),
       lastCadenceFire:    (k)    => kb.lastCadenceFire(k),
       runCadencePass: async (cadenceKind, cadenceConfig) => {
+        // Phase 21-B.2 — when USE_ARCHITECT_QUEUE=true, the daemon
+        // enqueues the cycle as an architect_research job instead of
+        // running it inline.
+        if (process.env.USE_ARCHITECT_QUEUE === 'true') {
+          try {
+            const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+            const q = queueMod.createQueue(QUEUE_WORKSPACE);
+            const job = await q.enqueue({
+              kind: 'architect_research',
+              project_id: 'architect',
+              payload: { cadence_kind: cadenceKind, cadence_config: cadenceConfig },
+              priority: 30,
+              max_attempts: 1,
+            });
+            addLog('system', `📅 Architect cadence ${cadenceKind} enqueued as ${job.id} (queue mode)`);
+            broadcast();
+            return { pass: { id: `queued:${job.id}`, queued: true, completed_at: new Date().toISOString() } };
+          } catch (err) {
+            console.error(`[architect.daemon] enqueue failed for ${cadenceKind}, falling back to inline:`, err?.message || err);
+          }
+        }
         // For each cadence we run a fresh architect.runPass with the
         // cadence's own dispatcher + budget. The pass label IS the cadence
         // kind so listPasses({pass_kind:"weekly"}) groups cycle reports.
@@ -1171,8 +1285,6 @@ const server = http.createServer((req, res) => {
         const client = getVerifyClient();
         const recent_bundles = typeof client._inspectStore === 'function' ? client._inspectStore() : [];
         // Phase 9-B substrate — tail the feedback log (append-only JSONL).
-        // Cheap O(n) read; the log gets rotated when 14-B remainder's
-        // crash-recovery cleanup ships.
         let recent_feedback = [];
         try {
           const raw = fs.readFileSync(VERIFY_FEEDBACK_LOG, 'utf-8');
@@ -1207,25 +1319,39 @@ const server = http.createServer((req, res) => {
   }
 
   // ─── Phase 9-B substrate — Verify portal feedback webhook ───────────
-  // POST body: {
-  //   build_id, decision (pass|partial|fail), reviewer, reviewed_at,
-  //   review_item_id?, requirement_id?, comments?, screenshot_urls?,
-  //   project_id?       // optional — falls back to "unknown"; the
-  //                     // Verify portal SHOULD include it for proper
-  //                     // observation scoping.
-  // }
-  //
-  // Pipeline: validateFeedbackPayload → handleFeedback (writes a
-  // user_note observation + computes a FixRoute). The route is logged
-  // but NOT auto-executed yet (real fix-cycle agent invocation is
-  // 9-B remainder — needs OpenRouter and project_id-aware project
-  // dir lookup). Every webhook hit is appended to
-  // _factory_runtime/verify_feedback.jsonl so the Verify panel can
-  // show a "recent feedback" list parallel to "recent bundles".
+  // POST body: FeedbackPayload + optional project_id. HMAC-verified
+  // when VERIFY_WEBHOOK_SECRET is set; dev-bypass when unset (warn).
+  // Writes user_note observation + plans FixRoute + appends JSONL.
   if (req.url === '/api/factory-admin/verify/webhook' && req.method === 'POST') {
     (async () => {
       try {
-        const body = await readRequestBody(req);
+        // Phase 9-B HMAC verification (D218). Read raw bytes first so
+        // the HMAC sees exactly what Verify-stg signed.
+        const rawBytes = await new Promise((resolve, reject) => {
+          const chunks = [];
+          req.on('data', c => chunks.push(c));
+          req.on('end', () => resolve(Buffer.concat(chunks)));
+          req.on('error', reject);
+        });
+
+        const hmacMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'hmac.js')).href);
+        const auth = hmacMod.authorizeWebhookRequest(
+          rawBytes,
+          req.headers[hmacMod.HMAC_HEADER_NAME],
+          process.env.VERIFY_WEBHOOK_SECRET
+        );
+        if (!auth.ok) {
+          addLog('system', `🔒 Verify webhook: rejected — ${auth.reason}`);
+          broadcast();
+          return jsonResponse(res, 401, { error: 'webhook authorization failed', reason: auth.reason });
+        }
+        if (auth.bypassed) {
+          console.warn('[verify/webhook]', auth.warning);
+        }
+
+        let body;
+        try { body = rawBytes.length ? JSON.parse(rawBytes.toString('utf-8')) : {}; }
+        catch (parseErr) { return jsonResponse(res, 400, { error: `invalid JSON: ${parseErr.message}` }); }
         const project_id = body.project_id || 'unknown';
 
         const [typesMod, recvMod, memMod] = await Promise.all([
@@ -1234,19 +1360,14 @@ const server = http.createServer((req, res) => {
           import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href),
         ]);
 
-        // Strip the optional project_id before validating — types.js
-        // only knows about the canonical FeedbackPayload schema.
         const { project_id: _drop, ...payload } = body;
         const vErr = typesMod.validateFeedbackPayload(payload);
-        if (vErr) {
-          return jsonResponse(res, 400, { error: vErr });
-        }
+        if (vErr) return jsonResponse(res, 400, { error: vErr });
 
         const memory = memMod.getMemoryService();
         const result = await recvMod.handleFeedback(payload, { memory, projectId: project_id });
 
-        // Persist to the audit log regardless of memory success — every
-        // webhook hit needs to be visible in the UI.
+        // Audit log — every hit, success or failure.
         try {
           fs.mkdirSync(RUNTIME_DIR, { recursive: true });
           const record = {
@@ -2066,3 +2187,50 @@ server.listen(PORT, '0.0.0.0', () => {
   // pre_dev/dev/post_dev get processed automatically.
   bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
+
+// Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
+// disconnect any cached MCP subprocesses before the Node process exits.
+// Without this, leaving USE_MCP_TOOLS=true long-term leaks subprocesses
+// on every restart cycle. Best-effort: a 5-second deadline prevents a
+// hung MCP server from delaying graceful shutdown indefinitely.
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n📡 ${signal} received — shutting down telemetry…`);
+
+  try {
+    // Lazy import so the shutdown hook doesn't pin the MCP module
+    // into the boot path if it's broken or missing.
+    //
+    // Relative ESM path keeps this independent of pathToFileURL +
+    // REPO_ROOT (both introduced by this same #42 ship); either form
+    // would work now, but the relative path is cheaper to reason about.
+    const mcpClient = await import('../../cognitive-engine/mcp/client.js');
+    if (typeof mcpClient.disconnectAll === 'function') {
+      await Promise.race([
+        mcpClient.disconnectAll(),
+        new Promise((resolve) => setTimeout(resolve, 5000)), // 5s deadline
+      ]);
+      console.log('📡 MCP connections closed.');
+    }
+  } catch (err) {
+    console.warn('[shutdown] MCP disconnect failed (continuing):', err?.message || err);
+  }
+
+  // Close the HTTP server so in-flight requests can finish (with a
+  // short grace period before forcibly exiting).
+  server.close(() => {
+    console.log('📡 HTTP server closed.');
+    process.exit(0);
+  });
+  // Hard exit after 8s total — well within typical systemd
+  // TimeoutStopSec=10 — so a stuck client request can't hold us forever.
+  setTimeout(() => {
+    console.warn('📡 Forcing exit after grace period.');
+    process.exit(0);
+  }, 8000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));

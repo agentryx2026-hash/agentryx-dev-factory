@@ -36,12 +36,34 @@ Frontend ✅ Verify sub-tab (in Admin · Configuration): 3-stat strip + REVIEW_D
 - **27 assertions** across 6 scenarios — invalid payload → 400 + no log entry; valid pass → 200 + observation persisted + scoped + tagged + log line with correct shape; fail+doc-complaint → docs/data lane; partial+test-complaint → tests/tuvok lane; missing project_id → `"unknown"` fallback; recent-feedback tail-read produces most-recent-first shape with all required fields
 - Reproduces the telemetry handler's logic in-process — no HTTP server spin-up needed, uses tmp memory + tmp log dir
 
-## What stays for 9-B remainder
+## Phase 9-B HMAC verification — what shipped (2026-05-11)
+
+**`cognitive-engine/verify-integration/hmac.js`** (new, ~110 lines):
+- `computeHmacSignature(rawBody, secret)` → hex SHA-256 HMAC. Reusable for any factory-side caller that needs to sign outbound requests later.
+- `verifyHmacSignature(rawBody, signatureHeader, secret)` → bool, constant-time compare via `crypto.timingSafeEqual`. Rejects every common failure mode (missing/empty/non-hex/wrong-length header, body mismatch, secret mismatch).
+- `authorizeWebhookRequest(rawBody, signatureHeader, secret)` → discriminated `{ok: true, bypassed?} | {ok: false, reason}`. Caller chooses the HTTP response.
+- `HMAC_HEADER_NAME` constant — `"x-verify-signature"` (Node lowercases headers).
+- **Dev-mode bypass** when `VERIFY_WEBHOOK_SECRET` is unset/empty: preserves the substrate's open-endpoint behaviour from the initial ship, with a warn log on every request. Per-environment opt-in to enforcement.
+
+**`/api/factory-admin/verify/webhook` HMAC gate** in `factory-dashboard/server/telemetry.mjs`:
+- Reads raw bytes BEFORE JSON.parse so HMAC sees exactly what Verify-stg signed (avoids the canonicalisation gotchas that bite JSON-after-parse signing).
+- Calls `authorizeWebhookRequest`; on `!ok` → 401 with `{error, reason}` + Live Trace `🔒 Verify webhook: rejected — <reason>`.
+- On bypass (no secret) → warn log only; request continues.
+- On valid → parse JSON + continue with existing pipeline.
+
+**Smoke test** — `cognitive-engine/verify-integration/hmac.smoke.js`:
+- **31 assertions** across 11 scenarios covering computeHmacSignature (stable + matches direct crypto + throws on empty/missing secret); verifyHmacSignature (happy path + 8 failure modes including same-length-different-bytes which exercises the constant-time compare); Buffer-vs-string body equivalence; authorizeWebhookRequest (dev bypass when secret unset, dev bypass on empty-string secret, missing header, empty header, bad signature, valid signature); HMAC_HEADER_NAME case.
+- All pass.
+
+**Why HMAC-SHA256 (not JWT, not OAuth)** — D218:
+- Matches industry convention (Slack / Stripe / GitHub use HMAC-SHA256 for webhook signing); saves Verify-side signer work.
+- No issuance / rotation infrastructure at v0.0.1; rotate by editing one env var on each side. Phase 22 (Action Boundary Enforcement, v2→v3) replaces with proper signer + key rotation.
+
+## What stays for full 9-B close-out
 
 - **Real `createHttpClient()` activation** — needs `VERIFY_URL` env + `auth_token` from Key Console; client.js already has the hooks
 - **Multi-app mode** in the Verify portal itself (Verify-stg-side work — not factory-side)
-- **Auto-executed fix cycle** — today the route is planned + logged; full 9-B walks the route into the appropriate agent (Spock/Tuvok/Data/Picard) automatically and re-runs the affected pipeline node. Requires OpenRouter credit + the per-project working dir already provided by Phase 14-A.
-- **Webhook authentication** — current endpoint is open; full 9-B adds an `X-Verify-Signature` HMAC check against a shared secret from Key Console. Acceptable for v0.0.1 single-VM single-founder; required before any real Verify-stg deploys
+- **Auto-executed fix cycle** — today the route is planned + logged; full 9-B walks the route into the appropriate agent (Spock/Tuvok/Data/Picard) automatically and re-runs the affected pipeline node via the Phase 14-B queue. Requires OpenRouter credit + the per-project working dir already provided by Phase 14-A.
 
 ---
 

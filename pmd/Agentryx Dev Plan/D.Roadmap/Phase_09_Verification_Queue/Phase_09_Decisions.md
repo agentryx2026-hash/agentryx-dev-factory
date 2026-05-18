@@ -81,3 +81,25 @@
 - Rotates trivially once it matters (`logrotate` or a Phase 14-A-style sweep — not needed at v0.0.1 volumes).
 
 **Why log failures too**: a 400 response from the webhook IS evidence — likely a Verify-side schema drift. Persisting the failure (with `ok: false, error`) puts it in the founder's UI alongside successes so contract regressions are caught early.
+
+## D218 — Webhook auth via HMAC-SHA256 + dev-mode bypass when secret unset (added 2026-05-11)
+
+**What**: Phase 9-B's `/api/factory-admin/verify/webhook` endpoint now verifies an `X-Verify-Signature` HMAC-SHA256 header against the raw request body and `process.env.VERIFY_WEBHOOK_SECRET`. When the secret is unset (or empty), verification is bypassed with a warn log — preserving the substrate's open-endpoint behaviour from the initial 9-B ship as an explicit opt-out.
+
+**Why HMAC-SHA256 (not JWT, not OAuth, not mTLS)**:
+- **Industry standard for webhooks**: Slack, Stripe, GitHub, Twilio all sign webhooks the same way. Matching the convention saves Verify-side signer work — copy any existing implementation.
+- **No issuance / rotation machinery at v0.0.1**: rotate by editing one env var on each side. JWT would need an issuer + key-rotation flow Phase 22 hasn't built yet. mTLS would need cert management infrastructure we don't have. HMAC is the minimum-machinery option that's still cryptographically sound.
+- **Constant-time compare via `crypto.timingSafeEqual`**: prevents timing-attack signature recovery.
+- **Phase 22 (Action Boundary Enforcement, v2→v3) replaces this** with proper signer + key rotation — HMAC here is the v0.0.1→v2 placeholder, not the final answer.
+
+**Why dev-mode bypass (no secret = open endpoint)**:
+- The initial 9-B substrate shipped intentionally open (D213) so the factory and Verify-stg could iterate the contract without coordinating secrets.
+- Forcing HMAC by default would mean every dev environment needs the secret set or the webhook breaks — annoying friction for legitimate exploration.
+- Opt-in to enforcement is the explicit choice: set the env var per-environment when ready. Staging-on / dev-off is a normal operational pattern.
+- Production should always have the secret set; the warn log on every bypass surfaces forgotten-secret incidents loudly.
+
+**Why raw-bytes-before-JSON.parse**:
+- HMAC signs bytes, not abstract JSON. JSON canonicalisation (key order, whitespace, escaping) silently differs between signers and verifiers; signing the raw payload bytes avoids that whole category of bug.
+- This is why Slack / Stripe / GitHub all sign the raw body, not a re-serialised version. Following the convention exactly.
+
+**Tradeoff acknowledged**: the dev-mode bypass creates a "warn-then-allow" path that a careless operator could miss in logs. Mitigation: the warn log fires on every request (loud, hard to ignore); the Verify panel in Admin · Configuration could surface "last X requests bypassed auth" in a future ship if it becomes a real concern.
