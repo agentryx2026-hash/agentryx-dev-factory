@@ -1,41 +1,54 @@
 # B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-05-11 (large substrate sweep — Cohort 1 and Cohort 2 substrate work mostly closed; validation remains)
+**Snapshot date**: 2026-05-18 (15 PRs merged today — Cohort 1 substrate fully closed in main; Cohort 2 substrate ~90% in main; only 19-B HTTP/UI + ops credentials remain)
 **Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
 
-## 2026-05-11 update — substrate sweep ✅
+## 2026-05-18 update — all substrate PRs landed in main ✅
 
-Two autonomous sessions (2026-05-10 + 2026-05-11) closed the substrate for most of Cohort 1 and the unblocked half of Cohort 2. **What changed since 2026-05-09**:
+In one session, **15 PRs merged** to main + **9 phase-close tags** pushed. The 2026-05-11 substrate sweep that lived across 14 open PRs is now fully integrated. Stack depth: 0.
 
-**Cohort 1 — substrate complete; validation pending**
-- **5-B** ✅ substrate — `tool-selector.js` + 5 graphs rewired under `USE_MCP_TOOLS` (PR pending)
-- **8-B** ✅ substrate — `dev_graph.js` rewire under `USE_PARALLEL_DEV_GRAPH`; tuvok ∥ data after torres + join_review barrier (PR pending)
-- **15-B** 🟡 proposer shipped (LLM-backed); comparators still need real artifact deltas (PR #42)
-- **16-B** ✅ Tier B — `training_gen` handler registered on Phase 14-A queue (PR pending)
-- **17-B** ✅ Tier B — `training_video_render` handler with all-null provider defaults (PR pending)
-- 7-E ✅ shipped (sync-from-artifacts; PR #42)
-- 6-B ✅ shipped (RouterChatModel chokepoint; PR #42)
+**Cohort 1 — all substrate in main**
+- **5-B** ✅ in main (#63) — `tool-selector.js` + 5 graphs rewired under `USE_MCP_TOOLS`. Tag `phase-5-b-closed`.
+- **6-B** ✅ in main (via #42) — RouterChatModel chokepoint
+- **7-E** ✅ in main (via #42) — sync-from-artifacts
+- **8-B** ✅ in main (#46) — `dev_graph.js` parallel topology under `USE_PARALLEL_DEV_GRAPH`. Tag `phase-8-b-closed`.
+- **15-B** 🟡 proposer in main (via #42); comparators still need real artifact deltas (founder cycle)
+- **16-B Tier B** ✅ in main (#60) — `training_gen` handler. Tag `phase-16-b-tier-b`.
+- **17-B Tier B** ✅ in main (#61) — `training_video_render` handler with all-null defaults. Tag `phase-17-b-tier-b`.
 
-**Cohort 2 — UI sprint mostly done**
-- **9-B** 🟡 read UI ✅ (PR #42) + webhook receiver ✅ + HMAC ✅ (PR pending). Remainder: real http client + auto-routed fix cycle (needs Verify-stg deploy + LLM cycle)
-- **10-B** 🟡 read UI ✅ (PR #42). Remainder: real backends (Slack/SMTP/GitHub creds)
-- **11-B** 🟡 read UI ✅ (PR #42). Remainder: per-tenant charts + threshold alerts via 10-B Courier
-- **12-B** ✅ full done — 8 Admin sub-tabs live (PR #42)
-- **13-B** ✅ Tier B (read UI) + LLM-stub substrate (PR pending). Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle
-- **14-B** ✅ Tier B + per-project quotas (PR pending). Remainder: legacy-path retirement + 19-B handler kind
-- **18-B** 🟡 catalogue read UI ✅ (PR #42). Remainder: remote fetch + signature verification
+**Cohort 2 — UI sprint + handlers in main**
+- **9-B substrate** ✅ in main (#62 = read UI from #42 + webhook + HMAC). Tag `phase-9-b-substrate-closed`. Remainder: real http client + auto-routed fix cycle (Verify-stg deploy + cycle).
+- **10-B** 🟡 read UI in main (#42). Remainder: real backends (Slack/SMTP/GitHub creds).
+- **11-B** 🟡 read UI in main (#42). Remainder: per-tenant charts + threshold alerts via 10-B Courier.
+- **12-B** ✅ full done in main (#42) — 8 Admin sub-tabs.
+- **13-B substrate** ✅ in main (#64 = read UI from #42 + LLM-stub + execute endpoint). Tag `phase-13-b-substrate-closed`. Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle.
+- **14-B** ✅ in main (#56 = Tier B + quotas) + (#57 = orphan reaper). Tag `phase-14-b-closed`. Remainder: legacy-path retirement + 19-B handler.
+- **18-B** 🟡 catalogue read UI in main (#42). Remainder: remote fetch + signature verification.
+- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler + HTTP surface + customer React UI + SLA breach scanner — handler shipping today; rest is multi-session.
 
 **Cohort 3** — unchanged (scale-gated). **Cohort 4** — unchanged (v3 release work).
 
-**New phase ships**
-- **Phase 21-A.1** ✅ Platform Evolution Roadmap + Founder R&D Brief + Seven onboarded (PR #42)
-- **Phase 21-B** ✅ Real Sonnet/Opus dispatcher, opt-in per cadence (PR #42)
-- **Phase 21-B.2** ✅ Architect cadence → Phase 14-A queue under `USE_ARCHITECT_QUEUE` (PR pending)
+**New phase ships in main**
+- **Phase 21** ✅ (#42) — Master Architect (autonomous research) + 21-A.1 + 21-B + visible-factory sprint. Tag `phase-21-closed`.
+- **Phase 21-B.2** ✅ in main (#58) — Architect cadence → Phase 14-A queue under `USE_ARCHITECT_QUEUE`. Tag `phase-21-b-2-closed`.
+
+**Doc + governance ships**
+- 10 named-agent SOULs + roster README (#43)
+- Hermes 2026-05-11 re-evaluation + 7-E Honcho-direct-adopt note (#44)
+- Marathon update + first-real-cycle runbook (#45)
+- Graceful shutdown hook (#55)
+- Telemetry merge-marker hotfix (#59)
+
+**What's now LIVE on the running telemetry**:
+- Queue worker registers 6 kinds: `pre_dev, dev, post_dev, architect_research, training_gen, training_video_render`
+- Architect cadence daemon runs (inline by default; `USE_ARCHITECT_QUEUE=true` switches to queue mode)
+- Orphan reaper sweeps stale in-flight jobs on every boot
+- Graceful SIGTERM/SIGINT shutdown closes MCP connections + HTTP server with 8s grace
 
 **Lab profile updates**
-- Hermes re-evaluated 2026-05-11 → PASS for now, RE-EVALUATE 2026-06-10. Roadmap adjustment: when 7-E opens, prefer **direct Honcho adoption** (now stable plugin) over the original pattern-steal plan.
+- Hermes re-evaluated 2026-05-11 → PASS for now, RE-EVALUATE 2026-06-10. Roadmap adjustment: when 7-E opens (Cohort 3 trigger), prefer **direct Honcho adoption** over pattern-steal.
 
-**See also**: [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md) for the concrete founder action to validate the new substrate end-to-end.
+**See also**: [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md) for the founder action to validate the substrate end-to-end.
 
 This is a living doc. Update it after every B-subphase ships, after every Lab profile graduation, and at every release-band cut.
 
