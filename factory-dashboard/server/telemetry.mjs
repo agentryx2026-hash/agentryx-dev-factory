@@ -82,6 +82,41 @@ function pickDispatcher(A, dispatcherKey) {
 // don't await — telemetry server stays responsive while jobs flow.
 let queueWorkerStarted = false;
 const QUEUE_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+
+// Phase 19-B HTTP surface — lazy-loaded shared customer portal instance.
+// Constructed on first /api/customer-portal/* request (or first queue
+// worker boot, whichever comes first) so the HTTP routes + the queue
+// handler share the same instance (single source of truth for accounts +
+// submissions + timeline).
+let _customerPortalInstance = null;
+async function getCustomerPortal() {
+  if (_customerPortalInstance) return _customerPortalInstance;
+  const portalMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'portal.js')).href);
+  _customerPortalInstance = portalMod.createCustomerPortal({ rootDir: QUEUE_WORKSPACE });
+  return _customerPortalInstance;
+}
+
+// Extract the bearer token from `Authorization: Bearer <token>` header.
+function extractBearerToken(req) {
+  const auth = req.headers['authorization'] || req.headers['Authorization'];
+  if (!auth || typeof auth !== 'string') return null;
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+// Map portal error codes (UNAUTHORIZED / FORBIDDEN / QUOTA_EXCEEDED /
+// VALIDATION / NOT_FOUND) to HTTP statuses + JSON body.
+function portalErrorToHttp(res, err) {
+  const code = err?.code || 'INTERNAL';
+  const status = {
+    UNAUTHORIZED:    401,
+    FORBIDDEN:       403,
+    NOT_FOUND:       404,
+    QUOTA_EXCEEDED:  429,
+    VALIDATION:      400,
+  }[code] || 500;
+  return jsonResponse(res, status, { error: err?.message || String(err), code });
+}
 async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
@@ -1433,6 +1468,165 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         console.error('[factory-admin/verify/webhook]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Phase 19-B HTTP surface — customer portal (D225) ───────────────
+  // Customer-facing routes. Bearer-token auth via the Phase 19-A
+  // account store. Successful submitProject auto-enqueues a
+  // project_intake job so the submission walks through the queue
+  // handler chain (D224) on its own.
+  //
+  // Admin routes (no bearer; v0.0.1 single-VM single-founder — same
+  // posture as the queue submit endpoint). Phase 22 adds proper auth.
+
+  // POST /api/customer-portal/admin/customers — register a new customer.
+  // Body: { email, name?, tier?: 'free'|'starter'|'pro' }
+  // Returns: { customer, token } — token shown ONCE, hashed at rest.
+  if (req.url === '/api/customer-portal/admin/customers' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        if (!body?.email) return jsonResponse(res, 400, { error: 'body.email required' });
+        const portal = await getCustomerPortal();
+        if (!body?.display_name) return jsonResponse(res, 400, { error: 'body.display_name required' });
+        const account = await portal.registerCustomer({
+          email: body.email,
+          display_name: body.display_name,
+          tier: body.tier || 'free',
+        });
+        addLog('system', `🧾 Customer portal: registered ${account.account.id} (${body.email}, tier=${account.account.tier})`);
+        broadcast();
+        return jsonResponse(res, 201, account);  // includes plaintext token ONCE
+      } catch (err) {
+        console.error('[customer-portal/admin/customers]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // GET /api/customer-portal/admin/customers — list all customers (no secrets).
+  if (req.url === '/api/customer-portal/admin/customers' && req.method === 'GET') {
+    (async () => {
+      try {
+        const portal = await getCustomerPortal();
+        const customers = await portal.listCustomers();
+        return jsonResponse(res, 200, { customers });
+      } catch (err) {
+        console.error('[customer-portal/admin/customers/list]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // POST /api/customer-portal/submit — Bearer auth.
+  // Body: { project_title, intake_payload, tags?, meta? }
+  // Returns: SubmissionReceipt — also auto-enqueues project_intake.
+  if (req.url === '/api/customer-portal/submit' && req.method === 'POST') {
+    (async () => {
+      try {
+        const token = extractBearerToken(req);
+        if (!token) return jsonResponse(res, 401, { error: 'Authorization: Bearer <token> required' });
+        const body = await readRequestBody(req);
+        const portal = await getCustomerPortal();
+        const receipt = await portal.submitProject(token, {
+          project_title: body.project_title,
+          intake_payload: body.intake_payload,
+          tags: body.tags,
+          meta: body.meta,
+        });
+        addLog('system', `🧾 Customer portal: submission ${receipt.submission_id} from ${receipt.tier}-tier customer (target: ${receipt.target_delivery_at})`);
+
+        // Auto-enqueue project_intake so the queue handler chain (D224)
+        // picks it up. Resolve customer_id from the submission record
+        // (portal.submitProject returns receipt without it).
+        try {
+          const subRecord = await portal.submissions.get(
+            (await portal.accounts.authenticate(token)).id,
+            receipt.submission_id
+          );
+          const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+          const q = queueMod.createQueue(QUEUE_WORKSPACE);
+          await q.enqueue({
+            kind: 'project_intake',
+            project_id: `${subRecord.customer_id}_${receipt.submission_id}`,
+            payload: { customer_id: subRecord.customer_id, submission_id: receipt.submission_id },
+            priority: 40,    // between architect (30) and pre_dev (50)
+            max_attempts: 2,
+          });
+          addLog('system', `📥 Queue: project_intake enqueued for ${receipt.submission_id}`);
+        } catch (enqErr) {
+          // Auto-enqueue failure is logged but doesn't reject the
+          // submission — the founder can manually re-enqueue from the
+          // Admin → Queue panel. The submission record persists.
+          console.warn('[customer-portal/submit] auto-enqueue failed (submission accepted, manual queue needed):', enqErr?.message || enqErr);
+        }
+        broadcast();
+        return jsonResponse(res, 201, receipt);
+      } catch (err) {
+        console.error('[customer-portal/submit]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // GET /api/customer-portal/submissions — Bearer auth → list customer's own.
+  if (req.url === '/api/customer-portal/submissions' && req.method === 'GET') {
+    (async () => {
+      try {
+        const token = extractBearerToken(req);
+        if (!token) return jsonResponse(res, 401, { error: 'Authorization: Bearer <token> required' });
+        const portal = await getCustomerPortal();
+        const submissions = await portal.listMyProjects(token, {});
+        return jsonResponse(res, 200, { submissions });
+      } catch (err) {
+        console.error('[customer-portal/submissions]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // GET /api/customer-portal/submissions/:id — Bearer auth → full status.
+  if (req.url?.match(/^\/api\/customer-portal\/submissions\/([^/]+)$/) && req.method === 'GET') {
+    (async () => {
+      try {
+        const token = extractBearerToken(req);
+        if (!token) return jsonResponse(res, 401, { error: 'Authorization: Bearer <token> required' });
+        const submissionId = decodeURIComponent(req.url.match(/^\/api\/customer-portal\/submissions\/([^/]+)$/)[1]);
+        const portal = await getCustomerPortal();
+        const status = await portal.getStatus(token, submissionId);
+        return jsonResponse(res, 200, status);
+      } catch (err) {
+        console.error('[customer-portal/submissions/:id]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // POST /api/customer-portal/submissions/:id/cancel — Bearer auth.
+  // Body: { note? }
+  if (req.url?.match(/^\/api\/customer-portal\/submissions\/([^/]+)\/cancel$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const token = extractBearerToken(req);
+        if (!token) return jsonResponse(res, 401, { error: 'Authorization: Bearer <token> required' });
+        const submissionId = decodeURIComponent(req.url.match(/^\/api\/customer-portal\/submissions\/([^/]+)\/cancel$/)[1]);
+        const body = await readRequestBody(req).catch(() => ({}));
+        const portal = await getCustomerPortal();
+        const updated = await portal.cancelSubmission(token, submissionId, { note: body?.note });
+        addLog('system', `🛑 Customer portal: cancelled ${submissionId}${body?.note ? ` (${body.note})` : ''}`);
+        broadcast();
+        return jsonResponse(res, 200, { submission: updated });
+      } catch (err) {
+        console.error('[customer-portal/submissions/:id/cancel]', err);
+        return portalErrorToHttp(res, err);
       }
     })();
     return;
