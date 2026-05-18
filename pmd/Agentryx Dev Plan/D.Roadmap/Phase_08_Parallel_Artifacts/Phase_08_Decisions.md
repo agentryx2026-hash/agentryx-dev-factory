@@ -51,3 +51,29 @@
 - **8-A's job is mechanism, not policy.** Mechanism: "branches can run in parallel and merge state safely." Policy: "what to do when one fails." Separating them keeps each decision crisp.
 
 **Consequence**: 8-B PR will explicitly include failure-policy as a deliverable, not an afterthought.
+
+## D222 — 8-B: tuvok ∥ data after torres; data drops qaReport when running parallel (added 2026-05-11)
+
+**What**: Phase 8-B's parallel topology fan-outs from torres to tuvok AND data (both consume codeOutput, both write disjoint state fields — tuvok→qaReport, data→architectReview). Under `USE_PARALLEL_DEV_GRAPH=true`, data runs concurrently with tuvok and is no longer guaranteed to see qaReport when its prompt is constructed. Data's system message + user message dynamically drop the QA reference under that condition.
+
+**Why fan out at torres (not spock)**:
+- 8-A's `parallel/README.md` sketched spock → [torres, tuvok, data] in parallel. That doesn't work for real LLM behaviour: tuvok needs torres's code to test; data needs torres's code to review. Fanning out at spock would have tuvok writing tests against nothing.
+- Fanning out at torres is the natural break: torres writes code → both reviewers consume it.
+
+**Why drop qaReport from data's prompt under parallel mode (not wait for it)**:
+- The whole point of parallel is to run them concurrently. If data waits for tuvok's qaReport, there's no parallelism — same as sequential.
+- The architectural alternative (data reads qaReport, blocks on tuvok) defeats the speedup. The behavioural alternative (data reads code only; routing combines both verdicts) preserves the speedup.
+- `routeAfterReview` was already the canonical combiner (reads both `architectReview` AND `qaReport`). The loop-or-deploy decision shape is unchanged — what changes is whether data's *intermediate review prose* references test results.
+- Tradeoff: data's review is slightly weaker under parallel (no "test quality" criterion). Mitigation: 4 of 5 review criteria still apply; the router still consults Tuvok's QA verdict; full 8-B validation will measure whether the weaker review materially hurts loop quality.
+
+**Why default OFF (zero behaviour change for existing users)**:
+- The sequential path has weeks of clean runs. The parallel path is new and depends on LLM behaviour we haven't measured yet (does data's qa-free review produce equivalent verdicts?).
+- Founder flips per-environment when ready to validate. Staging-on / production-off is a normal rollout pattern.
+- Failure-isolation policy (D110) is still deferred — once real failures show up under parallel, we'll know what to design.
+
+**Why the `branchesCompleted` reducer lives inline in dev_graph.js (not imported from parallel/reducers.js)**:
+- The reducer is a one-liner (concat + Set dedupe). Importing from parallel/reducers.js would couple dev_graph.js to the 8-A scaffolding module purely for one function.
+- Keeping it inline matches the rest of dev_graph.js's reducer style (all inline). Easier to read, easier to evolve independently.
+- If 8-C ever needs richer reducers across multiple graphs, refactor at that point.
+
+**Tradeoff acknowledged**: under the parallel path, if data finishes BEFORE tuvok, data's review prose references "(QA report not yet available)" verbatim. Founder reading the artifact may briefly wonder why. Worth a small UI affordance on the Replay page to note "this review was produced under parallel topology" — Phase 8-C concern.
