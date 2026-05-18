@@ -90,17 +90,43 @@ export function registerProjectIntakeHandler(registry, deps = {}) {
     }
     log(`intake start: ${payload.customer_id} / ${payload.submission_id} (status=${submission.status})`);
 
-    // 2. submitted → accepted. State machine in submissions.js throws
-    //    on illegal transitions; this surfaces as the job's error.
+    // Idempotency guard (D226). If a previous attempt already advanced
+    // this submission past `submitted`, short-circuit. Two scenarios:
+    //   - status === "in_progress" with downstream_pre_dev_job_id set:
+    //     prior attempt completed end-to-end; just return its result.
+    //   - status === "accepted": prior attempt died after the first
+    //     transition + downstream enqueue but before the in_progress
+    //     transition. Resume from where we left off (skip the
+    //     submitted→accepted step, do everything after).
+    // Anything else (rejected/cancelled/delivered) is terminal or
+    // illegal — let the state machine throw on the transition attempt.
+    if (submission.status === "in_progress" && submission.downstream_pre_dev_job_id) {
+      log(`already in_progress with downstream=${submission.downstream_pre_dev_job_id}; returning prior result (idempotent)`);
+      return {
+        submission_id: payload.submission_id,
+        customer_id: payload.customer_id,
+        accepted_at: submission.accepted_at || new Date().toISOString(),
+        downstream_pre_dev_job_id: submission.downstream_pre_dev_job_id,
+        downstream_project_id: `${payload.customer_id}_${payload.submission_id}`,
+        status: "in_progress",
+        idempotent_replay: true,
+      };
+    }
+
+    // 2. submitted → accepted (only if not already accepted on a prior attempt).
     const acceptedAt = new Date().toISOString();
-    await deps.portal.transitionSubmission(payload.customer_id, payload.submission_id, "accepted", {
-      note: `accepted by project_intake handler (job ${job.id})`,
-    });
-    await deps.portal.recordTimelineEvent(payload.customer_id, payload.submission_id, {
-      kind: "accepted",
-      note: `intake handler ${job.id}`,
-    });
-    log(`accepted at ${acceptedAt}`);
+    if (submission.status === "submitted") {
+      await deps.portal.transitionSubmission(payload.customer_id, payload.submission_id, "accepted", {
+        note: `accepted by project_intake handler (job ${job.id})`,
+      });
+      await deps.portal.recordTimelineEvent(payload.customer_id, payload.submission_id, {
+        kind: "accepted",
+        note: `intake handler ${job.id}`,
+      });
+      log(`accepted at ${acceptedAt}`);
+    } else {
+      log(`already in '${submission.status}'; skipping submitted→accepted (resuming from prior partial attempt)`);
+    }
 
     // 3. Enqueue downstream pre_dev work. Use a project_id that's
     //    customer-prefixed so cost-tracker rollups + per-project quota
@@ -126,7 +152,7 @@ export function registerProjectIntakeHandler(registry, deps = {}) {
       // Downstream enqueue failed → record timeline + leave in accepted
       // (NOT in_progress) so the founder can re-fire after fixing.
       await deps.portal.recordTimelineEvent(payload.customer_id, payload.submission_id, {
-        kind: "error",
+        kind: "note",  // 'note' is the catch-all kind for non-state events; portal types.js doesn't have a dedicated 'error' kind
         note: `pre_dev enqueue failed: ${err?.message || String(err)}`,
       });
       throw err;
@@ -141,7 +167,7 @@ export function registerProjectIntakeHandler(registry, deps = {}) {
       patch: { downstream_pre_dev_job_id: downstreamJob.id },
     });
     await deps.portal.recordTimelineEvent(payload.customer_id, payload.submission_id, {
-      kind: "phase_change",
+      kind: "phase_started",
       phase: "pre_dev",
       note: `downstream job ${downstreamJob.id} scheduled`,
     });
