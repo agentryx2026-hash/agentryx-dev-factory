@@ -2,9 +2,9 @@
 
 Factory-side integration with `verify-stg.agentryx.dev` (separate production app currently powering HireStream reviews). Factory publishes build bundles; humans review in Verify; feedback webhooks write observations back into the factory memory layer and (stub) route to fix-cycle agents.
 
-## Status: Phase 9-A scaffolding
+## Status: Phase 9-A scaffolding + 9-B Tier B (read UI) + 9-B webhook substrate
 
-Built with a mock Verify client. **Not yet wired to real HTTP** (Verify needs multi-app mode). Phase 9-B will add the HTTP client, webhook endpoint, and real fix-cycle routing.
+Mock client + 9-A substrate shipped 2026-04-22; read UI shipped 2026-05-09; webhook substrate shipped 2026-05-10. **Real HTTP client still not wired** (Verify-stg needs multi-app mode + auth_token). Full 9-B's missing pieces: real http client activation, webhook HMAC, auto-executed fix-cycle.
 
 ## Files
 
@@ -13,6 +13,42 @@ Built with a mock Verify client. **Not yet wired to real HTTP** (Verify needs mu
 - `client.js` — `getVerifyClient({kind: "mock"|"http"})`: mock stores in memory; http POSTs to Verify
 - `feedback-receiver.js` — `handleFeedback(payload, {memory, projectId, fixRouter})` → observation + route
 - `smoke-test.js` — 30 assertions across builder, client, validation, routing, full cycle, fail-open
+- `webhook-integration.smoke.js` — Phase 9-B substrate: 27 assertions reproducing the telemetry webhook handler in-process (validation, observation persistence, route planning, JSONL log append, tail-read shape)
+- `hmac.js` — Phase 9-B HMAC verification helper (`computeHmacSignature` / `verifyHmacSignature` / `authorizeWebhookRequest` + `HMAC_HEADER_NAME` constant); industry-standard HMAC-SHA256-of-raw-body pattern
+- `hmac.smoke.js` — 31 assertions covering happy path + 8 failure modes + dev-mode bypass discrimination + Buffer/string equivalence
+
+## Phase 9-B webhook endpoint (telemetry.mjs)
+
+```
+POST /api/factory-admin/verify/webhook
+Content-Type: application/json
+
+{
+  "project_id":  "2026-05-10_blog",         // optional; defaults to "unknown"
+  "build_id":    "pre-dev-2026-05-10-abc",
+  "decision":    "fail",                     // pass | partial | fail
+  "reviewer":    "founder@agentryx.dev",
+  "reviewed_at": "2026-05-10T16:00:00Z",
+  "review_item_id": "RI-0007",               // optional
+  "requirement_id": "FR-12",                 // optional
+  "comments":    "Missing docs for the new endpoint",
+  "screenshot_urls": ["https://verify-stg/.../shot.png"]
+}
+
+→ 200  { ok: true,  observation_id, route: {lane, agent, reason}, router_result }
+→ 400  { error: "<validation message>" }   (also for invalid memory args)
+→ 500  { error: "<runtime error>" }
+```
+
+Side-effects on every hit:
+- One observation written to the memory layer (`kind: user_note`, `scope: project:<id>`)
+- One JSON line appended to `_factory_runtime/verify_feedback.jsonl`
+- One Live Trace entry (`✅ Verify webhook: ... → lane=...`) so the Dev-Hub sidebar shows reviewer activity
+- Tail of the JSONL log is exposed by `GET /api/factory-admin/verify/state.recent_feedback[]` for the Verify panel UI
+
+Route is **planned, not executed** — see D213 for the reasoning.
+
+**HMAC verification (D218, added 2026-05-11)**: when `VERIFY_WEBHOOK_SECRET` is set in the environment, the endpoint requires an `X-Verify-Signature: <hex>` header where `<hex>` is the HMAC-SHA256 of the raw request body using the secret. Reject → 401 with `{error, reason: "missing_signature" | "invalid_signature"}`. When the secret is unset (or empty), verification is bypassed with a warn log on every request — preserves the substrate's open-endpoint dev behaviour as an explicit opt-out. Raw bytes are HMAC'd before JSON.parse (same convention as Slack/Stripe/GitHub) so canonicalisation drift can't cause silent mismatches.
 
 ## Boundary contract
 
