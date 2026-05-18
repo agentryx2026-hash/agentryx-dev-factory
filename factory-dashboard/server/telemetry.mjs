@@ -86,12 +86,16 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod] = await Promise.all([
+    const [queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod, trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'architect-handler.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-gen-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
 
@@ -126,10 +130,7 @@ async function bootQueueWorker() {
       },
     });
 
-    // Phase 21-B.2 — architect_research handler. Allows the cadence
-    // daemon to enqueue cycle work instead of running it inline (under
-    // USE_ARCHITECT_QUEUE=true). Lazy-loaded so a broken architect
-    // module doesn't take down pipeline handlers.
+    // Phase 21-B.2 — architect_research handler.
     try {
       const A = await loadArchitect();
       const archKb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
@@ -148,6 +149,23 @@ async function bootQueueWorker() {
       });
     } catch (err) {
       console.warn('[queue.worker] architect_research handler not registered:', err?.message || err);
+    }
+
+    // Phase 16-B Tier B — training_gen handler.
+    if (trainingGenHandlerMod && trainingGenStoreMod && trainingGenRegistryMod && trainingGenPipelineMod) {
+      try {
+        trainingGenHandlerMod.registerTrainingGenHandler(registry, {
+          createTrainingStore: trainingGenStoreMod.createTrainingStore,
+          createGeneratorRegistry: trainingGenRegistryMod.createGeneratorRegistry,
+          runPipeline: trainingGenPipelineMod.runPipeline,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_training-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_gen:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_gen handler not registered:', err?.message || err);
+      }
     }
 
     // drainOnly: false → keeps the worker loop alive forever, polling.
@@ -191,32 +209,23 @@ async function bootCadenceDaemon() {
       runCadencePass: async (cadenceKind, cadenceConfig) => {
         // Phase 21-B.2 — when USE_ARCHITECT_QUEUE=true, the daemon
         // enqueues the cycle as an architect_research job instead of
-        // running it inline. Worker picks it up; same KB writes; same
-        // onReportProduced hook (wired to the queue handler at boot
-        // time). Crash-resilient: an interrupted in-flight job will
-        // be re-leased on next telemetry restart (Phase 14-A lease
-        // timeout). Default off → preserves Phase 21-A.1 inline path.
+        // running it inline.
         if (process.env.USE_ARCHITECT_QUEUE === 'true') {
           try {
             const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
             const q = queueMod.createQueue(QUEUE_WORKSPACE);
             const job = await q.enqueue({
               kind: 'architect_research',
-              project_id: 'architect',  // sentinel — architect cycles aren't per-customer-project
+              project_id: 'architect',
               payload: { cadence_kind: cadenceKind, cadence_config: cadenceConfig },
-              priority: 30,             // lower than pre_dev (50) — pipeline work preempts
-              max_attempts: 1,          // a failed cycle waits for the next cadence; no retry loop
+              priority: 30,
+              max_attempts: 1,
             });
             addLog('system', `📅 Architect cadence ${cadenceKind} enqueued as ${job.id} (queue mode)`);
             broadcast();
-            // Return a sentinel pass — the daemon's onReportProduced
-            // hook won't fire from here (queue handler fires its own
-            // hook). The returned shape just satisfies the daemon's
-            // bookkeeping (`lastCadenceFire` records the timestamp).
             return { pass: { id: `queued:${job.id}`, queued: true, completed_at: new Date().toISOString() } };
           } catch (err) {
             console.error(`[architect.daemon] enqueue failed for ${cadenceKind}, falling back to inline:`, err?.message || err);
-            // Fall through to inline path on enqueue failure.
           }
         }
         // For each cadence we run a fresh architect.runPass with the
