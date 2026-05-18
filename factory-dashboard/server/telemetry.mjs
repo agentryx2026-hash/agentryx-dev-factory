@@ -90,6 +90,7 @@ async function bootQueueWorker() {
       queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod,
       trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod,
       videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
+      intakeHandlerMod, customerPortalMod,
     ] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
@@ -104,6 +105,8 @@ async function bootQueueWorker() {
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'store.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'providers', 'registry.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'project-intake-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'portal.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
 
@@ -192,6 +195,28 @@ async function bootQueueWorker() {
         });
       } catch (err) {
         console.warn('[queue.worker] training_video_render handler not registered:', err?.message || err);
+      }
+    }
+
+    // Phase 19-B Tier B — project_intake handler. Customer portal
+    // submissions enqueue this kind via the (to-be-built) HTTP submit
+    // surface. Handler walks submission through submitted→accepted→
+    // in_progress and enqueues a downstream pre_dev job. Fail-tolerant
+    // import: customer-portal module is optional at boot.
+    if (intakeHandlerMod && customerPortalMod) {
+      try {
+        const portal = customerPortalMod.createCustomerPortal({
+          rootDir: QUEUE_WORKSPACE,
+        });
+        intakeHandlerMod.registerProjectIntakeHandler(registry, {
+          portal,
+          queue,  // same queue instance so downstream pre_dev jobs land here
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:project_intake:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] project_intake handler not registered:', err?.message || err);
       }
     }
 

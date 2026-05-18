@@ -1,8 +1,9 @@
-# Phase 19 — Status: 19-A COMPLETE ✅  (19-B DEFERRED)
+# Phase 19 — Status: 19-A COMPLETE ✅ + 19-B Tier B handler shipped (HTTP/UI + back-feed + auth still deferred)
 
 **Phase started**: 2026-04-24
 **Phase 19-A closed**: 2026-04-24
-**Duration**: single session (applied `03_Scaffolding_Pattern.md` for the first time after codification)
+**Phase 19-B Tier B handler closed**: 2026-05-18 (`project_intake` queue handler — walks submitted→accepted→in_progress + enqueues downstream pre_dev)
+**Duration**: 19-A single session; 19-B handler ~30 min over the substrate
 
 ## Subphase progress
 
@@ -16,7 +17,41 @@
 | 19-A.6 | `customer-portal/portal.js` — high-level API composing all 4 stores; typed auth errors (UNAUTHORIZED/FORBIDDEN/QUOTA_EXCEEDED/VALIDATION); customer surface + platform-internal surface | ✅ done |
 | 19-A.7 | Smoke test — 138 assertions across 12 test groups | ✅ done — all pass |
 | 19-A.8 | `customer-portal/README.md` + `USE_CUSTOMER_PORTAL` flag registered in admin-substrate | ✅ done |
-| 19-B | HTTP API + React UI + queue handler + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth | ⏳ DEFERRED |
+| 19-B Tier B | `project_intake` queue handler — submission state-machine walk + downstream pre_dev enqueue | ✅ done 2026-05-18 |
+| 19-B full | HTTP API + React UI + Courier notifications + budget gate + Verify linkage + SLA scanner + password auth + pre_dev → delivered back-feed | ⏳ DEFERRED |
+
+## Phase 19-B Tier B handler — what shipped (2026-05-18)
+
+**`cognitive-engine/concurrency/handlers/project-intake-handler.js`** (new, ~120 lines):
+- `registerProjectIntakeHandler(registry, { portal, queue, onLog? })` — registers `project_intake` kind on a Phase 14-A handler registry. Same DI pattern as D211 (factory) / D217 (architect) / D219 (training_gen) / D220 (training_video_render).
+- Payload: `{ customer_id, submission_id }` — minimal; everything else is read from the portal.
+- Lifecycle: lookup submission → `submitted→accepted` transition + timeline event → enqueue downstream `pre_dev` with `intake_payload` as `task` and `<CUST-id>_<SUB-id>` as `project_id` (so cost-tracker + quota gate scope per-customer) → `accepted→in_progress` transition + `phase_change → pre_dev` timeline event.
+- Failure isolation: if downstream `pre_dev` enqueue fails, timeline records an `error` event and the submission stays in `accepted` (NOT advanced to `in_progress`) so the founder can re-fire after fixing the underlying issue.
+- Returns `{submission_id, customer_id, accepted_at, downstream_pre_dev_job_id, downstream_project_id, status: "in_progress"}`.
+
+**`bootQueueWorker` extension** in `factory-dashboard/server/telemetry.mjs`:
+- Lazy-imports `project-intake-handler.js` + `customer-portal/portal.js` alongside the other handler modules (fail-tolerant via `.catch(() => null)`)
+- Registers `project_intake` with a Live Trace `onLog` hook that surfaces lifecycle events to the Dev-Hub sidebar
+- Portal instance shares the `QUEUE_WORKSPACE` root with the rest of the factory (so customer files live at `<workspace>/_customer-portal/`)
+
+**Smoke test** — `cognitive-engine/concurrency/handlers/project-intake-handler.smoke.js`:
+- **38 assertions** across 6 scenarios — registration; valid happy path (state-machine walk + downstream enqueue + timeline events + return shape + log markers); missing-field rejection; submission-not-found (fail fast, no transitions, no enqueue); downstream-enqueue-failure (stays in accepted + timeline `error`); dep validation
+- All pass; no real filesystem or portal needed (every dep stubbed)
+
+**What's now LIVE on telemetry boot** (post-deploy):
+- Queue worker registers a 7th kind: `project_intake`
+- Customer portal instance constructed once at boot (per-worker; same workspace root as queue + cost-tracker)
+
+## What stays for full 19-B
+
+- **HTTP surface** at `/api/customer-portal/*` (Fastify-style routes mapping `portal.submitProject` / `portal.getStatus` / `portal.listMyProjects` / `portal.cancel`) with bearer-token auth using the Phase 19-A token system
+- **React customer dashboard** — sign-up, submission form, per-submission status page with timeline + SLA visualizer
+- **Pre_dev → delivered back-feed** — a wrapper handler that on `pre_dev` completion finds the parent submission (via `payload.customer_id/submission_id` threaded through this Tier B ship) and transitions to `delivered` + records timeline event
+- **Courier notifications** (10-B follow-on) — on `submitted`, `accepted`, `in_progress`, `delivered`, `sla_breached` events, dispatch to customer's preferred channel (email / Slack / webhook)
+- **Budget gate** (11-B follow-on) — pre-flight check against the customer's tier `budget_cap_usd` before enqueueing downstream work
+- **Verify linkage** (9-B full) — on a Verify reviewer rejection, route a fix-cycle for the customer's submission
+- **SLA breach scanner** — periodic cron (every 5 min) that runs `portal.sla.findBreaches()` and emits `sla_breached` timeline + Courier events
+- **Password auth + email verification** — current 19-A uses opaque bearer tokens (which the handler relies on); 19-B-full adds the user-friendly login layer on top of that
 
 ## What shipped
 
