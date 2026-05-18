@@ -216,6 +216,34 @@ After 21-A close, founder articulated three additional needs that turned 21-A fr
 
 **Tradeoff**: Hook adds a few ms per LLM call when active (artifact write is ~10ms on filesystem). Mitigation: it's gated by the flag; default-off means no cost in the common case.
 
+## D217 — 21-B.2: cadence daemon enqueues to Phase 14-A queue under `USE_ARCHITECT_QUEUE` (added 2026-05-11)
+
+**What**: Phase 21-B.2 makes the architect cadence daemon optionally enqueue cycle work as `architect_research` jobs on the Phase 14-A queue instead of running them inline inside the setInterval tick. Behavior is flag-gated (`USE_ARCHITECT_QUEUE=true`); default off preserves Phase 21-A.1's inline path.
+
+**Why move into the queue**:
+- **Crash resilience**: a real-LLM cycle (Sonnet/Opus dispatcher) takes minutes. Inline, an interrupted telemetry restart loses the in-flight pass. As a queue job, Phase 14-A's lease timeout re-leases the orphan on the next boot.
+- **Concurrency safety**: daily + weekly + monthly cadences can fire within the same minute window. Inline they serialize inside one setInterval tick; via queue (parallelism=2) they overlap honestly.
+- **Observability**: in-flight cycles surface in Admin → Queue panel with the same status transitions as pipeline jobs. One UI for all background work.
+
+**Why a flag (default off) instead of a hard switch**:
+- Phase 21-A.1's inline path has weeks of clean stub-dispatcher runs. The enqueue path is new.
+- Per-environment opt-in: founder flips on production after observing one or two enqueued cycles complete in Admin → Queue. Staging can stay inline if desired.
+- Fail-open: an enqueue failure (queue unavailable, FS issue) falls through to the inline path automatically. Architect availability never depends on queue health.
+
+**Why `project_id: "architect"` sentinel**:
+- The Phase 14-B per-project quota gate (D212) consults `project:<id>` thresholds. Using a stable sentinel lets the founder add `project:architect` to `cost-thresholds.json` if they want to cap architect spend independently of customer-project work — without that threshold, architect cycles are uncapped (which is today's behavior).
+- Round-robin fairness in Phase 14-A's scheduler treats "architect" as one project among many — three concurrent customer projects + the architect can't be starved by any one alone.
+
+**Why `priority: 30, max_attempts: 1`**:
+- Priority 30 is below pre_dev/dev/post_dev (50) — pipeline work preempts when both are queued. Architect cycles are background.
+- `max_attempts: 1` because cadence IS the retry. A failed daily fires again tomorrow; auto-retrying inside the same day adds spend without insight.
+
+**Why a new `architect-handler.js` module (not inline in factory-handlers.js)**:
+- Mirrors D211: handlers are content (what each kind does); the registry is machinery (how kinds get scheduled). Architect is a different domain than factory pipelines and deserves its own file.
+- Phase 16-B (training_gen), 17-B (training_video_render), 19-B (project_intake) will each land in their own files under `concurrency/handlers/` for the same reason.
+
+**Tradeoff acknowledged**: when the flag is on, the cadence daemon's own `onReportProduced` hook never fires (the queue handler fires its own). The Live Trace message changes from `👑 Architect cycle report ready: <id>` to `👑 Architect cycle report ready (via queue): <id>` so the path is identifiable. After the inline path is deleted (post-21-B.2 close-out), the messages converge.
+
 ## Decision counter
 
 - D1–D165: Phases 0-18
@@ -228,4 +256,5 @@ After 21-A close, founder articulated three additional needs that turned 21-A fr
 - **D208: Phase 13-B Tier B split**
 - **D209: Phase 21-B — opt-in per cadence/brief, not global flag**
 - **D210: Phase 6-B — hook RouterChatModel.invoke (chokepoint), not per-graph**
-- Future: Phase 22+ continues from D211
+- **D217: Phase 21-B.2 — cadence daemon → Phase 14-A queue under USE_ARCHITECT_QUEUE flag**
+- Future: continues from D218 (D211–D216 belong to Phases 5 / 9 / 14)
