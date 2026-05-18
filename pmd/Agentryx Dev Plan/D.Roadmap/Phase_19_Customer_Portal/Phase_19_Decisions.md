@@ -212,3 +212,49 @@ Telemetry wires it in `bootQueueWorker`: after `registerFactoryHandlers`, it ret
 - D226 stub-validation lesson applied: the stub `recordTimelineEvent` imports `TIMELINE_EVENT_KINDS` and rejects invalid kinds — would catch any future regression where the wrapper drifts to an invalid event kind.
 
 **Tradeoff acknowledged**: the wrapper config is per-handler (pre_dev gets one wrapper, dev would get another). If we wanted, we could wrap all 3 pipeline kinds in one go via a tiny helper. Not worth it for v0.0.1 — explicit per-kind registration reads cleaner and matches the existing per-handler pattern in `bootQueueWorker`.
+
+## D228 — SLA breach scanner is a periodic background daemon, not an on-demand path (added 2026-05-18)
+
+**What**: A new module `cognitive-engine/customer-portal/sla-breach-scanner.js` exports `createSlaBreachScanner({ portal, intervalMs?, onLog? })` returning `{ runOnce, start, stop }`. On each tick (default 5 minutes), the scanner walks every customer's non-terminal submissions and emits an `sla_breached` timeline event via `portal.raiseSLABreach()` for any submission whose `target_delivery_at` is in the past. Idempotency: before emitting, the scanner reads the submission's timeline and skips if a prior `sla_breached` event already exists.
+
+Telemetry wires it in a new `bootSlaBreachScanner()` invoked from `server.listen`, alongside `bootCadenceDaemon` and `bootQueueWorker`. Stops cleanly in the graceful-shutdown hook (before MCP disconnect, since the interval would otherwise keep the event loop alive past `server.close()`). Env vars: `SLA_SCANNER_DISABLED=true` opts out, `SLA_SCANNER_INTERVAL_MS=<n>` overrides the cadence.
+
+**Why a background daemon (not on-demand)**:
+- SLA breaches are **time-driven**, not event-driven. Nothing in the pipeline naturally fires when a submission "ages past target" — the only signal is wall-clock time advancing past a precomputed ISO timestamp. So either we scan periodically, or we schedule a per-submission timer indexed by `target_delivery_at` (the v1+ shape).
+- The GET /submissions/:id route already returns a fresh `sla_status` computed on-the-fly, so on-demand breach detection works for **reads**. But **push notifications** (10-B Courier follow-on: email/Slack the customer when their SLA misses) need a *trigger* — a one-shot event per actual breach. That's the scanner's job.
+- The HTTP path is cheap; the notification path is expensive (rate-limited SMTP, third-party APIs). Doing the trigger here keeps the read-path latency stable.
+
+**Why per-tick scan (not per-submission setTimeout)**:
+- O(N customers + M submissions) per tick. For v0.0.1 scale (single founder, <100 submissions) this is trivial — even 1000 submissions × 5-minute cadence is well under a second of work per tick.
+- Per-submission `setTimeout` indexed by `target_delivery_at` would be more elegant at scale, but adds complexity: scheduling on submission create, rescheduling on transition, cleanup on terminal state, recovery after restart. None of that is worth it before the scan cost actually shows up.
+- Idempotency keeps the scanner restart-safe at any cadence: dedup is filesystem-durable (timeline scan), not in-memory state. A telemetry restart between scans does NOT re-fire breaches.
+
+**Why dedup via timeline read (not in-memory raised-set)**:
+- The simplest correct answer: the timeline IS the truth of "has this breach been notified?" Anything we cache in memory is a lossy duplicate of that.
+- One extra `timeline.read` per breached submission per tick is negligible for v0.0.1. When scan cost actually shows up, we'll cache a per-process "already-notified" set keyed by submission_id, refreshed on boot from disk. Not yet.
+- Bonus: if an admin manually appends an `sla_breached` event via some other path (debug tool, manual fix), the scanner respects it. There's no second source of truth to drift.
+
+**Why fail-isolation at every level**:
+- One bad customer (corrupted submission file, tier set to an unknown value) must not halt the scan for everyone else. Each customer's `submissions.list` is wrapped in try/catch; errors counted into `result.errors`, scan continues.
+- One bad submission (timeline read or raiseSLABreach throws) must not halt the rest of that customer's breaches. Same per-emit try/catch.
+- Only `accounts.list` failure is fail-fast: if we can't enumerate customers, there's nothing else to scan, so we return with `errors[0]={ scope: "accounts.list", error }` and skip the rest.
+- Rationale: the scanner is a notification trigger. A single missed notification on retry is better than dropping all notifications because one customer's data is malformed.
+
+**Why opt-out env var, not opt-in feature flag**:
+- For v0.0.1, the scanner is part of the customer-portal substrate — if you're running the portal, you want the scanner. Opt-in would mean every fresh install has to enable a flag to get the expected behaviour.
+- Opt-out (`SLA_SCANNER_DISABLED=true`) covers the cases we care about: tests + local dev where there's no customer-portal data, and operators who want to run the scanner via a separate cron/script instead of inside telemetry.
+- Matches the architect cadence daemon's posture (always on; configurable via env).
+
+**Why stop the scanner FIRST in the graceful-shutdown hook**:
+- `setInterval` keeps the event loop alive. If we let `server.close()` finish first, the process would hang for up to `intervalMs` waiting for the timer to fire one more time, breaking the systemd `TimeoutStopSec` budget.
+- We use `timer.unref()` as a safety net (so the process can exit even if `stop()` is missed), but the explicit stop is cleaner and the unref alone wouldn't be enough if shutdown were waiting on `server.close()` for in-flight requests.
+
+**Why a new module rather than extending `sla.js`**:
+- `sla.js` is a pure computation engine (in/out, no I/O). Adding the daemon there would bring storage + timeline I/O + setInterval into a module whose unit tests currently need no fixtures.
+- The scanner composes the SLA engine + the portal — that's a different layer. Same separation as D211 (factory-handlers.js stays pure; the queue wires it up at boot).
+
+**Test coverage** (86 assertions across 16 scenarios):
+- Dep validation; empty world; single breach happy path; dedup on prior event; two-tick idempotency (raise → dedup); terminal statuses ignored for all three terminal states; on_track / at_risk do not raise; multi-customer mixed states with correct counts; submissions.list failure isolated; timeline.read failure isolated; raiseSLABreach failure isolated; accounts.list fail-fast; start/stop lifecycle; intervalMs default + invalid handling; onLog hook fires.
+- D226 stub-validation guard applied: the stub `raiseSLABreach` mirrors the real portal by appending the event back into the in-memory timeline, so the two-tick idempotency test reflects what production does.
+
+**Tradeoff acknowledged**: at the scale where per-tick scan cost shows up (~10k+ active submissions, or sub-minute SLAs), the per-submission timer indexed by `target_delivery_at` becomes worth the complexity. v1+ work. For v0.0.1 the per-tick scan is dramatically simpler and the cost is invisible.
