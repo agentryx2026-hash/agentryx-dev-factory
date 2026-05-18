@@ -1,9 +1,10 @@
-# Phase 9 — Status: 9-A + 9-B Tier B (read UI) COMPLETE ✅  (9-B remainder DEFERRED — needs Verify-stg auth)
+# Phase 9 — Status: 9-A + 9-B Tier B (read UI) + 9-B webhook substrate COMPLETE ✅  (9-B remainder DEFERRED — Verify-stg auth + real http client + auto-routed fix cycle)
 
 **Phase started**: 2026-04-22
 **Phase 9-A closed**: 2026-04-22 (substrate — bundle/feedback contract, mock client, fix-router)
 **Phase 9-B Tier B closed**: 2026-05-09 (Verify tab in Admin · Configuration; same session as the visible-factory sprint)
-**Duration**: 9-A single session; 9-B Tier B ~10 min composition
+**Phase 9-B webhook substrate closed**: 2026-05-10 (POST /api/factory-admin/verify/webhook live — receives FeedbackPayload, writes user_note observation, plans FixRoute, audits to JSONL log; Verify panel now shows recent feedback alongside recent bundles)
+**Duration**: 9-A single session; 9-B Tier B ~10 min composition; 9-B webhook ~30 min
 
 ---
 
@@ -13,12 +14,56 @@ Backend `GET /api/factory-admin/verify/state` returns enabled flag, client kind 
 
 Frontend ✅ Verify sub-tab (in Admin · Configuration): 3-stat strip + REVIEW_DECISIONS pills + recent-bundles list + friendly note explaining what 9-B-full unlocks.
 
-## What stays for 9-B remainder
+## Phase 9-B webhook substrate — what shipped (2026-05-10)
 
-- Real `createHttpClient()` activation (needs `VERIFY_URL` env + auth_token from Key Console)
-- Webhook receiver in `factory-dashboard/server/telemetry.mjs` for FeedbackPayload
-- Multi-app mode in the Verify portal itself (Verify-stg-side work)
-- Real fix-cycle agent invocation when feedback comes back
+**`POST /api/factory-admin/verify/webhook`** (new endpoint in `factory-dashboard/server/telemetry.mjs`):
+- Body: canonical `FeedbackPayload` shape plus an *optional* `project_id` field (Verify portal SHOULD include it for proper observation scoping; defaults to `"unknown"` when missing)
+- Pipeline: `validateFeedbackPayload` → `handleFeedback({memory, projectId})` → append to `_factory_runtime/verify_feedback.jsonl`
+- 400 on bad payload (validator error in `error`); 200 on success with `{ok, observation_id, route, router_result}`
+- Every hit (success or failure) is logged to the JSONL audit log AND surfaced in Live Trace (`✅ Verify webhook: <build_id> (<decision>) by <reviewer> → lane=<lane> → <agent>`)
+- Route is **planned but not executed** — full 9-B's "real fix-cycle agent invocation" is the missing piece; today the route lives in the response + the JSONL record where the founder (or full-9-B's auto-router) can act on it
+
+**`GET /api/factory-admin/verify/state` extension**:
+- New `recent_feedback: [...]` field — reverse-tail of the last 20 JSONL records
+- New `webhook_url: "<base>/api/factory-admin/verify/webhook"` — gives Verify-stg admins a copy-pasteable target without grepping the source
+
+**Frontend `VerifyPanel`** (Admin · Configuration → ✅ Verify):
+- New "📥 Feedback webhook" card showing the POST URL + expected body shape
+- New "Recent feedback received" list — color-coded decision pill (pass=green, partial=amber, fail=red), reviewer, timestamp, planned fix lane + agent, optional comment preview, error display if the webhook returned 400
+- The two lists (bundles published → feedback received) sit side by side, giving the founder a "what we sent / what came back" panel for the Verify integration
+
+**Smoke test** — `cognitive-engine/verify-integration/webhook-integration.smoke.js`:
+- **27 assertions** across 6 scenarios — invalid payload → 400 + no log entry; valid pass → 200 + observation persisted + scoped + tagged + log line with correct shape; fail+doc-complaint → docs/data lane; partial+test-complaint → tests/tuvok lane; missing project_id → `"unknown"` fallback; recent-feedback tail-read produces most-recent-first shape with all required fields
+- Reproduces the telemetry handler's logic in-process — no HTTP server spin-up needed, uses tmp memory + tmp log dir
+
+## Phase 9-B HMAC verification — what shipped (2026-05-11)
+
+**`cognitive-engine/verify-integration/hmac.js`** (new, ~110 lines):
+- `computeHmacSignature(rawBody, secret)` → hex SHA-256 HMAC. Reusable for any factory-side caller that needs to sign outbound requests later.
+- `verifyHmacSignature(rawBody, signatureHeader, secret)` → bool, constant-time compare via `crypto.timingSafeEqual`. Rejects every common failure mode (missing/empty/non-hex/wrong-length header, body mismatch, secret mismatch).
+- `authorizeWebhookRequest(rawBody, signatureHeader, secret)` → discriminated `{ok: true, bypassed?} | {ok: false, reason}`. Caller chooses the HTTP response.
+- `HMAC_HEADER_NAME` constant — `"x-verify-signature"` (Node lowercases headers).
+- **Dev-mode bypass** when `VERIFY_WEBHOOK_SECRET` is unset/empty: preserves the substrate's open-endpoint behaviour from the initial ship, with a warn log on every request. Per-environment opt-in to enforcement.
+
+**`/api/factory-admin/verify/webhook` HMAC gate** in `factory-dashboard/server/telemetry.mjs`:
+- Reads raw bytes BEFORE JSON.parse so HMAC sees exactly what Verify-stg signed (avoids the canonicalisation gotchas that bite JSON-after-parse signing).
+- Calls `authorizeWebhookRequest`; on `!ok` → 401 with `{error, reason}` + Live Trace `🔒 Verify webhook: rejected — <reason>`.
+- On bypass (no secret) → warn log only; request continues.
+- On valid → parse JSON + continue with existing pipeline.
+
+**Smoke test** — `cognitive-engine/verify-integration/hmac.smoke.js`:
+- **31 assertions** across 11 scenarios covering computeHmacSignature (stable + matches direct crypto + throws on empty/missing secret); verifyHmacSignature (happy path + 8 failure modes including same-length-different-bytes which exercises the constant-time compare); Buffer-vs-string body equivalence; authorizeWebhookRequest (dev bypass when secret unset, dev bypass on empty-string secret, missing header, empty header, bad signature, valid signature); HMAC_HEADER_NAME case.
+- All pass.
+
+**Why HMAC-SHA256 (not JWT, not OAuth)** — D218:
+- Matches industry convention (Slack / Stripe / GitHub use HMAC-SHA256 for webhook signing); saves Verify-side signer work.
+- No issuance / rotation infrastructure at v0.0.1; rotate by editing one env var on each side. Phase 22 (Action Boundary Enforcement, v2→v3) replaces with proper signer + key rotation.
+
+## What stays for full 9-B close-out
+
+- **Real `createHttpClient()` activation** — needs `VERIFY_URL` env + `auth_token` from Key Console; client.js already has the hooks
+- **Multi-app mode** in the Verify portal itself (Verify-stg-side work — not factory-side)
+- **Auto-executed fix cycle** — today the route is planned + logged; full 9-B walks the route into the appropriate agent (Spock/Tuvok/Data/Picard) automatically and re-runs the affected pipeline node via the Phase 14-B queue. Requires OpenRouter credit + the per-project working dir already provided by Phase 14-A.
 
 ---
 

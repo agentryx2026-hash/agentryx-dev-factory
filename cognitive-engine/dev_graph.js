@@ -1,7 +1,8 @@
 import { StateGraph, Annotation, END } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
-import { fileReadTool, fileWriteTool, fileListTool, terminalTool, gitTool, broadcastTelemetry, broadcastWorkItem, setProjectDir, getProjectDir, readTemplate, cleanProjectForDev } from "./tools.js";
+import { fileReadTool, fileWriteTool, fileListTool } from "./tool-selector.js"; // Phase 5-B: USE_MCP_TOOLS-aware
+import { terminalTool, gitTool, broadcastTelemetry, broadcastWorkItem, setProjectDir, getProjectDir, readTemplate, cleanProjectForDev } from "./tools.js";
 import 'dotenv/config';
 
 /* ═══════════════════════════════════════════════════════════
@@ -12,6 +13,13 @@ import 'dotenv/config';
    → Tuvok(QA) → Data(review) ⇄ Torres(fix)
    → Crusher(B1+B2+B5) → O'Brien(B9+git+deploy)
    ═══════════════════════════════════════════════════════════ */
+
+// Phase 8-B — flag check at module load. When ON, dev_graph runs tuvok
+// and data in parallel after torres (both consume codeOutput; tuvok
+// writes qaReport, data writes architectReview — disjoint writes are
+// safe under last-write-wins reducers because each field has exactly
+// one writer). See D222 + parallel/README.md.
+const USE_PARALLEL_DEV_GRAPH = process.env.USE_PARALLEL_DEV_GRAPH === 'true';
 
 // ── 1. STATE SCHEMA ──────────────────────────────────────
 const FactoryState = Annotation.Root({
@@ -30,6 +38,15 @@ const FactoryState = Annotation.Root({
   _taskId: Annotation({ reducer: (a, b) => b ?? a }),
   _taskName: Annotation({ reducer: (a, b) => b ?? a }),
   _projectDir: Annotation({ reducer: (a, b) => b ?? a }),
+  // Phase 8-B parallel-mode field. Tracks which of the parallel review
+  // branches have reported in. Uses dedupeBranchSet reducer (concatenation
+  // with duplicate removal) so concurrent writes from tuvok + data merge
+  // cleanly rather than clobbering each other. Sequential mode leaves
+  // this empty — no behavioural difference there.
+  branchesCompleted: Annotation({
+    reducer: (a = [], b = []) => Array.from(new Set([...(a || []), ...(b || [])])),
+    default: () => [],
+  }),
 });
 
 import { AntigravityBridgeLLM } from './AntigravityBridgeLLM.js';
@@ -271,7 +288,17 @@ RECOMMENDATION: DEPLOY or SEND_BACK_TO_TORRES`),
   const fullReport = testResponse.content + `\n\nACTUAL TEST RUN OUTPUT:\n${testRunOutput}`;
 
   await broadcastTelemetry('tuvok', 3, 'idle', `QA complete. ${testFiles.length} test files. Verdict issued.`);
-  return { qaReport: fullReport, testOutput: testRunOutput, currentAgent: 'data' };
+  // Under USE_PARALLEL_DEV_GRAPH, tuvok and data run in parallel after
+  // torres; both report into branchesCompleted so the join node can
+  // gate on both. Under sequential mode the next-hop is 'data' as
+  // before; the branchesCompleted append is a harmless no-op
+  // (sequential goes tuvok → data directly).
+  return {
+    qaReport: fullReport,
+    testOutput: testRunOutput,
+    currentAgent: USE_PARALLEL_DEV_GRAPH ? 'join_review' : 'data',
+    branchesCompleted: ['tuvok'],
+  };
 }
 
 // DATA — Sr. Architect / Code Review
@@ -289,25 +316,49 @@ async function dataNode(state) {
     } catch (e) { /* skip */ }
   }
 
+  // Phase 8-B: under parallel mode data runs concurrently with tuvok,
+  // so qaReport may not be available yet when data starts. Either way
+  // we hand the LLM whatever's in state — empty in parallel, populated
+  // in sequential. The routeAfterReview router downstream is the canonical
+  // combiner of both verdicts (it already reads state.architectReview
+  // AND state.qaReport), so data's prompt being qa-aware vs qa-blind
+  // doesn't change the loop-or-deploy decision shape.
+  const qaSection = state.qaReport && state.qaReport.length > 0
+    ? `TUVOK QA REPORT:\n${state.qaReport.substring(0, 2000)}`
+    : `(QA report not yet available — review code architecture only; verdict will be combined with Tuvok's by the router.)`;
+
   const response = await codeModel.invoke([
     new SystemMessage(`You are Data, senior architect at Agentryx AI Labs.
-Review the code AND test results together. Evaluate:
+Review the code${state.qaReport ? ' AND test results together' : ''}. Evaluate:
 1. Correctness — Does code fulfill the spec?
 2. Architecture — Is structure clean and maintainable?
 3. Security — Any vulnerabilities?
-4. Test quality — Are Tuvok's tests thorough?
-5. Production-readiness — Error handling, edge cases, logging?
+${state.qaReport ? '4. Test quality — Are Tuvok\'s tests thorough?\n5. Production-readiness — Error handling, edge cases, logging?' : '4. Production-readiness — Error handling, edge cases, logging?'}
 
 Output:
 VERDICT: APPROVED or NEEDS_FIX
 ISSUES: (list or "None")
 SUGGESTIONS: (improvement ideas)
 OVERALL_CONFIDENCE: (0.0 to 1.0)`),
-    new HumanMessage(`SPEC:\n${state.triageSpec}\n\nCODE:\n${codeContent}\n\nTUVOK QA REPORT:\n${state.qaReport?.substring(0, 2000)}`)
+    new HumanMessage(`SPEC:\n${state.triageSpec}\n\nCODE:\n${codeContent}\n\n${qaSection}`)
   ]);
 
   await broadcastTelemetry('data', 4, 'idle', `Architecture review complete.`);
-  return { architectReview: response.content, currentAgent: 'route_after_review' };
+  return {
+    architectReview: response.content,
+    currentAgent: USE_PARALLEL_DEV_GRAPH ? 'join_review' : 'route_after_review',
+    branchesCompleted: ['data'],
+  };
+}
+
+// JOIN_REVIEW (Phase 8-B parallel only) — fan-in marker after tuvok + data.
+// No LLM call, no extra state mutation; LangGraph naturally waits for all
+// predecessors to complete before invoking this node, which gives us the
+// barrier semantics. routeAfterReview reads both verdicts as usual.
+async function joinReviewNode(state) {
+  const branches = (state.branchesCompleted || []).sort().join(', ');
+  await broadcastTelemetry('data', 4, 'idle', `🔀 Parallel review complete — branches: ${branches}`);
+  return { currentAgent: 'route_after_review' };
 }
 
 // CRUSHER — Documentation: B1 API Reference + B2 Dev Docs + B5 Training Guide
@@ -453,22 +504,51 @@ function routeAfterReview(state) {
 
 // ── 5. BUILD THE GRAPH ───────────────────────────────────
 
-const workflow = new StateGraph(FactoryState)
+// Phase 8-B — flag-gated topology selection.
+//   Default (sequential): jane → spock → torres → tuvok → data → (route)
+//   USE_PARALLEL_DEV_GRAPH=true:
+//                          jane → spock → torres → [tuvok, data]
+//                                                       │
+//                                                       ▼
+//                                                  join_review → (route)
+// In parallel mode LangGraph fan-outs torres → tuvok and torres → data
+// simultaneously and waits for both to complete before invoking
+// join_review. Sequential mode is unchanged from prior behaviour.
+const baseWorkflow = new StateGraph(FactoryState)
   .addNode('jane', janeNode)
   .addNode('spock', spockNode)
   .addNode('torres', torresNode)
   .addNode('tuvok', tuvokNode)
   .addNode('data', dataNode)
   .addNode('crusher', crusherNode)
-  .addNode('obrien', obrienNode)
-  .addEdge('__start__', 'jane')
-  .addEdge('jane', 'spock')
-  .addEdge('spock', 'torres')
-  .addEdge('torres', 'tuvok')
-  .addEdge('tuvok', 'data')
-  .addConditionalEdges('data', routeAfterReview, { torres: 'torres', crusher: 'crusher' })
-  .addEdge('crusher', 'obrien')
-  .addEdge('obrien', '__end__');
+  .addNode('obrien', obrienNode);
+
+let workflow;
+if (USE_PARALLEL_DEV_GRAPH) {
+  console.error('[dev_graph] USE_PARALLEL_DEV_GRAPH=true — fan-out topology (tuvok ∥ data after torres)');
+  workflow = baseWorkflow
+    .addNode('join_review', joinReviewNode)
+    .addEdge('__start__', 'jane')
+    .addEdge('jane', 'spock')
+    .addEdge('spock', 'torres')
+    .addEdge('torres', 'tuvok')      // fan-out edge 1
+    .addEdge('torres', 'data')       // fan-out edge 2 (parallel with tuvok)
+    .addEdge('tuvok', 'join_review') // join edge 1
+    .addEdge('data', 'join_review')  // join edge 2 — LangGraph waits for BOTH
+    .addConditionalEdges('join_review', routeAfterReview, { torres: 'torres', crusher: 'crusher' })
+    .addEdge('crusher', 'obrien')
+    .addEdge('obrien', '__end__');
+} else {
+  workflow = baseWorkflow
+    .addEdge('__start__', 'jane')
+    .addEdge('jane', 'spock')
+    .addEdge('spock', 'torres')
+    .addEdge('torres', 'tuvok')
+    .addEdge('tuvok', 'data')
+    .addConditionalEdges('data', routeAfterReview, { torres: 'torres', crusher: 'crusher' })
+    .addEdge('crusher', 'obrien')
+    .addEdge('obrien', '__end__');
+}
 
 export const factoryGraph = workflow.compile();
 

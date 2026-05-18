@@ -15,7 +15,41 @@
 | 16-A.5 | `training-gen/pipeline.js` — voiceover→storyboard ordering; isolates per-kind failures | ✅ done |
 | 16-A.6 | Smoke test — 102 assertions across 12 test groups | ✅ done — all pass |
 | 16-A.7 | `training-gen/README.md` + `USE_TRAINING_GEN` flag registered in admin-substrate | ✅ done |
-| 16-B | LLM generators + post-dev graph wiring + PMD + memory integration + Phase 6-A dual-write + Verify feedback | ⏳ DEFERRED |
+| 16-B Tier B | Register `training_gen` queue handler on Phase 14-A registry | ✅ done 2026-05-11 |
+| 16-B full | LLM generators + post-dev graph wiring + PMD + memory integration + Phase 6-A dual-write + Verify feedback | ⏳ DEFERRED |
+
+## Phase 16-B Tier B — what shipped (2026-05-11)
+
+**`cognitive-engine/concurrency/handlers/training-gen-handler.js`** (new, ~90 lines):
+- `registerTrainingGenHandler(registry, deps)` — registers `training_gen` kind on a Phase 14-A handler registry
+- Deps DI: `createTrainingStore` / `createGeneratorRegistry` / `runPipeline` (all from Phase 16-A); `defaultStoreRoot`; optional `onLog`
+- Payload contract: `{ project_id, ctx: ProjectContext, kinds?, perKindOpts?, store_root? }`
+- Return: `{ produced_count, errors_count, produced_ids, errors }`
+- Per-kind progress via `onLog` → telemetry Live Trace stream
+- Store-root resolution: `payload.store_root` → `deps.defaultStoreRoot` → `ctx.workingDir/_training-store` → throw
+
+**`bootQueueWorker` extension** in `factory-dashboard/server/telemetry.mjs`:
+- Lazy-imports the training-gen module alongside factory-handlers (fail-tolerant via `.catch(() => null)` — missing module doesn't break pipeline handlers)
+- Registers `training_gen` with the same Live Trace `onLog` shape as pipeline handlers
+- Default store root: `<QUEUE_WORKSPACE>/_training-store`
+
+**Smoke test** — `cognitive-engine/concurrency/handlers/training-gen-handler.smoke.js`:
+- **23 assertions** across 9 scenarios — registration; valid happy path (produced_count + errors_count + IDs + runPipeline-called-correctly + log markers); store-root resolution (payload override / default / workingDir-derived / throws when unresolvable); error preservation in return; dep validation
+- All pass; no real filesystem or generators needed (every dep stubbed)
+
+**Why a flag is NOT needed for the substrate**:
+- The handler is dormant until a job of kind `training_gen` is enqueued. Today no caller enqueues — post-dev graph still uses inline training-gen invocation. The registration is a *capability*, not a behaviour change.
+- Full 16-B will switch the post-dev graph to enqueue (same as Phase 21-B.2 did for the cadence daemon). At that point a `USE_TRAINING_GEN_QUEUE` flag may gate the switch — TBD when full 16-B opens.
+
+## What stays for full 16-B
+
+- **LLM-backed generators** swapped into the registry (replace template `voiceover_script` / `user_guide` etc. with LLM versions when OpenRouter cycle validates quality)
+- **Post-dev graph wiring** — currently the post-dev graph generates training artifacts inline. Full 16-B converts that to `queue.enqueue({ kind: 'training_gen', ... })` so:
+  - Cycles are crash-resilient (Phase 14-A lease timeout)
+  - Per-project quotas (D212) cap training-gen spend per customer
+  - Admin → Queue panel observes generation jobs
+- **Phase 6-A dual-write** — training artifacts flow into the artifact store so 7-E sync + 13-B replay see them
+- **Verify feedback hook** — when a user_note observation lands with `tags=["training_gen", "fix"]`, automatically enqueue a regeneration job
 
 ## What shipped
 

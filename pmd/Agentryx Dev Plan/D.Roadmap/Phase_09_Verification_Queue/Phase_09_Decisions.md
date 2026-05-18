@@ -51,3 +51,55 @@
 - **Retry is a 9-B or later concern.** 9-A captures the failure + logs; 9-B can add a retry queue if reliability warrants it.
 
 **Rejection case**: invalid feedback payloads (validation failures in `handleFeedback`) return `{ok: false, error}` so the eventual HTTP handler can respond 400. That's *payload-level* fail-closed, not *network-level*. Different problem, different semantics.
+
+## D213 — Webhook auth deferred; plan-don't-execute the fix route (added 2026-05-10)
+
+**What**: The Phase 9-B webhook substrate at `POST /api/factory-admin/verify/webhook` ships with two intentional deferrals:
+1. **No auth on the endpoint** — accepts any well-formed `FeedbackPayload`; HMAC verification against a shared secret is a full-9-B item.
+2. **Plans the fix route but does not execute it** — `handleFeedback` returns a `FixRoute` (`{lane, agent, reason}`); the webhook persists it, logs it, ships it back in the response, but does NOT invoke the agent automatically.
+
+**Why no auth (yet)**:
+- v0.0.1 single-VM single-founder: the telemetry server is bound to localhost-via-nginx; no external Verify-stg is calling it yet.
+- The Verify portal itself isn't deployed for multi-app mode yet; until that lands the webhook is a contract surface, not a production endpoint.
+- Adding HMAC now requires a shared-secret rotation story, a Key Console entry, and a Verify-side signer — all of which belong to the same coordinated 9-B remainder ship.
+- Auth IS required before any external Verify-stg deploy; this decision is "wait until there's something to authenticate," not "skip auth."
+
+**Why plan-don't-execute**:
+- The route depends on per-project context (project dir, last-known dev-graph state, OpenRouter credit) that the webhook doesn't currently load.
+- Auto-routing a `partial`/`fail` decision into a fresh `tuvok`/`spock`/`data` invocation is a meaningful spend without founder sign-off — better to surface the route in the UI and let the founder confirm-and-trigger via the existing Phase 14-B queue submit panel for now.
+- This matches D117's posture from 9-A: "Fix-cycle routing stubbed in 9-A, real in 9-B" — the substrate is here, the auto-invocation is the last 9-B mile.
+
+**Tradeoff**: a Verify reviewer who flags a fail today still requires founder action (one queue submit) before the fix cycle runs. Acceptable while real factory cycles cost real OpenRouter dollars; the auto-router lands once budget guardrails (Phase 14-B per-project quotas, just shipped via D212) are paired with an explicit `verify_auto_route: true` flag per project.
+
+## D214 — Append-only JSONL log for webhook audit (added 2026-05-10)
+
+**What**: Every webhook hit (success OR failure) appends one JSON record to `_factory_runtime/verify_feedback.jsonl`. The Verify panel reads the tail of this file to show "recent feedback."
+
+**Why JSONL over Postgres or in-memory**:
+- Matches Phase 11-A and Phase 14-A conventions: filesystem-first, observable via `tail -f`, no DB dependency.
+- Idempotent restart: telemetry can restart without losing the visible history.
+- Rotates trivially once it matters (`logrotate` or a Phase 14-A-style sweep — not needed at v0.0.1 volumes).
+
+**Why log failures too**: a 400 response from the webhook IS evidence — likely a Verify-side schema drift. Persisting the failure (with `ok: false, error`) puts it in the founder's UI alongside successes so contract regressions are caught early.
+
+## D218 — Webhook auth via HMAC-SHA256 + dev-mode bypass when secret unset (added 2026-05-11)
+
+**What**: Phase 9-B's `/api/factory-admin/verify/webhook` endpoint now verifies an `X-Verify-Signature` HMAC-SHA256 header against the raw request body and `process.env.VERIFY_WEBHOOK_SECRET`. When the secret is unset (or empty), verification is bypassed with a warn log — preserving the substrate's open-endpoint behaviour from the initial 9-B ship as an explicit opt-out.
+
+**Why HMAC-SHA256 (not JWT, not OAuth, not mTLS)**:
+- **Industry standard for webhooks**: Slack, Stripe, GitHub, Twilio all sign webhooks the same way. Matching the convention saves Verify-side signer work — copy any existing implementation.
+- **No issuance / rotation machinery at v0.0.1**: rotate by editing one env var on each side. JWT would need an issuer + key-rotation flow Phase 22 hasn't built yet. mTLS would need cert management infrastructure we don't have. HMAC is the minimum-machinery option that's still cryptographically sound.
+- **Constant-time compare via `crypto.timingSafeEqual`**: prevents timing-attack signature recovery.
+- **Phase 22 (Action Boundary Enforcement, v2→v3) replaces this** with proper signer + key rotation — HMAC here is the v0.0.1→v2 placeholder, not the final answer.
+
+**Why dev-mode bypass (no secret = open endpoint)**:
+- The initial 9-B substrate shipped intentionally open (D213) so the factory and Verify-stg could iterate the contract without coordinating secrets.
+- Forcing HMAC by default would mean every dev environment needs the secret set or the webhook breaks — annoying friction for legitimate exploration.
+- Opt-in to enforcement is the explicit choice: set the env var per-environment when ready. Staging-on / dev-off is a normal operational pattern.
+- Production should always have the secret set; the warn log on every bypass surfaces forgotten-secret incidents loudly.
+
+**Why raw-bytes-before-JSON.parse**:
+- HMAC signs bytes, not abstract JSON. JSON canonicalisation (key order, whitespace, escaping) silently differs between signers and verifiers; signing the raw payload bytes avoids that whole category of bug.
+- This is why Slack / Stripe / GitHub all sign the raw body, not a re-serialised version. Following the convention exactly.
+
+**Tradeoff acknowledged**: the dev-mode bypass creates a "warn-then-allow" path that a careless operator could miss in logs. Mitigation: the warn log fires on every request (loud, hard to ignore); the Verify panel in Admin · Configuration could surface "last X requests bypassed auth" in a future ship if it becomes a real concern.

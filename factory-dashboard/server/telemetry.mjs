@@ -70,6 +70,152 @@ function pickDispatcher(A, dispatcherKey) {
   return A.createStubDispatcher();
 }
 
+// ─── Phase 14-B Tier B — factory queue worker boot ──────────────────────
+// Runs alongside the architect cadence daemon. Polls the Phase 14-A
+// queue (under <repo>/_jobs/) for jobs of kind pre_dev / dev / post_dev,
+// leases them, dispatches via the registered handlers (each spawns the
+// corresponding graph subprocess). Round-robin fairness across project_id
+// shields multi-project queues from head-of-line blocking.
+//
+// `runSchedulerOnce({ drainOnly: false })` runs a long-lived worker loop
+// that polls every 50ms when idle. We start it in the background and
+// don't await — telemetry server stays responsive while jobs flow.
+let queueWorkerStarted = false;
+const QUEUE_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+async function bootQueueWorker() {
+  if (queueWorkerStarted) return;
+  queueWorkerStarted = true;
+  try {
+    const [
+      queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod,
+      trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod,
+      videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
+    ] = await Promise.all([
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'architect-handler.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-gen-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-video-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'providers', 'registry.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
+    ]);
+    const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+
+    // Phase 14-B orphan reaper (D223) — on every telemetry boot, scan
+    // _jobs/in-flight/ for jobs whose lease is older than LEASE_TIMEOUT_MS
+    // (default 30 min). Stale ones are re-failed → existing fail()
+    // machinery requeues or moves to failed/ based on max_attempts.
+    // Fail-open: a reaper error must NEVER block worker boot.
+    try {
+      const reaperMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'orphan-reaper.js')).href);
+      const reapResult = await reaperMod.reapOrphans({
+        queue,
+        logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+      });
+      if (reapResult.scanned > 0 || reapResult.reaped > 0) {
+        const summary = `🩹 Orphan reaper: scanned=${reapResult.scanned} reaped=${reapResult.reaped} (requeued=${reapResult.requeued_ids.length} failed=${reapResult.failed_ids.length}) kept=${reapResult.kept}${reapResult.errors.length ? ` errors=${reapResult.errors.length}` : ''}`;
+        console.log(summary);
+        if (reapResult.reaped > 0) {
+          try { addLog('system', summary); broadcast(); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[queue.worker] orphan reaper failed (continuing):', err?.message || err);
+    }
+
+    const registry = registryMod.createHandlerRegistry();
+    handlersMod.registerFactoryHandlers(registry, {
+      onLog: (kind, line, jobId) => {
+        // Pipe job output into the existing Live Trace SSE stream so
+        // the Dev-Hub sidebar shows pipeline activity.
+        try { addLog('system', `[queue:${kind}:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+      },
+    });
+
+    // Phase 21-B.2 — architect_research handler.
+    try {
+      const A = await loadArchitect();
+      const archKb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
+      const archProposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+      archHandlerMod.registerArchitectResearchHandler(registry, {
+        A,
+        kb: archKb,
+        proposalStore: archProposalStore,
+        pickDispatcher,
+        onReportProduced: (report) => {
+          try {
+            addLog('system', `👑 Architect cycle report ready (via queue): ${report.id} (${report.cadence})`);
+            broadcast();
+          } catch {}
+        },
+      });
+    } catch (err) {
+      console.warn('[queue.worker] architect_research handler not registered:', err?.message || err);
+    }
+
+    // Phase 16-B Tier B — training_gen handler.
+    if (trainingGenHandlerMod && trainingGenStoreMod && trainingGenRegistryMod && trainingGenPipelineMod) {
+      try {
+        trainingGenHandlerMod.registerTrainingGenHandler(registry, {
+          createTrainingStore: trainingGenStoreMod.createTrainingStore,
+          createGeneratorRegistry: trainingGenRegistryMod.createGeneratorRegistry,
+          runPipeline: trainingGenPipelineMod.runPipeline,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_training-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_gen:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_gen handler not registered:', err?.message || err);
+      }
+    }
+
+    // Phase 17-B Tier B — training_video_render handler. Same pattern.
+    // All-null provider defaults (substrate at $0); real ElevenLabs/
+    // Puppeteer/ffmpeg become opt-in per-job via payload.providerChoice.
+    if (videoHandlerMod && videoStoreMod && videoProviderRegistryMod && videoPipelineMod) {
+      try {
+        videoHandlerMod.registerTrainingVideoRenderHandler(registry, {
+          createVideoStore: videoStoreMod.createVideoStore,
+          createProviderRegistry: videoProviderRegistryMod.createProviderRegistry,
+          renderFromPhase17Payload: videoPipelineMod.renderFromPhase17Payload,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_videos-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_video_render:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_video_render handler not registered:', err?.message || err);
+      }
+    }
+
+    // drainOnly: false → keeps the worker loop alive forever, polling.
+    // parallelism: 2 → up to 2 concurrent graph spawns. Matches Phase
+    // 14-A defaults; tunable via cadenceConfig if/when 14-B exposes it.
+    schedulerMod.runSchedulerOnce({
+      queue,
+      registry,
+      workspaceRoot: QUEUE_WORKSPACE,
+      drainOnly: false,
+      config: { parallelism: 2, policy: 'round_robin', poll_interval_ms: 1000 },
+    }).catch(err => {
+      console.error('[queue.worker] crashed:', err);
+      queueWorkerStarted = false;
+    });
+
+    console.log(`📥 Queue worker started — kinds: ${registry.list().join(', ')} · workspace: ${QUEUE_WORKSPACE}`);
+  } catch (err) {
+    console.error('[queue.worker] boot failed:', err);
+    queueWorkerStarted = false;
+  }
+}
+
 // ─── Architect cadence daemon ─────────────────────────────────────────────
 // Boots once on telemetry startup. Each tick reads Standing Orders and fires
 // any cadence whose configured local time/day matches the current minute.
@@ -88,6 +234,27 @@ async function bootCadenceDaemon() {
       recordCadenceFire:  (k, p) => kb.recordCadenceFire(k, p),
       lastCadenceFire:    (k)    => kb.lastCadenceFire(k),
       runCadencePass: async (cadenceKind, cadenceConfig) => {
+        // Phase 21-B.2 — when USE_ARCHITECT_QUEUE=true, the daemon
+        // enqueues the cycle as an architect_research job instead of
+        // running it inline.
+        if (process.env.USE_ARCHITECT_QUEUE === 'true') {
+          try {
+            const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+            const q = queueMod.createQueue(QUEUE_WORKSPACE);
+            const job = await q.enqueue({
+              kind: 'architect_research',
+              project_id: 'architect',
+              payload: { cadence_kind: cadenceKind, cadence_config: cadenceConfig },
+              priority: 30,
+              max_attempts: 1,
+            });
+            addLog('system', `📅 Architect cadence ${cadenceKind} enqueued as ${job.id} (queue mode)`);
+            broadcast();
+            return { pass: { id: `queued:${job.id}`, queued: true, completed_at: new Date().toISOString() } };
+          } catch (err) {
+            console.error(`[architect.daemon] enqueue failed for ${cadenceKind}, falling back to inline:`, err?.message || err);
+          }
+        }
         // For each cadence we run a fresh architect.runPass with the
         // cadence's own dispatcher + budget. The pass label IS the cadence
         // kind so listPasses({pass_kind:"weekly"}) groups cycle reports.
@@ -191,6 +358,10 @@ async function readRequestBody(req) {
 // new values immediately.
 const RUNTIME_DIR = path.join(REPO_ROOT, '_factory_runtime');
 const FLAG_OVERRIDES_FILE = path.join(RUNTIME_DIR, 'flag_overrides.json');
+// Phase 9-B substrate — append-only audit log of feedback webhook hits.
+// Read by GET /api/factory-admin/verify/state (tail of the JSONL) so the
+// Verify panel can show a "recent feedback" list alongside the bundle list.
+const VERIFY_FEEDBACK_LOG = path.join(RUNTIME_DIR, 'verify_feedback.jsonl');
 
 function loadFlagOverrides() {
   try { return JSON.parse(fs.readFileSync(FLAG_OVERRIDES_FILE, 'utf-8')); } catch { return {}; }
@@ -1113,11 +1284,20 @@ const server = http.createServer((req, res) => {
         ]);
         const client = getVerifyClient();
         const recent_bundles = typeof client._inspectStore === 'function' ? client._inspectStore() : [];
+        // Phase 9-B substrate — tail the feedback log (append-only JSONL).
+        let recent_feedback = [];
+        try {
+          const raw = fs.readFileSync(VERIFY_FEEDBACK_LOG, 'utf-8');
+          recent_feedback = raw.split('\n').filter(Boolean).slice(-20).map(line => {
+            try { return JSON.parse(line); } catch { return null; }
+          }).filter(Boolean).reverse();
+        } catch { /* file may not exist yet — fine, empty list */ }
         return jsonResponse(res, 200, {
           enabled: verifyEnabled(),
           flag_required: 'USE_VERIFY_INTEGRATION',
           client_kind: client.kind,
           verify_url: process.env.VERIFY_URL || null,
+          webhook_url: `${process.env.PUBLIC_TELEMETRY_BASE || ''}/api/factory-admin/verify/webhook`,
           review_decisions: [...REVIEW_DECISIONS],
           recent_bundles: recent_bundles.slice(-20).map(b => ({
             build_id: b.build_id,
@@ -1125,12 +1305,108 @@ const server = http.createServer((req, res) => {
             received_at: b.received_at,
             seq: b.seq,
           })),
+          recent_feedback,
           note: client.kind === 'mock'
-            ? 'Mock client active — bundles publish to an in-memory store (resets on telemetry restart). Real Verify portal requires VERIFY_URL + auth_token (Phase 9-B).'
-            : 'HTTP client active.',
+            ? 'Mock client active — bundles publish to an in-memory store (resets on telemetry restart). Real Verify portal requires VERIFY_URL + auth_token (Phase 9-B). Webhook is live: POST to /api/factory-admin/verify/webhook with a FeedbackPayload.'
+            : 'HTTP client active. Webhook live at /api/factory-admin/verify/webhook.',
         });
       } catch (err) {
         console.error('[factory-admin/verify/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // ─── Phase 9-B substrate — Verify portal feedback webhook ───────────
+  // POST body: FeedbackPayload + optional project_id. HMAC-verified
+  // when VERIFY_WEBHOOK_SECRET is set; dev-bypass when unset (warn).
+  // Writes user_note observation + plans FixRoute + appends JSONL.
+  if (req.url === '/api/factory-admin/verify/webhook' && req.method === 'POST') {
+    (async () => {
+      try {
+        // Phase 9-B HMAC verification (D218). Read raw bytes first so
+        // the HMAC sees exactly what Verify-stg signed.
+        const rawBytes = await new Promise((resolve, reject) => {
+          const chunks = [];
+          req.on('data', c => chunks.push(c));
+          req.on('end', () => resolve(Buffer.concat(chunks)));
+          req.on('error', reject);
+        });
+
+        const hmacMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'hmac.js')).href);
+        const auth = hmacMod.authorizeWebhookRequest(
+          rawBytes,
+          req.headers[hmacMod.HMAC_HEADER_NAME],
+          process.env.VERIFY_WEBHOOK_SECRET
+        );
+        if (!auth.ok) {
+          addLog('system', `🔒 Verify webhook: rejected — ${auth.reason}`);
+          broadcast();
+          return jsonResponse(res, 401, { error: 'webhook authorization failed', reason: auth.reason });
+        }
+        if (auth.bypassed) {
+          console.warn('[verify/webhook]', auth.warning);
+        }
+
+        let body;
+        try { body = rawBytes.length ? JSON.parse(rawBytes.toString('utf-8')) : {}; }
+        catch (parseErr) { return jsonResponse(res, 400, { error: `invalid JSON: ${parseErr.message}` }); }
+        const project_id = body.project_id || 'unknown';
+
+        const [typesMod, recvMod, memMod] = await Promise.all([
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'types.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'verify-integration', 'feedback-receiver.js')).href),
+          import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'service.js')).href),
+        ]);
+
+        const { project_id: _drop, ...payload } = body;
+        const vErr = typesMod.validateFeedbackPayload(payload);
+        if (vErr) return jsonResponse(res, 400, { error: vErr });
+
+        const memory = memMod.getMemoryService();
+        const result = await recvMod.handleFeedback(payload, { memory, projectId: project_id });
+
+        // Audit log — every hit, success or failure.
+        try {
+          fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+          const record = {
+            received_at: new Date().toISOString(),
+            project_id,
+            build_id: payload.build_id,
+            decision: payload.decision,
+            reviewer: payload.reviewer,
+            review_item_id: payload.review_item_id || null,
+            comments_preview: (payload.comments || '').slice(0, 200),
+            ok: result.ok,
+            route_lane: result.route?.lane || null,
+            route_agent: result.route?.agent || null,
+            observation_id: result.observation_id || null,
+            error: result.error || null,
+          };
+          fs.appendFileSync(VERIFY_FEEDBACK_LOG, JSON.stringify(record) + '\n');
+        } catch (logErr) {
+          console.warn('[verify/webhook] feedback log append failed:', logErr?.message || logErr);
+        }
+
+        if (!result.ok) {
+          addLog('system', `⚠️ Verify webhook: ${payload.build_id} → ${result.error}`);
+          broadcast();
+          return jsonResponse(res, 400, { error: result.error });
+        }
+
+        const lane = result.route?.lane || 'none';
+        const agent = result.route?.agent ? ` → ${result.route.agent}` : '';
+        addLog('system', `✅ Verify webhook: ${payload.build_id} (${payload.decision}) by ${payload.reviewer} → lane=${lane}${agent}`);
+        broadcast();
+        return jsonResponse(res, 200, {
+          ok: true,
+          observation_id: result.observation_id,
+          route: result.route,
+          router_result: result.router_result,
+        });
+      } catch (err) {
+        console.error('[factory-admin/verify/webhook]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
       }
     })();
@@ -1363,12 +1639,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Phase 13-B full — execute a replay via the LLM-stub.
-  // POST body: {
-  //   replay_from_artifact_id: string,                  // required
-  //   substitutions?: Record<originalId, replacementId>,
-  //   dispatcher?: "stub" | "sonnet" | "opus",          // defaults "stub"
-  //   project_dir?: string,                             // defaults inferred from snapshot
-  // }
+  // POST body: { replay_from_artifact_id, substitutions?, dispatcher?, project_dir? }
   // Returns: ReplayResult { ok, new_run_id, new_artifact_ids, produced, duration_ms, error? }
   if (req.url?.match(/^\/api\/factory-admin\/replay\/runs\/([^/]+)\/execute$/) && req.method === 'POST') {
     (async () => {
@@ -1395,11 +1666,6 @@ const server = http.createServer((req, res) => {
           return jsonResponse(res, 400, { error: 'plan empty — replay_from_artifact_id not found in snapshot' });
         }
 
-        // LLM dispatcher selection. Default = stub (no spend); founder
-        // opts into real LLM via body.dispatcher="sonnet"|"opus". Falls
-        // back to stub silently if architect's LLM dispatcher isn't
-        // available (e.g. llm-router missing) — substrate must not
-        // block replay because of LLM infra failure.
         const dispatcherKey = body.dispatcher || 'stub';
         let llmCall;
         if (dispatcherKey === 'stub') {
@@ -1435,9 +1701,6 @@ const server = http.createServer((req, res) => {
         }
 
         const nodeStubs = llmStubMod.createLLMNodeStubsForPlan(plan, snapshot, { llmCall });
-
-        // Project dir for writes: the original artifact's project_id
-        // resolved to a workspace path. snapshot includes project_id.
         const projectDir = body.project_dir || (snapshot.project_id ? path.join(AGENT_WORKSPACE, snapshot.project_id) : null);
         if (!projectDir) return jsonResponse(res, 400, { error: 'project_dir not resolvable' });
 
@@ -1498,6 +1761,62 @@ const server = http.createServer((req, res) => {
         return jsonResponse(res, 200, { modules, stats });
       } catch (err) {
         console.error('[factory-admin/modules]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // Phase 14-B Tier B — submit a job into the queue.
+  // Body: { kind: 'pre_dev'|'dev'|'post_dev', project_id: string, payload?: {...}, priority?: number }
+  // Worker (booted at telemetry startup) leases + dispatches via the
+  // handler registry. Founder watches Admin → Queue panel for state.
+  if (req.url === '/api/factory-admin/queue/submit' && req.method === 'POST') {
+    (async () => {
+      try {
+        const body = await readRequestBody(req);
+        const kind = body.kind;
+        const project_id = body.project_id;
+        if (!kind || !project_id) {
+          return jsonResponse(res, 400, { error: 'body.kind and body.project_id required' });
+        }
+        const VALID_KINDS = new Set(['pre_dev', 'dev', 'post_dev']);
+        if (!VALID_KINDS.has(kind)) {
+          return jsonResponse(res, 400, { error: `kind must be one of ${[...VALID_KINDS].join(', ')}` });
+        }
+        // Phase 14-B per-project quota gate. Reads configs/cost-thresholds.json
+        // and refuses if the project has hit its daily/monthly hard_cap_usd
+        // (or the global cap). Implicit pass when no matching threshold exists.
+        try {
+          const { checkProjectQuota } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'cost-tracker', 'project-quota.js')).href);
+          const quota = await checkProjectQuota({ project_id, workspaceRoot: QUEUE_WORKSPACE });
+          if (!quota.ok) {
+            addLog('system', `🚫 Queue: refused ${kind} for "${project_id}" — quota breached (${quota.breach.key} ${quota.breach.window} $${quota.breach.current_usd.toFixed(2)} / $${quota.breach.hard_cap_usd.toFixed(2)})`);
+            broadcast();
+            return jsonResponse(res, 429, { error: 'quota exceeded', breach: quota.breach });
+          }
+        } catch (qErr) {
+          // Fail-open: a broken quota check should never block the queue.
+          // The breach (if any) will resurface on the next submission once
+          // thresholds.json is fixed.
+          console.warn('[factory-admin/queue/submit] quota check skipped:', qErr?.message || qErr);
+        }
+        const { createQueue } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+        const queue = createQueue(QUEUE_WORKSPACE);
+        const job = await queue.enqueue({
+          project_id,
+          kind,
+          payload: body.payload || {},
+          priority: body.priority ?? 50,
+          max_attempts: body.max_attempts ?? 3,
+        });
+        addLog('system', `📥 Queue: enqueued ${kind} job ${job.id} for project "${project_id}"`);
+        broadcast();
+        // Make sure the worker is running (idempotent). Don't await — fire and forget.
+        bootQueueWorker().catch(() => {});
+        return jsonResponse(res, 200, { ok: true, job });
+      } catch (err) {
+        console.error('[factory-admin/queue/submit]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
       }
     })();
@@ -1947,4 +2266,54 @@ server.listen(PORT, '0.0.0.0', () => {
   // Phase 21-A.1 — boot the architect cadence daemon. Failures are
   // logged but don't crash the telemetry server (architect is optional).
   bootCadenceDaemon().catch(err => console.error('[architect.daemon] boot error:', err));
+  // Phase 14-B Tier B — boot the queue worker so jobs of kind
+  // pre_dev/dev/post_dev get processed automatically.
+  bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
+
+// Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
+// disconnect any cached MCP subprocesses before the Node process exits.
+// Without this, leaving USE_MCP_TOOLS=true long-term leaks subprocesses
+// on every restart cycle. Best-effort: a 5-second deadline prevents a
+// hung MCP server from delaying graceful shutdown indefinitely.
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n📡 ${signal} received — shutting down telemetry…`);
+
+  try {
+    // Lazy import so the shutdown hook doesn't pin the MCP module
+    // into the boot path if it's broken or missing.
+    //
+    // Relative ESM path keeps this independent of pathToFileURL +
+    // REPO_ROOT (both introduced by this same #42 ship); either form
+    // would work now, but the relative path is cheaper to reason about.
+    const mcpClient = await import('../../cognitive-engine/mcp/client.js');
+    if (typeof mcpClient.disconnectAll === 'function') {
+      await Promise.race([
+        mcpClient.disconnectAll(),
+        new Promise((resolve) => setTimeout(resolve, 5000)), // 5s deadline
+      ]);
+      console.log('📡 MCP connections closed.');
+    }
+  } catch (err) {
+    console.warn('[shutdown] MCP disconnect failed (continuing):', err?.message || err);
+  }
+
+  // Close the HTTP server so in-flight requests can finish (with a
+  // short grace period before forcibly exiting).
+  server.close(() => {
+    console.log('📡 HTTP server closed.');
+    process.exit(0);
+  });
+  // Hard exit after 8s total — well within typical systemd
+  // TimeoutStopSec=10 — so a stuck client request can't hold us forever.
+  setTimeout(() => {
+    console.warn('📡 Forcing exit after grace period.');
+    process.exit(0);
+  }, 8000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
