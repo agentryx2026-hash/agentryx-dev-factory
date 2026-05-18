@@ -86,17 +86,41 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod, trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod] = await Promise.all([
+    const [queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod, trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'factory-handlers.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'architect-handler.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-gen-handler.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
+
+    // Phase 14-B orphan reaper (D223) — on every telemetry boot, scan
+    // _jobs/in-flight/ for jobs whose lease is older than LEASE_TIMEOUT_MS
+    // (default 30 min). Stale ones are re-failed → existing fail()
+    // machinery requeues or moves to failed/ based on max_attempts.
+    // Fail-open: a reaper error must NEVER block worker boot.
+    try {
+      const reaperMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'orphan-reaper.js')).href);
+      const reapResult = await reaperMod.reapOrphans({
+        queue,
+        logger: { info: (m) => console.log(m), warn: (m) => console.warn(m) },
+      });
+      if (reapResult.scanned > 0 || reapResult.reaped > 0) {
+        const summary = `🩹 Orphan reaper: scanned=${reapResult.scanned} reaped=${reapResult.reaped} (requeued=${reapResult.requeued_ids.length} failed=${reapResult.failed_ids.length}) kept=${reapResult.kept}${reapResult.errors.length ? ` errors=${reapResult.errors.length}` : ''}`;
+        console.log(summary);
+        if (reapResult.reaped > 0) {
+          try { addLog('system', summary); broadcast(); } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[queue.worker] orphan reaper failed (continuing):', err?.message || err);
+    }
+
     const registry = registryMod.createHandlerRegistry();
     handlersMod.registerFactoryHandlers(registry, {
       onLog: (kind, line, jobId) => {
@@ -106,11 +130,28 @@ async function bootQueueWorker() {
       },
     });
 
-    // Phase 16-B Tier B — training_gen handler. Registered on the same
-    // registry so post-dev graphs (today) and Verify auto-fix (full 9-B)
-    // can both enqueue training-artifact generation. Substrate uses
-    // Phase 16-A's template generators; LLM-backed generators land via
-    // the same DI seam when OpenRouter cycle validates parity.
+    // Phase 21-B.2 — architect_research handler.
+    try {
+      const A = await loadArchitect();
+      const archKb = A.createKnowledgeBase(ARCHITECT_KB_ROOT);
+      const archProposalStore = A.createProposalStore(ARCHITECT_KB_ROOT);
+      archHandlerMod.registerArchitectResearchHandler(registry, {
+        A,
+        kb: archKb,
+        proposalStore: archProposalStore,
+        pickDispatcher,
+        onReportProduced: (report) => {
+          try {
+            addLog('system', `👑 Architect cycle report ready (via queue): ${report.id} (${report.cadence})`);
+            broadcast();
+          } catch {}
+        },
+      });
+    } catch (err) {
+      console.warn('[queue.worker] architect_research handler not registered:', err?.message || err);
+    }
+
+    // Phase 16-B Tier B — training_gen handler.
     if (trainingGenHandlerMod && trainingGenStoreMod && trainingGenRegistryMod && trainingGenPipelineMod) {
       try {
         trainingGenHandlerMod.registerTrainingGenHandler(registry, {
@@ -166,6 +207,27 @@ async function bootCadenceDaemon() {
       recordCadenceFire:  (k, p) => kb.recordCadenceFire(k, p),
       lastCadenceFire:    (k)    => kb.lastCadenceFire(k),
       runCadencePass: async (cadenceKind, cadenceConfig) => {
+        // Phase 21-B.2 — when USE_ARCHITECT_QUEUE=true, the daemon
+        // enqueues the cycle as an architect_research job instead of
+        // running it inline.
+        if (process.env.USE_ARCHITECT_QUEUE === 'true') {
+          try {
+            const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
+            const q = queueMod.createQueue(QUEUE_WORKSPACE);
+            const job = await q.enqueue({
+              kind: 'architect_research',
+              project_id: 'architect',
+              payload: { cadence_kind: cadenceKind, cadence_config: cadenceConfig },
+              priority: 30,
+              max_attempts: 1,
+            });
+            addLog('system', `📅 Architect cadence ${cadenceKind} enqueued as ${job.id} (queue mode)`);
+            broadcast();
+            return { pass: { id: `queued:${job.id}`, queued: true, completed_at: new Date().toISOString() } };
+          } catch (err) {
+            console.error(`[architect.daemon] enqueue failed for ${cadenceKind}, falling back to inline:`, err?.message || err);
+          }
+        }
         // For each cadence we run a fresh architect.runPass with the
         // cadence's own dispatcher + budget. The pass label IS the cadence
         // kind so listPasses({pass_kind:"weekly"}) groups cycle reports.
@@ -1989,3 +2051,50 @@ server.listen(PORT, '0.0.0.0', () => {
   // pre_dev/dev/post_dev get processed automatically.
   bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
+
+// Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
+// disconnect any cached MCP subprocesses before the Node process exits.
+// Without this, leaving USE_MCP_TOOLS=true long-term leaks subprocesses
+// on every restart cycle. Best-effort: a 5-second deadline prevents a
+// hung MCP server from delaying graceful shutdown indefinitely.
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n📡 ${signal} received — shutting down telemetry…`);
+
+  try {
+    // Lazy import so the shutdown hook doesn't pin the MCP module
+    // into the boot path if it's broken or missing.
+    //
+    // Relative ESM path keeps this independent of pathToFileURL +
+    // REPO_ROOT (both introduced by this same #42 ship); either form
+    // would work now, but the relative path is cheaper to reason about.
+    const mcpClient = await import('../../cognitive-engine/mcp/client.js');
+    if (typeof mcpClient.disconnectAll === 'function') {
+      await Promise.race([
+        mcpClient.disconnectAll(),
+        new Promise((resolve) => setTimeout(resolve, 5000)), // 5s deadline
+      ]);
+      console.log('📡 MCP connections closed.');
+    }
+  } catch (err) {
+    console.warn('[shutdown] MCP disconnect failed (continuing):', err?.message || err);
+  }
+
+  // Close the HTTP server so in-flight requests can finish (with a
+  // short grace period before forcibly exiting).
+  server.close(() => {
+    console.log('📡 HTTP server closed.');
+    process.exit(0);
+  });
+  // Hard exit after 8s total — well within typical systemd
+  // TimeoutStopSec=10 — so a stuck client request can't hold us forever.
+  setTimeout(() => {
+    console.warn('📡 Forcing exit after grace period.');
+    process.exit(0);
+  }, 8000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
