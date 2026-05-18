@@ -85,3 +85,28 @@
 - **Clear 19-A / 19-B boundary.** 19-B adds HTTP routes + external integrations; 19-C might add LLM-generated status summaries or customer chat. Keeping 19-A zero-LLM makes the tier-boundary explicit.
 
 **Tradeoff**: customer-facing status text is blunt ("submission received", "pre_dev phase started") instead of friendly ("Got your project! We're designing the blueprint now 🏗️"). 19-B's notification layer (Phase 10-A Courier templates) handles tone.
+
+## D224 — 19-B Tier B: project_intake as its own handler module; transitions split if downstream enqueue fails (added 2026-05-18)
+
+**What**: Phase 19-B Tier B registers `project_intake` as a Phase 14-A queue kind via a dedicated module (`cognitive-engine/concurrency/handlers/project-intake-handler.js`). The handler walks a submission through `submitted → accepted` BEFORE enqueueing downstream work, then `accepted → in_progress` AFTER the downstream enqueue succeeds. If the downstream enqueue fails, the submission stays in `accepted` (NOT advanced to `in_progress`), and an `error` event is appended to the timeline.
+
+**Why a separate handler module** (mirrors D211 / D217 / D219 / D220):
+- Customer-portal is a distinct domain. Mixing project_intake into factory-handlers.js would leak customer-state-machine semantics into the pipeline-graph file.
+- Test ergonomics: 38 assertions stub the portal + queue cleanly; no filesystem touched.
+- Phase 19-B full's back-feed (`pre_dev` done → submission `delivered`) will land in its own handler too, not by mutating this one.
+
+**Why split the two transitions around the enqueue**:
+- If we did both transitions BEFORE enqueueing, a downstream enqueue failure would leave the submission in `in_progress` with no actual downstream work happening. Customer sees "in progress" forever; founder has to manually fish it out.
+- If we did both transitions AFTER enqueueing, the customer sees no progress signal until after the downstream work is queued — fine for happy path, but defeats the purpose of having an `accepted` state.
+- Splitting around enqueue gives the right semantics: `accepted` is the durable acknowledgment ("we got it, we're working on it"); `in_progress` is the commitment ("pipeline work is scheduled"). If the second commitment fails, the first stays valid and recoverable.
+
+**Why the timeline gets an `error` event on enqueue failure** (not just the job-level error):
+- The portal's customer-facing API reads the timeline. Customer-visible state should reflect what they'd see in a status page. A queue-internal job error is invisible to them; a timeline error is the right surface.
+- Founder can scan timeline events to find submissions that need re-firing.
+
+**Why customer-prefixed `project_id` on downstream pre_dev**:
+- Format: `<CUST-NNNN>_<SUB-NNNN>`. This makes Phase 11-A cost-tracker rollups and Phase 14-B per-project quota gates work per-customer-submission naturally.
+- Adding `customer:CUST-NNNN` thresholds in `configs/cost-thresholds.json` will cap a customer's total spend across all their submissions.
+- The `_` separator (not `:` or `/`) keeps the project_id filesystem-safe (per the 14-A `project_id` regex requirement).
+
+**Tradeoff acknowledged**: the back-feed (pre_dev success → submission `delivered`) doesn't exist yet. Today, after the handler runs, the submission sits in `in_progress` until the founder (or full-19-B's back-feed handler) explicitly transitions it. Acceptable: substrate-now, behaviour-completion-later, same posture as D211 / D217 / D219 / D220.
