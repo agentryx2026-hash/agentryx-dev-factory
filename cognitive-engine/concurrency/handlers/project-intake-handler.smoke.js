@@ -12,6 +12,7 @@
 
 import assert from "node:assert/strict";
 import { registerProjectIntakeHandler, PROJECT_INTAKE_KIND } from "./project-intake-handler.js";
+import { TIMELINE_EVENT_KINDS } from "../../customer-portal/types.js";
 
 let passed = 0, failed = 0;
 function check(label, actual, expected) {
@@ -42,6 +43,10 @@ function buildStubs(opts = {}) {
     logs: [],
     submissionLookups: [],
   };
+  // Mutable submission state — so repeated calls see updates from prior calls
+  // (essential for the idempotency test).
+  let submissionStatus = opts.initialStatus || "submitted";
+  let downstreamId = opts.initialDownstreamId || null;
   const portal = {
     submissions: {
       get: async (cid, sid) => {
@@ -50,21 +55,36 @@ function buildStubs(opts = {}) {
         return {
           id: sid,
           customer_id: cid,
-          status: "submitted",
+          status: submissionStatus,
           intake_payload: "Build a TODO REST API with auth",
           project_title: "TodoApp v1",
           budget_cap_usd: 10,
           target_delivery_at: "2026-05-19T12:00:00Z",
+          accepted_at: submissionStatus !== "submitted" ? "2026-05-18T00:00:00Z" : undefined,
+          downstream_pre_dev_job_id: downstreamId,
         };
       },
     },
-    transitionSubmission: async (cid, sid, to, opts) => {
-      calls.transitions.push({ cid, sid, to, opts });
-      if (opts?.patch?.downstream_pre_dev_job_id === "FORCE_TRANSITION_FAIL") {
+    transitionSubmission: async (cid, sid, to, opts2) => {
+      calls.transitions.push({ cid, sid, to, opts: opts2 });
+      if (opts2?.patch?.downstream_pre_dev_job_id === "FORCE_TRANSITION_FAIL") {
         throw new Error("simulated transition failure");
+      }
+      // Mirror the real portal: update internal state so subsequent
+      // lookups reflect the transition (D226 idempotency relies on this).
+      submissionStatus = to;
+      if (opts2?.patch?.downstream_pre_dev_job_id) {
+        downstreamId = opts2.patch.downstream_pre_dev_job_id;
       }
     },
     recordTimelineEvent: async (cid, sid, event) => {
+      // STRICT: reject invalid event kinds the way the real portal does.
+      // This catches typos like 'phase_change' (the original 19-B HTTP-surface
+      // ship had this bug; live test caught it because the test stub didn't
+      // validate; this guard prevents recurrence).
+      if (!TIMELINE_EVENT_KINDS.includes(event.kind)) {
+        throw new Error(`invalid timeline event kind: '${event.kind}' (valid: ${TIMELINE_EVENT_KINDS.join(", ")})`);
+      }
       calls.timeline.push({ cid, sid, ...event });
     },
   };
@@ -123,13 +143,15 @@ group("handler — valid payload → walks submission through state machine + en
   ok("second transition patches downstream_pre_dev_job_id",
      deps._calls.transitions[1].opts?.patch?.downstream_pre_dev_job_id === "JOB-DOWN-001");
 
-  // Timeline events: accepted + phase_change (intake handler doesn't add a fail/error event on happy path)
+  // Timeline events: accepted + phase_started (intake handler doesn't add a fail/error event on happy path)
   ok("timeline event 'accepted' recorded",
      deps._calls.timeline.some(e => e.kind === "accepted"));
-  ok("timeline event 'phase_change → pre_dev' recorded",
-     deps._calls.timeline.some(e => e.kind === "phase_change" && e.phase === "pre_dev"));
+  ok("timeline event 'phase_started → pre_dev' recorded",
+     deps._calls.timeline.some(e => e.kind === "phase_started" && e.phase === "pre_dev"));
+  ok("all recorded events use valid TIMELINE_EVENT_KINDS",
+     deps._calls.timeline.every(e => TIMELINE_EVENT_KINDS.includes(e.kind)));
   ok("no error event on happy path",
-     !deps._calls.timeline.some(e => e.kind === "error"));
+     !deps._calls.timeline.some(e => e.kind === "rejected"));
 
   // Downstream enqueue
   check("queue.enqueue called once", deps._calls.enqueued.length, 1);
@@ -207,10 +229,47 @@ group("handler — downstream enqueue fails → timeline 'error' + submission le
   // Should NOT have done: accepted→in_progress transition, phase_change event
   check("1 transition (accepted only)", deps._calls.transitions.length, 1);
   check("transition target was accepted", deps._calls.transitions[0].to, "accepted");
-  ok("timeline has error event",
-     deps._calls.timeline.some(e => e.kind === "error" && e.note.includes("enqueue failed")));
-  ok("timeline does NOT have phase_change event",
-     !deps._calls.timeline.some(e => e.kind === "phase_change"));
+  ok("timeline has 'note' event flagging the enqueue failure",
+     deps._calls.timeline.some(e => e.kind === "note" && e.note.includes("enqueue failed")));
+  ok("timeline does NOT have phase_started event",
+     !deps._calls.timeline.some(e => e.kind === "phase_started"));
+  ok("all recorded events use valid kinds",
+     deps._calls.timeline.every(e => TIMELINE_EVENT_KINDS.includes(e.kind)));
+}
+
+// ─── idempotency (D226) — bug caught by live test on 2026-05-18 ──────────
+
+group("handler — idempotent on retry: already 'in_progress' with downstream → short-circuit");
+{
+  const reg = makeRegistry();
+  const deps = buildStubs({ initialStatus: "in_progress", initialDownstreamId: "JOB-PRIOR" });
+  registerProjectIntakeHandler(reg, deps);
+  const result = await reg.get(PROJECT_INTAKE_KIND)({
+    id: "JOB-RETRY",
+    payload: { customer_id: "CUST-0001", submission_id: "SUB-0001" },
+  });
+  check("status still in_progress", result.status, "in_progress");
+  check("downstream id returned from prior attempt", result.downstream_pre_dev_job_id, "JOB-PRIOR");
+  ok("idempotent_replay flag set", result.idempotent_replay === true);
+  check("0 transitions attempted (skip)", deps._calls.transitions.length, 0);
+  check("0 timeline events (skip)",       deps._calls.timeline.length, 0);
+  check("0 enqueues (skip)",              deps._calls.enqueued.length, 0);
+}
+
+group("handler — idempotent on retry: already 'accepted' but not advanced → resume from accepted");
+{
+  const reg = makeRegistry();
+  const deps = buildStubs({ initialStatus: "accepted" });
+  registerProjectIntakeHandler(reg, deps);
+  const result = await reg.get(PROJECT_INTAKE_KIND)({
+    id: "JOB-RESUME",
+    payload: { customer_id: "CUST-0001", submission_id: "SUB-0001" },
+  });
+  check("status reaches in_progress on resume", result.status, "in_progress");
+  ok("downstream enqueued on resume", deps._calls.enqueued.length === 1);
+  // Should NOT have done submitted→accepted again (would throw)
+  ok("no submitted→accepted transition", !deps._calls.transitions.some(t => t.to === "accepted"));
+  ok("but DID do accepted→in_progress", deps._calls.transitions.some(t => t.to === "in_progress"));
 }
 
 // ─── dep validation ───────────────────────────────────────────────────────

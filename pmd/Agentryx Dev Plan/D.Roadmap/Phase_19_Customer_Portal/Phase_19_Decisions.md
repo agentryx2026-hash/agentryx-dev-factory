@@ -140,3 +140,31 @@ Three substantive design decisions captured here, beyond "just wire portal metho
 - Tradeoff acknowledged: external pen-test pre-v3 must include this surface.
 
 **Why no React UI yet**: full 19-B is multi-session. The HTTP surface lets the founder + integration tests + any external client (curl) exercise the substrate today, and decouples backend completion from frontend completion. The React UI is the natural next visible-factory ship once the substrate has accumulated real customer submissions to render.
+
+## D226 — 19-B handler hotfix: idempotency guard + valid event kinds + strict smoke (added 2026-05-18)
+
+**What**: A live HTTP integration test (founder ran `curl -X POST /api/customer-portal/submit` after merging D225 / PR #67) exposed two real bugs in the project_intake handler:
+
+1. **Invalid timeline event kind**: handler used `kind: "phase_change"` and `kind: "error"` — neither is in Phase 19-A's `TIMELINE_EVENT_KINDS` enum (`submitted, accepted, phase_started, phase_completed, sla_breached, delivered, cancelled, rejected, note`). The portal's `recordTimelineEvent` validates kind + throws. First attempt failed at the final timeline event (after all transitions + downstream enqueue had succeeded).
+
+2. **Not idempotent on retry**: when attempt 1 succeeded partway (advanced submission to `in_progress` + enqueued downstream pre_dev) then died, attempt 2 fired and tried `submitted → accepted` again — which the state machine rejected (`illegal transition in_progress → accepted`). Job hit max_attempts, landed in `failed/`. Downstream pre_dev STILL ran fine (it was already enqueued by attempt 1), so the submission was actually progressing — but the project_intake job log showed permanent failure.
+
+**Fix** (this hotfix):
+- Replace `kind: "phase_change"` → `"phase_started"`; replace `kind: "error"` → `"note"`.
+- Add an **idempotency guard** at the top of the handler:
+  - If `submission.status === "in_progress"` AND `submission.downstream_pre_dev_job_id` is set → short-circuit; return the prior result tagged `idempotent_replay: true`.
+  - If `submission.status === "accepted"` (prior attempt died mid-way) → skip the first transition + accepted-event but do everything from the downstream enqueue onward. Resume semantics.
+  - Other non-`submitted` states (rejected/cancelled/delivered) fall through and let the state machine throw — those are intentional terminal states, not transient failures.
+
+**Tighten smoke test** (this hotfix):
+- Import `TIMELINE_EVENT_KINDS` from `customer-portal/types.js` and make the stub `recordTimelineEvent` validate event kind. **This would have caught the original bug** — it wasn't caught because the stub was permissive.
+- Add 2 new test groups (12 assertions) for idempotency:
+  - Already in_progress with downstream → 0 transitions, 0 events, 0 enqueues, returns `idempotent_replay: true`
+  - Already accepted (prior partial attempt) → skip submitted→accepted, do everything else, reach in_progress
+- Smoke now 50 assertions (was 38).
+
+**Lesson captured**:
+- Stubs MUST enforce the same validation as production code, or live integration becomes the first place bugs surface. Specifically: any enum / state-machine / kind validation that the real implementation does, the stub must do too.
+- Handler idempotency is a queue-substrate requirement, not a nice-to-have. Phase 14-A's lease-then-fail-then-retry semantics means EVERY handler must tolerate "I've run partway before; the state reflects that; what do I do?"
+
+**Pattern to extend**: the other 6 handlers (factory pre_dev/dev/post_dev, architect_research, training_gen, training_video_render) should be audited for the same retry-idempotency property. They're mostly safe by accident (spawning a subprocess is mostly idempotent; LLM calls are stateless), but the rule is now explicit: handlers MUST be safe to re-fire from any partial-completion state. Future handlers should structure work as `(check current state) → (advance from there)`, not `(assume initial state) → (advance through fixed sequence)`.
