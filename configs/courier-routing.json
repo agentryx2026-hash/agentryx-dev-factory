@@ -46,6 +46,33 @@
     {
       "event_type": "factory.smoke_test",
       "channels": ["stdout"]
+    },
+    {
+      "_comment": "Phase 19-B Tier B (D230) — customer-portal lifecycle events. For v0.0.1 all route to stdout (founder log); per-customer notification prefs (email/slack target overrides) land in a 19-C ship.",
+      "event_type": "customer.submission_received",
+      "channels": ["stdout"]
+    },
+    {
+      "event_type": "customer.submission_accepted",
+      "channels": ["stdout"]
+    },
+    {
+      "event_type": "customer.submission_delivered",
+      "channels": ["stdout"]
+    },
+    {
+      "event_type": "customer.sla_breached",
+      "channels": ["stdout"],
+      "min_severity": "warn"
+    },
+    {
+      "event_type": "customer.submission_cancelled",
+      "channels": ["stdout"]
+    },
+    {
+      "event_type": "customer.submission_rejected",
+      "channels": ["stdout"],
+      "min_severity": "warn"
     }
   ]
 }

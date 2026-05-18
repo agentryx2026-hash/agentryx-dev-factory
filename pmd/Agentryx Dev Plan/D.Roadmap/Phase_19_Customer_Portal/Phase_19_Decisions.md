@@ -291,3 +291,55 @@ The customer_id is already in scope (we're iterating per-customer), so injecting
 **Live verification result** (post-fix):
 - Real portal in tmpdir, customer registered, submission walked to in_progress, scanner ran with injected clock 80h ahead (free-tier sla_hours = 72): `breaches_found: 1, raised: 1`. The actual JSONL on disk gained a `sla_breached` event with the correct note.
 - Second tick: `deduped: 1, raised: 0`. Only one breach event on disk. Idempotency works against real I/O.
+
+## D230 — Customer-portal → Courier notifier (scanner-first wiring) (added 2026-05-18)
+
+**What**: A new module `cognitive-engine/customer-portal/notifier.js` exports `createPortalNotifier({ courier, onLog? })`. The notifier owns the translation from a customer-portal lifecycle event (e.g. an SLA breach raised by D228) into a Courier `dispatch` call with a new `customer.*` event type. This ship wires the FIRST source — the SLA breach scanner — to the notifier; subsequent ships (D231+) wire the other three sources (HTTP /submit, project_intake, back-feed wrapper) by importing the same module and calling its other methods.
+
+Six new Courier event types added to `EVENT_TYPES` in `cognitive-engine/courier/types.js`:
+- `customer.submission_received` — fires on HTTP POST /submit (D231)
+- `customer.submission_accepted` — fires when project_intake walks submitted→accepted (D232)
+- `customer.submission_delivered` — fires when back-feed transitions to delivered (D232)
+- `customer.sla_breached` — fires when SLA scanner detects breach **(WIRED THIS SHIP)**
+- `customer.submission_cancelled` — fires when customer cancels (D231)
+- `customer.submission_rejected` — fires when admin rejects (D233)
+
+All six types get matching routing rules in `configs/courier-routing.json` — for v0.0.1 they route to the `stdout` channel only (founder log visibility). Per-customer channel prefs (so a real email/Slack channel goes to the customer instead of the founder) is a 19-C ship that lands when `account.notification_prefs` is added.
+
+**Why a separate notifier module (not inlined into each event source)**:
+- Three different subsystems emit portal events: HTTP routes (submit/cancel), queue handlers (project_intake + back-feed wrapper), and the SLA scanner. Each lives in its own file. Inlining Courier formatting in each would duplicate the template logic — when copy needs to change (e.g. switching from markdown to plain text for email), we'd touch 4+ files.
+- Customer-facing copy belongs in one place. Same separation as D211 (factory-handlers stays pure; the wrapper composes).
+- Tests can stub one dep (`courier.dispatch`) and exercise every notification path without spinning up the real factory.
+
+**Why scanner-first wiring (not all 4 sources in one ship)**:
+- The notifier module itself owns the dispatch + formatting for every `customer.*` event type. Adding more methods is cheap (each is a `dispatchSafely(event, label)` call with templated title/body/meta).
+- But each WIRING (callsite) lives in a different module. Wiring all four in one ship would touch 4 modules + their smokes + need 4 different live verifications — review-hostile.
+- Scanner is the smallest delta: it already has a tight `runOnce` contract with deps injection. Adding a `notifier?` dep is one line; the per-breach raise loop adds 4 lines (call after raise, count success, capture failure).
+- Subsequent ships (D231: HTTP /submit + cancel; D232: project_intake + back-feed; D233: admin reject) each touch only their own module + reuse this notifier with NO further changes here.
+
+**Why fail-isolated notification (notifier never throws; failures recorded into result.errors)**:
+- Same rationale as D227 back-feed + D228 scanner: a notification failure must not roll back the underlying state change. The submission *did* breach; if Courier is down, the breach still happened — we just can't notify right now. Better: log + record into errors + move on.
+- The scanner's timeline dedup means we don't re-fire on next tick either (the timeline already has `sla_breached`). So the notification is "best-effort, one-shot" by construction. That's intentional for v0.0.1 — at-most-once delivery semantics. If the founder needs guaranteed delivery, that's a Courier-layer retry concern (10-B http backend).
+- Notifier's own `dispatchSafely` wrapper catches throws + ok:false + dropped routing, returns a unified `NotifyResult`, never raises.
+
+**Why notifier doesn't fire when the breach was deduped or the raise failed**:
+- Dedup: the breach was already notified on a prior tick (by us or by an admin manually adding the event). Re-notifying would spam.
+- Raise failure: if `portal.raiseSLABreach` threw, the timeline event never landed. Notifying for a "breach" that doesn't exist in the source-of-truth is misleading. So the scanner skips both raise-fail and dedup paths.
+- Encoded as `continue;` after raise failure + the `if (notifier)` block only inside the per-breach raise-success path.
+
+**Why fake Courier backend is the v0.0.1 default**:
+- The `fake` backend records every send in memory (`backend._getSent()` returns the list). Notifications are observable for tests + founder inspection without external dependencies.
+- `COURIER_BACKEND=http` switches to real Hermes-gateway delivery (10-B work; needs Hermes creds + Slack/email tokens). Until those land, fake is correct.
+- `NOTIFIER_DISABLED=true` env var skips notifier wiring entirely — scanner still emits timeline events, just no Courier dispatch. Used by tests + ops who want a quiet scanner.
+
+**Why a new Courier event-type namespace (`customer.*`) instead of reusing existing types**:
+- Existing types (`project.*`, `cost.*`, `agent.*`, `verify.*`, `factory.*`) are *factory-ops* events — meant for the founder/ops team watching factory health. Reusing them for customer notifications would conflate two audiences and one routing rule couldn't serve both (different channels, different severity thresholds, different targets).
+- `customer.*` is a fresh namespace with its own routing rules. When per-customer prefs land, the rules will reference `account.notification_prefs.<channel>` as the target — that's a notifier-level change, not a Courier-router-level change.
+- Tradeoff: 6 new types means 6 new routing rules. Acceptable — explicit, greppable, individually severity-tunable.
+
+**Test coverage**:
+- `notifier.smoke.js` (51 assertions): dep validation; event type registered in EVENT_TYPES whitelist (catches forgotten registration); happy path with full event shape verification (type, severity, title, body, meta — and real `validateEvent` from Courier types catches drift); input validation (4 missing-field variants → ok:false without dispatch); fail-isolation × 3 (dispatch throws, dispatch returns ok:false, event dropped by routing); only `onSlaBreached` exported in this ship (other methods will land per follow-on PRs).
+- `sla-breach-scanner.smoke.js` extended (86 → 112 assertions): notifier provided + fresh breach → onSlaBreached fires + `result.notified` increments; backwards-compat (no notifier → notified=0); deduped breach → notifier NOT called; notifier returns ok:false → errors recorded but raise still counted; notifier throws → errors recorded, scan continues; raise failure → notifier NOT called; notifier object without onSlaBreached method → treated as null (no crash).
+- D226 stub-strictness applied: stub `courier.dispatch` calls real `validateEvent` from `courier/types.js`, so any malformed event from the notifier (wrong type, missing title, bad severity) surfaces at test time — not in live.
+
+**Tradeoff acknowledged**: per-customer routing (so customer A gets emails, customer B gets Slack) is NOT in this ship. v0.0.1 routes everything to stdout = founder log. When `account.notification_prefs` lands (19-C), the notifier will read it before dispatch and override the target per-channel. The CourierEvent shape already supports this via `meta` — no Courier-side change needed.

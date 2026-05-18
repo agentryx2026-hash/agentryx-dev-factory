@@ -48,6 +48,7 @@
  * @property {number} breaches_found   submissions sla.findBreaches returned
  * @property {number} raised           new sla_breached events emitted this tick
  * @property {number} deduped          breaches skipped because prior event exists
+ * @property {number} notified         notifier.onSlaBreached calls that returned ok=true (D230)
  * @property {string[]} raised_ids     SUB-IDs that received a fresh breach event
  * @property {{ scope: string, error: string }[]} errors
  * @property {string} computed_at      ISO timestamp scan finished
@@ -63,6 +64,7 @@
  * @param {number} [init.intervalMs]         tick period (default 5 minutes)
  * @param {(line: string) => void} [init.onLog]
  * @param {() => number} [init.now]          ms-since-epoch source (test injection); defaults to Date.now
+ * @param {Object} [init.notifier]           optional Phase 19-B portal notifier (D230); when present + a fresh breach is raised, calls notifier.onSlaBreached({ account, submission }) after the timeline event lands. Fail-isolated.
  */
 export function createSlaBreachScanner(init = {}) {
   if (!init?.portal?.accounts?.list ||
@@ -75,6 +77,7 @@ export function createSlaBreachScanner(init = {}) {
   const portal = init.portal;
   const intervalMs = Number.isFinite(init.intervalMs) && init.intervalMs > 0 ? init.intervalMs : 5 * 60 * 1000;
   const log = (line) => { if (init.onLog) { try { init.onLog(line); } catch {} } };
+  const notifier = init.notifier && typeof init.notifier.onSlaBreached === "function" ? init.notifier : null;
   // The scanner does not consult `now` itself — the SLA engine does
   // (via its own injected `now`). We just pass it through for tests
   // that want a clean log timestamp.
@@ -95,6 +98,7 @@ export function createSlaBreachScanner(init = {}) {
       breaches_found: 0,
       raised: 0,
       deduped: 0,
+      notified: 0,
       raised_ids: [],
       errors: [],
       computed_at: null,
@@ -170,6 +174,22 @@ export function createSlaBreachScanner(init = {}) {
           log(`sla_breached raised: ${customer.id}/${submission.id} (target was ${submission.target_delivery_at})`);
         } catch (err) {
           result.errors.push({ scope: `raiseSLABreach(${customer.id}/${submission.id})`, error: err?.message || String(err) });
+          continue;  // skip notify when raise itself failed — the breach didn't actually land in the timeline
+        }
+
+        // D230 — Courier notification. Only fires when a fresh breach
+        // was raised (above), never on dedup. Notifier itself is
+        // fail-isolated (logs but never throws), so we just count
+        // successes for telemetry; failures appear in notifier's onLog.
+        if (notifier) {
+          try {
+            const notifyRes = await notifier.onSlaBreached({ account: customer, submission });
+            if (notifyRes?.ok) result.notified += 1;
+            else result.errors.push({ scope: `notifier.onSlaBreached(${customer.id}/${submission.id})`, error: notifyRes?.error || "(unknown notifier error)" });
+          } catch (err) {
+            // Notifier swore not to throw, but defend anyway.
+            result.errors.push({ scope: `notifier.onSlaBreached(${customer.id}/${submission.id})`, error: err?.message || String(err) });
+          }
         }
       }
     }

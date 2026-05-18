@@ -505,5 +505,189 @@ group("runOnce — onLog hook fires for raised events");
   ok("log mentions sla_breached", logs[0].includes("sla_breached"));
 }
 
+// ─── D230 — notifier integration ───────────────────────────────────────────
+
+group("runOnce — notifier provided + breach raised → notifier.onSlaBreached fires; result.notified increments");
+{
+  const now = Date.now();
+  const { portal, calls } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-N1",
+        status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+      }],
+    },
+  }, { nowMs: () => now });
+
+  const notifyCalls = [];
+  const notifier = {
+    onSlaBreached: async ({ account, submission }) => {
+      notifyCalls.push({ account_id: account.id, submission_id: submission.id });
+      return { ok: true, event_id: "EVT-S1", channels: ["stdout"] };
+    },
+  };
+
+  const scanner = createSlaBreachScanner({ portal, notifier });
+  const res = await scanner.runOnce();
+
+  check("raised = 1",     res.raised, 1);
+  check("notified = 1",   res.notified, 1);
+  check("errors empty",   res.errors, []);
+  check("notifier called exactly once", notifyCalls.length, 1);
+  check("notifier saw the customer + submission",
+        notifyCalls[0], { account_id: "CUST-1", submission_id: "SUB-N1" });
+  check("raise still happened",         calls.raises.length, 1);
+}
+
+group("runOnce — notifier not provided → no notify, result.notified stays 0 (backwards-compat)");
+{
+  const now = Date.now();
+  const { portal } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-NB", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+      }],
+    },
+  }, { nowMs: () => now });
+  const scanner = createSlaBreachScanner({ portal });  // no notifier
+  const res = await scanner.runOnce();
+  check("raised = 1",   res.raised, 1);
+  check("notified = 0", res.notified, 0);
+}
+
+group("runOnce — notifier provided but breach was DEDUPED → notifier NOT called");
+{
+  const now = Date.now();
+  const { portal } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-DUP", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }, { kind: "sla_breached" }],
+      }],
+    },
+  }, { nowMs: () => now });
+  const notifyCalls = [];
+  const notifier = {
+    onSlaBreached: async () => { notifyCalls.push(true); return { ok: true }; },
+  };
+  const scanner = createSlaBreachScanner({ portal, notifier });
+  const res = await scanner.runOnce();
+  check("deduped = 1",  res.deduped, 1);
+  check("raised = 0",   res.raised, 0);
+  check("notified = 0", res.notified, 0);
+  check("notifier NOT called", notifyCalls.length, 0);
+}
+
+group("runOnce — notifier.onSlaBreached returns ok:false → result.errors records the failure; raise still counted");
+{
+  const now = Date.now();
+  const { portal, calls } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-NF", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+      }],
+    },
+  }, { nowMs: () => now });
+  const notifier = {
+    onSlaBreached: async () => ({ ok: false, error: "courier down" }),
+  };
+  const scanner = createSlaBreachScanner({ portal, notifier });
+  const res = await scanner.runOnce();
+  check("raised = 1 (timeline event still landed)", res.raised, 1);
+  check("notified = 0 (notifier said no)",           res.notified, 0);
+  ok("errors contains notifier scope",
+     res.errors.some(e => e.scope.includes("notifier.onSlaBreached") && e.scope.includes("SUB-NF")));
+  check("raise was called",                          calls.raises.length, 1);
+}
+
+group("runOnce — notifier.onSlaBreached THROWS → result.errors records it, scan does not crash");
+{
+  const now = Date.now();
+  const { portal } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-NT", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+      }],
+    },
+  }, { nowMs: () => now });
+  const notifier = {
+    onSlaBreached: async () => { throw new Error("notifier crashed"); },
+  };
+  const scanner = createSlaBreachScanner({ portal, notifier });
+  let threw = false;
+  let res;
+  try { res = await scanner.runOnce(); } catch { threw = true; }
+  ok("scanner did NOT propagate the throw", threw === false);
+  check("raised = 1",   res.raised, 1);
+  check("notified = 0", res.notified, 0);
+  ok("errors contains 'notifier crashed'",
+     res.errors.some(e => String(e.error).includes("notifier crashed")));
+}
+
+group("runOnce — when raiseSLABreach FAILS, notifier is NOT called (no event to notify about)");
+{
+  const now = Date.now();
+  const { portal } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-NR", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+        raiseFails: true,
+      }],
+    },
+  }, { nowMs: () => now });
+  const notifyCalls = [];
+  const notifier = { onSlaBreached: async () => { notifyCalls.push(true); return { ok: true }; } };
+  const scanner = createSlaBreachScanner({ portal, notifier });
+  const res = await scanner.runOnce();
+  check("raised = 0 (raise failed)", res.raised, 0);
+  check("notified = 0",              res.notified, 0);
+  check("notifier NOT called",       notifyCalls.length, 0);
+  ok("errors include raise failure", res.errors.some(e => e.scope.includes("raiseSLABreach")));
+}
+
+group("runOnce — notifier with no onSlaBreached method → treated as no notifier (no crash, no notify)");
+{
+  const now = Date.now();
+  const { portal } = buildPortal({
+    "CUST-1": {
+      tier: "free",
+      submissions: [{
+        id: "SUB-NX", status: "in_progress",
+        submitted_at: ISO(now - 26 * HOUR),
+        target_delivery_at: ISO(now - 2 * HOUR),
+        timeline: [{ kind: "submitted" }],
+      }],
+    },
+  }, { nowMs: () => now });
+  // Notifier object without the required method — scanner should treat as null.
+  const scanner = createSlaBreachScanner({ portal, notifier: {} });
+  const res = await scanner.runOnce();
+  check("raised = 1",   res.raised, 1);
+  check("notified = 0", res.notified, 0);
+}
+
 console.log(`\n${passed} passed · ${failed} failed`);
 if (failed > 0) process.exit(1);

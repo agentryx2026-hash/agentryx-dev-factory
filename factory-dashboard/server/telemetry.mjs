@@ -440,20 +440,46 @@ async function bootSlaBreachScanner() {
     return null;
   }
   try {
-    const [scannerMod] = await Promise.all([
+    const [scannerMod, notifierMod, courierMod] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'sla-breach-scanner.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'notifier.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'service.js')).href).catch(() => null),
     ]);
     const portal = await getCustomerPortal();
     const intervalMs = Number(process.env.SLA_SCANNER_INTERVAL_MS) || 5 * 60 * 1000;
+
+    // D230 — Courier notifier wiring. Default backend = "fake" (in-memory
+    // history; events are inspectable via the courier instance but not
+    // delivered anywhere external). Set COURIER_BACKEND=http + provide
+    // Hermes credentials to deliver to real Slack/email/etc when 10-B
+    // wiring lands. NOTIFIER_DISABLED=true opts out entirely.
+    let notifier = null;
+    if (notifierMod && courierMod && process.env.NOTIFIER_DISABLED !== 'true') {
+      try {
+        const courier = await courierMod.getCourier();
+        notifier = notifierMod.createPortalNotifier({
+          courier,
+          onLog: (line) => {
+            try { addLog('system', `📨 [portal.notifier] ${line.substring(0, 220)}`); broadcast(); } catch {}
+          },
+        });
+        console.log(`📨 Portal notifier wired (courier backend=${courier.backend?.kind || 'unknown'})`);
+      } catch (err) {
+        console.warn('[sla.scanner] notifier wiring failed (continuing without notifications):', err?.message || err);
+        notifier = null;
+      }
+    }
+
     slaBreachScannerHandle = scannerMod.createSlaBreachScanner({
       portal,
+      notifier,            // null if disabled or wiring failed — scanner treats as no-op
       intervalMs,
       onLog: (line) => {
         try { addLog('system', `🛎️  [sla.scanner] ${line.substring(0, 220)}`); broadcast(); } catch {}
       },
     });
     const info = slaBreachScannerHandle.start();
-    console.log(`🛎️  SLA breach scanner started — interval=${info.intervalMs}ms`);
+    console.log(`🛎️  SLA breach scanner started — interval=${info.intervalMs}ms${notifier ? ' (notifier=on)' : ' (notifier=off)'}`);
   } catch (err) {
     console.error('[sla.scanner] failed to boot:', err);
     slaBreachScannerHandle = null;
