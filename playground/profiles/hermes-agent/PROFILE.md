@@ -3,9 +3,9 @@
 **Org / Author**: [Nous Research](https://github.com/NousResearch/hermes-agent)
 **Latest release**: v0.13 "Tenacity" (2026-05-07)
 **License**: MIT
-**Status**: **exploring**
-**Profile owner**: subhash
-**Last updated**: 2026-05-09
+**Status**: **testing**
+**Profile owner**: subhash (founder gate); **Seven** (Tool Evaluator) drives the evaluation work
+**Last updated**: 2026-05-09 (promoted from `exploring` on the same day after Phase 21-A.1 lands and Seven is onboarded)
 
 ---
 
@@ -77,6 +77,7 @@ Budget cap: $5 per scenario per month (target). Real Hermes runs use stub provid
 > Append-only. Each entry dated.
 
 - **2026-05-09** — Profile created. Status `exploring`. Reference: 2026-05 landscape scan + founder green-light. No code yet.
+- **2026-05-09** — Promoted `exploring → testing`. Phase 21-A.1 ship enabled the R&D pipeline (Platform Evolution Roadmap + Founder R&D Brief tab) and onboarded **Seven** (Tool Evaluator). Hermes is Seven's first mission. Founder direction (this date): "we've heard 2nd-hand info; prepare our internal first-hand report and based on that we'll take the next step." Strategic intent: lean on Hermes where useful (memory, Curator, Courier), keep building our own layer where ours fits the factory better — but only after Seven's evaluation, not before. Concrete evaluation scope deferred until Phase 21-B's real Sonnet dispatcher lands; Seven's seat is set up now, the first benchmarks run when the dispatcher is real.
 
 - **2026-05-11** — **Founder-prompted re-evaluation** ("Hermes has had a lot of development and hype — do we need to expand its role, or is our roadmap good enough until R1?"). Seven-style desk-research pass (no first-hand benchmarks yet; those still wait for Phase 21-B's dispatcher to run a real cycle). Findings:
 

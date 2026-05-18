@@ -23,13 +23,28 @@ export function setProjectDir(projectName, forceExactPath = false) {
         const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         dirName = `${date}_${safe}`;
     }
-    
+
     _projectDir = path.join(WORKSPACE_ROOT, dirName);
     // Create the project directory structure
     fsSync.mkdirSync(path.join(_projectDir, 'src'), { recursive: true });
     fsSync.mkdirSync(path.join(_projectDir, 'tests'), { recursive: true });
     fsSync.mkdirSync(path.join(_projectDir, 'docs'), { recursive: true });
     fsSync.mkdirSync(path.join(_projectDir, 'PMD'), { recursive: true });
+
+    // Phase 6-B (artifact dual-write) — expose the project dir + a stable
+    // run-id via process.env so RouterChatModel.invoke()'s artifact hook
+    // (in llm-router/src/langchain-adapter.js) can write artifacts under
+    // <project>/_artifacts/ on every successful LLM call. Hook activates
+    // only when USE_ARTIFACT_STORE === 'true'; this just plumbs the path
+    // and is safe to set unconditionally.
+    process.env.AGENT_PROJECT_DIR = _projectDir;
+    if (!process.env.AGENT_RUN_ID) {
+      // First setProjectDir call this process — mint a stable run-id every
+      // artifact will share so collectRun() / replay can group them.
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      process.env.AGENT_RUN_ID = `RUN-${dirName}-${ts}`;
+    }
+
     return { dirName, fullPath: _projectDir };
 }
 

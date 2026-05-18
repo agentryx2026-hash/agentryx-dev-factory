@@ -1,8 +1,35 @@
-# Phase 13 — Status: 13-A COMPLETE ✅  (13-B DEFERRED)
+# Phase 13 — Status: 13-A + 13-B Tier B COMPLETE ✅  (13-B remainder DEFERRED — needs OpenRouter)
 
 **Phase started**: 2026-04-23
-**Phase 13-A closed**: 2026-04-23
-**Duration**: single session
+**Phase 13-A closed**: 2026-04-23 (replay engine: collector / planner / executor)
+**Phase 13-B Tier B closed**: 2026-05-09 (read-only Replay UI, same session as the visible-factory sprint after Phase 21-A.1)
+**Duration**: 13-A single session; 13-B Tier B ~10 minutes elapsed (composition over `listRunIds` + `collectRun`)
+
+---
+
+## Phase 13-B Tier B — what shipped (read-only)
+
+**Backend** (`factory-dashboard/server/telemetry.mjs`):
+- `GET /api/factory-admin/replay/runs` — calls `listRunIds(AGENT_WORKSPACE)`, returns the list with a friendly empty-state note when 0 runs (explains `USE_ARTIFACT_STORE` is the missing flag)
+- `GET /api/factory-admin/replay/runs/:id` — calls `collectRun(AGENT_WORKSPACE, runId)`, returns the full RunSnapshot
+
+**Frontend** (`factory-dashboard/src/components/Replay.tsx`, sidebar item 5):
+- Two-column layout: run list (left) + run detail (right)
+- Run detail header strip: `project_id` / `run window` / `agents` / `total cost`
+- Chronological artifact timeline: per-artifact card with `id` + agent pill (color-coded per Star Trek name) + `kind` + `node` + timestamp
+- Click an artifact to expand → model + cost + latency + `parent_ids` (implicit DAG)
+- Empty-state banner explains exactly what's needed: flip `USE_ARTIFACT_STORE` (Admin → Flags), let a pipeline run, surface populates automatically
+
+## What stays for full 13-B (deferred — needs OpenRouter)
+
+- **Default LLM stub** that re-invokes the original agent during replay (replaces test-injected `nodeStub`). Needs OpenRouter credit + the cognitive-engine pipeline running real LLM calls.
+- **`POST /api/factory-admin/replay/runs/:id/execute`** — substitution mode (frozen vs fresh inputs)
+- **Cross-pipeline replay** — replay one run inside another's context
+- **Side-by-side diff view** — compare two runs on the same task
+
+Empty today because Phase 6-B (`USE_ARTIFACT_STORE`) is OFF — pipelines aren't writing replayable artifacts. Wired-but-empty until 6-B flips on (which itself needs OpenRouter for the real pipeline cycle).
+
+---
 
 ## Subphase progress
 

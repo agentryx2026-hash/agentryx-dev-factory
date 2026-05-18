@@ -1,8 +1,9 @@
-# Phase 7 — Status: 7-A COMPLETE ✅  (7-B/C/D/E DEFERRED)
+# Phase 7 — Status: 7-A COMPLETE + Memory Layer UI ✅  (7-B/C/D/E DEFERRED)
 
 **Phase started**: 2026-04-22
 **Phase 7-A closed**: 2026-04-22
 **Duration**: single session
+**UI surface added**: 2026-05-09 — Dev-Hub "🧠 Memory Layer" page (replaces the "Skill Memory" mock placeholder). Reads via `/api/factory-admin/memory/{scopes,observations}`; 5 kind cards (observation / lesson / pattern / decision / user_note) + scope filter + observation viewer with expandable tags/refs/provenance. Empty until `USE_MEMORY_LAYER` flag is on AND agents start writing — empty-state banner explains the next step. No new substrate; pure surface over `getMemoryService().recall()`.
 
 ## Subphase progress
 

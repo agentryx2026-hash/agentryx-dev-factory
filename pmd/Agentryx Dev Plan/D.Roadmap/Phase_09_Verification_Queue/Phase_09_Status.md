@@ -1,8 +1,26 @@
-# Phase 9 — Status: 9-A COMPLETE ✅  (9-B DEFERRED)
+# Phase 9 — Status: 9-A + 9-B Tier B (read UI) COMPLETE ✅  (9-B remainder DEFERRED — needs Verify-stg auth)
 
 **Phase started**: 2026-04-22
-**Phase 9-A closed**: 2026-04-22
-**Duration**: single session
+**Phase 9-A closed**: 2026-04-22 (substrate — bundle/feedback contract, mock client, fix-router)
+**Phase 9-B Tier B closed**: 2026-05-09 (Verify tab in Admin · Configuration; same session as the visible-factory sprint)
+**Duration**: 9-A single session; 9-B Tier B ~10 min composition
+
+---
+
+## Phase 9-B Tier B — what shipped (read-only)
+
+Backend `GET /api/factory-admin/verify/state` returns enabled flag, client kind (mock vs http), `VERIFY_URL`, REVIEW_DECISIONS enum, and the last 20 published bundles via `createMockClient._inspectStore()`.
+
+Frontend ✅ Verify sub-tab (in Admin · Configuration): 3-stat strip + REVIEW_DECISIONS pills + recent-bundles list + friendly note explaining what 9-B-full unlocks.
+
+## What stays for 9-B remainder
+
+- Real `createHttpClient()` activation (needs `VERIFY_URL` env + auth_token from Key Console)
+- Webhook receiver in `factory-dashboard/server/telemetry.mjs` for FeedbackPayload
+- Multi-app mode in the Verify portal itself (Verify-stg-side work)
+- Real fix-cycle agent invocation when feedback comes back
+
+---
 
 ## Subphase progress
 

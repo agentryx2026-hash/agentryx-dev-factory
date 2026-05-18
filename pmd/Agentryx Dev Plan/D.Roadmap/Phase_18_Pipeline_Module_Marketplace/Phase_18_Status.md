@@ -1,8 +1,9 @@
-# Phase 18 — Status: 18-A COMPLETE ✅  (18-B DEFERRED)
+# Phase 18 — Status: 18-A COMPLETE + catalogue read UI ✅  (18-B remainder DEFERRED — remote fetch + signature verification)
 
 **Phase started**: 2026-04-24
 **Phase 18-A closed**: 2026-04-24
 **Duration**: single session (same arc as 15-A / 16-A / 17-A; fourth A-tier module in two days)
+**UI surface added**: 2026-05-09 — Dev-Hub Admin → 📦 Modules panel: 15 catalogue entries grouped by category (mcp_tool / artifact_store / memory_backend / handler / proposer / generator / provider / meta), each card shows id + display_name + version + author + capability tags + status pill. Reads `BUILTIN_MANIFESTS` directly from the catalogue (in-process store fallback when `installAllBuiltins` hasn't run). **Still pending**: remote registry fetch + signature verification + version resolution + live install/uninstall UI + Phase 3/4 catalogue entries.
 
 ## Subphase progress
 

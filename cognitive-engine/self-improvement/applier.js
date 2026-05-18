@@ -165,10 +165,17 @@ function safeJsonParse(text, fallback) {
 /**
  * Apply one approved proposal.
  *
+ * Phase 21-A note: tool_adoption / kb_update / research_finding kinds are
+ * routed to the architect's apply hook (D192) when ctx.architectApplier is
+ * provided. The Phase 15-A applier remains in charge of factory-internal
+ * changes (prompt/model/config/graph); the architect applier handles the
+ * KB + marketplace + playground side.
+ *
  * @param {import("./types.js").Proposal} proposal
  * @param {Object} ctx
  * @param {{ readConfig: Function, writeConfig: Function, getConfigEntry?: Function }} [ctx.configIO]
  * @param {string} [ctx.workspaceRoot]    required for prompt_change
+ * @param {{ apply: Function }} [ctx.architectApplier]  Phase 21-A; routes tool_adoption / kb_update / research_finding
  * @returns {Promise<{ ok: true, summary: object }>}
  */
 export async function applyProposal(proposal, ctx = {}) {
@@ -188,6 +195,16 @@ export async function applyProposal(proposal, ctx = {}) {
     }
     case "graph_change":
       throw new Error(`applier: graph_change rejected — Phase 15-A applier does not mutate graph code (D145)`);
+    case "tool_adoption":
+    case "kb_update":
+    case "research_finding": {
+      // Phase 21-A: architect-owned proposal kinds
+      if (!ctx.architectApplier?.apply) {
+        throw new Error(`applier: ${proposal.kind} requires ctx.architectApplier (Phase 21-A); not provided`);
+      }
+      const summary = await ctx.architectApplier.apply(proposal, ctx);
+      return { ok: true, summary };
+    }
     default:
       throw new Error(`applier: unknown proposal kind "${proposal.kind}"`);
   }

@@ -188,6 +188,13 @@ export const FEATURE_FLAGS = Object.freeze([
     owning_phase: "Phase 20",
     default_when_unset: "off",
   },
+  {
+    env_var: "USE_AUTONOMOUS_ARCHITECT",
+    display_name: "Autonomous Architect (continuous research)",
+    description: "Architect scheduler runs daily cron + boot pass; researcher dispatches real LLM-backed subagents; proposals auto-flow into Phase 15-A store. Requires Phase 21-B.",
+    owning_phase: "Phase 21",
+    default_when_unset: "off",
+  },
 ]);
 
 export function getConfigEntry(id) {

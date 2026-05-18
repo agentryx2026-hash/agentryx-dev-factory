@@ -380,6 +380,44 @@ After A-tier 100% coverage, a `cognitive-engine/integration/composition-smoke.js
 
 **The smoke ships as the regression net for B-tier**. Every B-tier PR that touches a shared boundary (artifact-store dual-write, queue handler registration, customer portal HTTP) re-runs the smoke before merge. With 1020 total passing assertions (947 per-module + 73 composition) at $0 cumulative LLM spend, the v0.0.1 substrate is the firmest foundation we can build before real LLM data starts shaping decisions.
 
+### 11.9 Master Architect — autonomous research as a permanent capability (added in r0.5)
+
+After Phase 2.76 closed, the founder articulated the next architectural axis: the factory must *continuously* monitor the AI tool ecosystem and propose adaptations *to the founder*, rather than waiting for the founder to bring direction in. Phase 21-A ships the substrate.
+
+**Direction reverses**: proposals come **from the architect to the founder**. The founder no longer drives every adoption decision — the architect surfaces options gated by approval. Phase 15-A's proposal lifecycle (which was originally for *factory-internal* prompt/model/config changes) is extended with three architect-owned kinds: `tool_adoption` (founder-gated), `kb_update` (auto), `research_finding` (auto).
+
+**Standing Orders is the founder's permanent directive** — the steering input the architect reads each pass. Two-tab structure: Tab 1 `baseline` (autonomous behavior — cron, budget, dispatcher, auto-watch toggle) is rarely edited; Tab 2 `custom_direction` is the founder's monthly steering across 6 weighted priority areas (`models` / `agents` / `languages` / `tools` / `output_quality` / `operations`, each with 8 fields), plus overall stance and strategic watch. Founder-fillable: ~60 slots in Tab 2 + ~6 baseline knobs in Tab 1. The schema and the planned 12-B / 21-B UI map 1:1.
+
+**Why this is permanent**:
+- **R1-R5 alignment**: every research question in §5 ("where's the cost bottleneck?", "what's the operationally painful slot?", "what task tier dominates?") becomes a *recurring* question. The architect reformulates them as priority-area research directions and produces evidence-backed proposals.
+- **Lab graduation pipeline becomes self-driving**: instead of the founder noticing "we should evaluate Tinker," the architect surfaces it via a `research_finding` → escalates to `tool_adoption` once the Lab profile shows graduation criteria met.
+- **Standing Orders as the durable founder voice**: bumping the `version` triggers a `founder_priority_update` pass within minutes — the architect re-reads, re-balances attention budget, re-emits proposals against the new direction.
+
+**Non-overlap with Slot 5 (self-improvement)**:
+- Slot 5 is the proposal *lifecycle* (state machine + applier + audit trail) — same store, same approval gate.
+- Phase 21 is the autonomous *origin* — the orchestrator + KB + researcher that emit proposals into Slot 5.
+- They compose: 15-A is *machinery*, 21-A is *cognition*. Both are permanent.
+
+**21-A ships the substrate at $0**: stub dispatcher, no real LLM calls. 87 architect smoke assertions + 3 self-improvement extensions. 21-B brings the real Sonnet researcher + cron daemon + 12-B portal UI + Phase 14 handler + budget gate + Courier notifications, at ~$1-2/day target.
+
+**Phase 21-A.1 — Platform Evolution Roadmap + Founder R&D Brief + Seven (added same session 2026-05-09)**:
+
+After 21-A close the founder articulated three additional needs that turned the substrate into a self-running R&D loop:
+
+1. **Platform Evolution Roadmap** (D200) — the named, living, continuously-running upgrade pipeline. Three independently toggleable cadences (daily / weekly / monthly, D201) run hierarchically: daily accumulates raw findings → weekly synthesises 7 days into a structured report → monthly does strategic review + a "criteria health check" that proposes adding/removing/renaming priority areas as the factory grows. Self-evolving criteria set; founder is no longer the maintainer of the watch list.
+
+2. **Founder R&D Brief** — separate Master Architect tab with an 8-field structured-prompt form (Anthropic-style: role + background + research_question + trigger + constraints + output_format + references + budget). Founder fires ad-hoc focused research without leaving the Dev-Hub. Submits → composes prompt → spawns `founder_brief` pass → produces a structured Report linked back to the brief. Both lanes (autonomous + brief) share the same KB, so each brief permanently sharpens what the autonomous loop knows.
+
+3. **Seven — Tool Evaluator** (D204) — 12th named agent, first SOUL.md identity file in the codebase. Distinct role: Seven *measures*, *probes*, and *benchmarks* third-party candidates. Mandate: evidence over impression, first-hand only, comparative against our baseline, adversarial on security claims, reproducible. New `tool_evaluation` finding kind distinguishes Seven's measurements from generic research observations. First mission queued: evaluate Hermes Agent v0.13 (security claims + memory layer + self-improvement + runtime viability) — Hermes Lab profile promoted `exploring → testing` same day with Seven as evaluation owner.
+
+Plus cross-cutting: **dropdown-with-custom** (D203) is the standard founder-input pattern (3 typed presets + Custom… escape hatch — used everywhere a typed-but-extensible field exists). **Cadence daemon** (D202) embedded inside `factory-telemetry.service` — 60-second polling tick, IST-aware, last-Thursday-of-month resolved correctly, dedupe via per-cadence fire log, survives `paused: true`.
+
+The Master Architect Dev-Hub page now has 3 tabs: 📜 Standing Orders & Roadmap · 🔬 R&D Brief · 📊 Reports & Proposals — with a new-report banner on every tab when reports pile up unread.
+
+**Phase 22 — Action Boundary Enforcement (placeholder, lands at v2 → v3)**:
+
+Per the founder's same-session ask ("any command given to it should have no action taken by all these agents outside the process flow"), pipeline action-boundary enforcement is its own phase (D199). Scope: tool/egress allowlists, sandbox runtimes (E2B / Daytona / Modal candidates), MCP server allowlists, courier event allowlists, signed manifest provenance. The architect itself becomes subject to it — declared `architect_egress_allowlist`, audit log every external research call. This maps to the existing security gating posture (D185 + D189): findings during v0.0.1 → v2 are recorded but non-gating; the hardening pass lands at v3 boundary alongside the pen test. **Seven's full benchmarking power lands here** — until then, evaluations are documentation+probe-based; Phase 22 wires the sandbox so Seven actually *runs* candidates in isolation.
+
 ### 11.6 Research questions from §5 — partial early answers
 
 The R1 research questions now have partial pre-data insight from scaffolding:
@@ -410,6 +448,8 @@ The marathon doc identifies **6-B (artifact-store dual-write) and 14-B (queue ha
 | r0.2 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 18-A close — 10 additional A-tier modules shipped since r0.1; chronicle checkpoint added | §10, §11 (new), §12 (was §9 renumbered) |
 | r0.3 | 2026-04-24 | claude-opus-4-7 (1M context) | Post Phase 20-A close — A-tier 100% coverage achieved; cross-phase composition smoke shipped (1020 total assertions); B-tier marathon path documented | §10 (cross-ref to 04_B_Tier_Marathon), §11.7 (new — 19-A and 20-A insights), §13 (new — bridge to marathon doc) |
 | r0.4 | 2026-05-09 | claude-opus-4-7 (1M context) | Phase 2.76 — Beta Playground capability + 2026-05 landscape scan + Hermes footprint expansion + release-band schedule update (v0.0.1 → v3 production at ~5-6 months) | §1 release-band table (architectural + user-facing version schedule), §10 (Research/ + playground/ cross-refs), §11.8 (new — Beta Playground architecture), §12 revision log |
+| r0.5 | 2026-05-09 | claude-opus-4-7 (1M context) | Phase 21-A close — Master Architect autonomous research substrate established; **Standing Orders** as the founder's permanent directive (Tab 1 baseline + Tab 2 custom_direction); 3 new proposal kinds extend Phase 15-A; Phase 22 (Action Boundary Enforcement) placeholder added | §11.9 (new — Master Architect + Continuous Research as a permanent capability + Phase 22 placeholder); §12 revision log |
+| r0.6 | 2026-05-09 | claude-opus-4-7 (1M context) | Phase 21-A.1 close (same session) — **Platform Evolution Roadmap** named as the standing artifact (D200); 3 toggleable cadences daily/weekly/monthly with hierarchical synthesis (D201); cadence daemon embedded in factory-telemetry.service (D202); dropdown-with-custom standard input pattern (D203); **Founder R&D Brief** tab + 8-field structured prompt form; **Seven (Tool Evaluator)** onboarded as 12th named agent — first SOUL.md in the codebase (D204); `tool_evaluation` finding kind; Hermes Lab profile promoted `exploring → testing` with Seven as evaluation owner | §11.9 (extended — Phase 21-A.1 sub-section with the 3 founder additions); §12 revision log |
 
 Future revisions expected at:
 - End of Phase 20 (R1 close) — will rewrite §5 with actual data

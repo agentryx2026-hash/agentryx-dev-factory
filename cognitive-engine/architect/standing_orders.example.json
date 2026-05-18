@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "baseline": {
+    "cron_schedule": { "hour_utc": 0, "minute_utc": 0 },
+    "daily_budget_usd": 1.5,
+    "research_depth": "standard",
+    "research_dispatcher": "stub",
+    "auto_watch_enabled": true,
+    "auto_watch_disabled_ids": [],
+    "timezone": "Asia/Kolkata",
+    "paused": false,
+    "cadences": {
+      "daily": {
+        "enabled": false,
+        "time_local": "22:00",
+        "report_enabled": false,
+        "budget_usd": 0.5,
+        "depth": "light",
+        "dispatcher": "stub"
+      },
+      "weekly": {
+        "enabled": false,
+        "day_of_week": 4,
+        "time_local": "22:00",
+        "report_enabled": true,
+        "budget_usd": 2.0,
+        "depth": "standard",
+        "dispatcher": "stub"
+      },
+      "monthly": {
+        "enabled": true,
+        "day_rule": "last-thursday",
+        "time_local": "22:00",
+        "report_enabled": true,
+        "budget_usd": 8.0,
+        "depth": "deep",
+        "dispatcher": "stub"
+      }
+    }
+  },
+  "custom_direction": {
+    "effective_period": {
+      "start_date": "2026-05-09",
+      "end_date": "2026-08-09",
+      "horizon_label": "Q3 2026 — internal testing band (v0.0.1 → v1)"
+    },
+    "overall_stance": {
+      "risk_appetite": "experimental",
+      "quality_vs_speed": "balanced",
+      "cost_sensitivity": "medium",
+      "change_tolerance": "gradual"
+    },
+    "priority_areas": [
+      {
+        "id": "models",
+        "weight": 5,
+        "current_state": "Sonnet 4.6 default; Haiku 4.5 cheap-tier; OpenRouter routing. Phase 2 router with LiteLLM + OpenRouter dual backend.",
+        "target_3mo": "Add Hermes 4 specialist for tool-calling tasks (Lab → stable). Cut Picard's per-call cost 30% via better prompting + tier downgrade where Tuvok pass-rate stays >= 90%.",
+        "target_6mo": "First fine-tuned specialist trained via Tinker (when GA). Auto-routing decision per task tier with measured ROI from Phase 11-A cost rollups.",
+        "hard_constraints": [
+          "no single LLM invocation > $5",
+          "always have OpenRouter fallback",
+          "must support cost capture per-call (Phase 2)"
+        ],
+        "anti_goals": [
+          "don't expand beyond 5 active model tiers (cognitive load)",
+          "no provider lock-in — keep dual-backend posture"
+        ],
+        "research_directions": [
+          "specialist tool-calling models (Hermes 4 family)",
+          "open-weight LoRA fine-tuning options post-Tinker",
+          "verifier-model patterns (separate-context grading agents)"
+        ],
+        "notes": "Founder bias: prefer Anthropic + OpenRouter dual; avoid Google-only."
+      },
+      {
+        "id": "agents",
+        "weight": 4,
+        "current_state": "12 named agents: Picard (architect), Sisko (triage), Troi (research), Jane (planning), Spock (impl), Torres (refinement), Tuvok (tests), Data (QA), Crusher (architect review), O'Brien (deploy), Genovi (intake), and Seven (Tool Evaluator — onboarded 2026-05-09 for the R&D pipeline; SOUL.md at cognitive-engine/agents/Seven.SOUL.md). Hermes adopted for Courier (Phase 10) and being evaluated by Seven for memory/self-improvement/runtime adoption.",
+        "target_3mo": "Picard architect-tier output passes Tuvok at 95% (current ~80% per Phase 4 baseline). Curator pattern (from Hermes 0.12) adopted into Phase 18-B for skills health. Seven completes first-hand Hermes evaluation report once Phase 21-B's real dispatcher is live; founder approves or rejects each adoption point on evidence.",
+        "target_6mo": "Add a 'Q' debug specialist (multi-agent error-pattern recognition). Prompt-hot-swap consumer wired (Phase 15-A overrides → graph nodes). All 12 named agents have SOUL.md files (Seven was the first; backfill the other 11).",
+        "hard_constraints": [
+          "never remove a named agent without 30-day notice",
+          "every named agent must have a SOUL.md identity file (Hermes pattern)"
+        ],
+        "anti_goals": [
+          "no greenfield agent additions until existing roster is benchmarked"
+        ],
+        "research_directions": [
+          "agent benchmarking frameworks (Inspect AI; SWE-bench Verified)",
+          "specialist debug agents",
+          "BMAD-METHOD edge-case-hunter pattern"
+        ],
+        "notes": "Star Trek naming convention is a feature, not a quirk. Keep it."
+      },
+      {
+        "id": "languages",
+        "weight": 2,
+        "current_state": "TypeScript-first (cognitive-engine, factory-dashboard, all 16 A-tier modules in JS/TS). Python only via tool subprocesses.",
+        "target_3mo": "Pilot a Python-output project end-to-end through pre_dev → dev → post_dev to validate the polyglot pipeline pattern.",
+        "target_6mo": "Rust pilot if customer demand emerges. Otherwise stay TS+Python.",
+        "hard_constraints": [
+          "factory implementation stays JS-first (cognitive-engine), regardless of output language"
+        ],
+        "anti_goals": [
+          "no premature stack expansion",
+          "no rewriting existing TS modules in another language"
+        ],
+        "research_directions": [
+          "polyglot pipeline patterns (Aider; OpenHands)",
+          "language-specific testing frameworks for Tuvok"
+        ],
+        "notes": "Output language ≠ factory implementation language. Don't conflate."
+      },
+      {
+        "id": "tools",
+        "weight": 4,
+        "current_state": "MCP plane (5 servers: fs/git/github/postgres/browser). Phase 5-A scaffold; 5-B graph integration deferred. Hermes Courier planned (Phase 2.75 D74; reaffirmed in 2.76 D182).",
+        "target_3mo": "MCP server count > 10 (add IDE-integration servers, semantic search). Hermes courier production-deployed in hardened config (per D185 v3-eventual posture).",
+        "target_6mo": "Strands semantic-tool-search pattern adopted (96% token reduction claim) — graduates from Lab if measured ROI confirms.",
+        "hard_constraints": [
+          "all tool calls must be auditable through Phase 12-A audit log",
+          "no shell-level access in dev_graph nodes"
+        ],
+        "anti_goals": [
+          "no unmediated network egress from any agent"
+        ],
+        "research_directions": [
+          "MCP server marketplace growth (currently 9,400+; track quarterly)",
+          "browser-use vs stagehand for headless-browser capture",
+          "A2A protocol multi-vendor interop"
+        ],
+        "notes": "Tool plane is where attack surface grows fastest; flag findings even if Phase 22 hardening is the place they're acted on."
+      },
+      {
+        "id": "output_quality",
+        "weight": 4,
+        "current_state": "Tuvok generates tests; pass-rate ~80% on synthetic projects. Data does QA review (Opus-tier). Verify portal mock-only (Phase 9-A); real cycle 2-7 days when 9-B lands.",
+        "target_3mo": "Tuvok pass-rate 95% on synthetic + 3 real customer projects. Verify portal cycle < 24h round-trip after 9-B ships.",
+        "target_6mo": "Auto-graded rubric per requirement category (verifier-against-spec pattern from Factory.ai). Phase 9 fix-cycle agent loop closing automatically when test failures have known fix patterns (15-B integration).",
+        "hard_constraints": [
+          "no silent test skipping",
+          "every QA failure must be either fixed or explicitly accepted with a note"
+        ],
+        "anti_goals": [
+          "don't sacrifice doc depth for code-test focus",
+          "don't auto-approve QA reviews"
+        ],
+        "research_directions": [
+          "AI test-grading frameworks",
+          "Verify portal alternatives (open-source candidates)",
+          "verifier-against-spec separate-context pattern"
+        ],
+        "notes": "Quality is the moat for v3. Spend here without flinching."
+      },
+      {
+        "id": "operations",
+        "weight": 3,
+        "current_state": "Single-VM; manual deploy; no billing. Phase 11-A cost-tracker library exists; 11-B dashboard deferred. Phase 14-A queue + worker pool scaffolded; 14-B real handlers deferred. Phase 20-A release substrate (metering, retention, GDPR) shipped.",
+        "target_3mo": "Single-command deploy (Deep Agents `deepagents deploy`-style for v1). Cost dashboard live (11-B). Phase 14-B queue handlers wired for at least pre_dev / dev / post_dev.",
+        "target_6mo": "Multi-tenant isolation real (per-tenant filesystem + DB schemas). Stripe live (20-B). Cron retention + nightly backup operational (20-B).",
+        "hard_constraints": [
+          "no shared-state across tenants (per Phase 19-A D167)",
+          "every action must be in append-only audit log somewhere"
+        ],
+        "anti_goals": [
+          "no cloud-native rewrite without need",
+          "no Kubernetes complexity until the single-VM model demonstrably hits a wall"
+        ],
+        "research_directions": [
+          "single-host sandbox runtimes (E2B, Daytona, Modal)",
+          "Stripe usage-billing patterns; OpenAI Agents Studio billing UX",
+          "v3-readiness checklists from production ai-factories (Factory.ai)"
+        ],
+        "notes": "Stay on single-VM through v2; swap to multi-host only at v3 if data demands it."
+      }
+    ],
+    "strategic_watch": [
+      { "id": "anthropic", "kind": "org", "name": "Anthropic", "importance": "high", "url": "https://www.anthropic.com/", "watch_frequency": "weekly", "notes": "Primary LLM provider for Picard / Data; Claude Code is our development SDK; Agent Teams in Lab" },
+      { "id": "thinking-machines", "kind": "org", "name": "Thinking Machines Lab (Mira Murati)", "importance": "high", "url": "https://thinkingmachines.ai/", "watch_frequency": "weekly", "notes": "Tinker private beta; founder explicitly wants this watched (D185)" },
+      { "id": "tinker", "kind": "product", "name": "Tinker (LoRA training API)", "importance": "medium", "url": "https://thinkingmachines.ai/tinker/", "watch_frequency": "weekly", "notes": "Bump to high importance when GA" },
+      { "id": "nous-research", "kind": "org", "name": "Nous Research", "importance": "high", "url": "https://github.com/NousResearch", "watch_frequency": "weekly", "notes": "Hermes Agent shipping weekly; we're at v0.13; expanding footprint per D182" },
+      { "id": "hermes-agent", "kind": "product", "name": "Hermes Agent (framework)", "importance": "high", "url": "https://github.com/NousResearch/hermes-agent", "watch_frequency": "weekly", "notes": "Lab profile already active; track each release for new patterns to steal" },
+      { "id": "openai", "kind": "org", "name": "OpenAI", "importance": "medium", "url": "https://openai.com/", "watch_frequency": "weekly", "notes": "Secondary LLM provider; Agents SDK direction matters for architectural posture" },
+      { "id": "langchain", "kind": "org", "name": "LangChain", "importance": "medium", "url": "https://www.langchain.com/", "watch_frequency": "monthly", "notes": "LangGraph is our runtime; Deep Agents Lab profile active" },
+      { "id": "vercel", "kind": "org", "name": "Vercel", "importance": "low", "url": "https://vercel.com/", "watch_frequency": "monthly", "notes": "AI SDK 6 is a Verify-portal-chat candidate; not a runtime concern" },
+      { "id": "linux-foundation-aaif", "kind": "org", "name": "Linux Foundation Agentic AI Foundation (AGENTS.md / Skills standard)", "importance": "medium", "url": "https://agents.md/", "watch_frequency": "monthly", "notes": "Standards body for AGENTS.md + SKILL.md; affects Phase 18 marketplace" }
+    ],
+    "notes": "Operating context (don't optimize for this period; just mind it): Security hardening lands at v3 (per D185 + D189). Findings are recorded in PROFILE.md \"Learnings\" but non-gating during v0.0.1 → v2. Beta Playground (Phase 2.76) handles new tool evaluations. The architect should propose new Lab profiles, not adopt directly to stable. Founder is the sole reviewer through v2; broader review process lands at v3.\n\n2026-05-09 — Architect standing instruction: every monthly cycle MUST include a Hermes Agent re-evaluation section (Seven owns it). Hermes ships weekly; we evaluate monthly. Each cycle: scan releases since last cycle, re-run Seven's benchmark suite, update playground/profiles/hermes-agent/PROFILE.md Learnings log, surface a tool_evaluation finding if measurements have shifted materially. Adoption decisions remain founder-gated."
+  }
+}

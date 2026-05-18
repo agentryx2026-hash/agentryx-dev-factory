@@ -1,8 +1,27 @@
-# Phase 10 — Status: 10-A COMPLETE ✅  (10-B DEFERRED)
+# Phase 10 — Status: 10-A + 10-B Tier B (read UI) COMPLETE ✅  (10-B remainder DEFERRED — needs Slack/SMTP creds + Hermes deploy)
 
 **Phase started**: 2026-04-22
-**Phase 10-A closed**: 2026-04-22
-**Duration**: single session
+**Phase 10-A closed**: 2026-04-22 (substrate — 8 event types × 6 channels × 3 backends, routing config schema)
+**Phase 10-B Tier B closed**: 2026-05-09 (Courier tab in Admin · Configuration; same session as the visible-factory sprint)
+**Duration**: 10-A single session; 10-B Tier B ~10 min composition
+
+---
+
+## Phase 10-B Tier B — what shipped (read-only)
+
+Backend `GET /api/factory-admin/courier/state` returns enabled flag, EVENT_TYPES (8), CHANNELS (6), SEVERITIES (3), and the live routing config loaded from `configs/courier-routing.json` via `loadRoutingConfig()`.
+
+Frontend 📡 Courier sub-tab (in Admin · Configuration): 4-stat strip + EVENT_TYPES list as code chips + CHANNELS as colored pills + SEVERITIES as info/warn/error pills + live JSON viewer for the routing config + note about 10-B remainder.
+
+## What stays for 10-B remainder
+
+- Hermes container deploy in gateway mode (per Phase 2.75 D74; reaffirmed in 2.76 D182)
+- Real Slack bot OAuth + GitHub App install + SMTP credentials
+- In-memory ring buffer for `recent_events` (today the endpoint returns `[]`)
+- Threshold-alert wiring (cost.budget_exceeded → Courier → Slack/email)
+- Producer-side wiring: pipeline phases that fire courier events
+
+---
 
 ## Subphase progress
 

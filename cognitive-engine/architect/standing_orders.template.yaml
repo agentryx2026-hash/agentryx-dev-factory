@@ -1,0 +1,142 @@
+# Standing Orders — schema + commentary
+#
+# This is the SCHEMA SOURCE OF TRUTH. Versioned in the repo. Do not edit
+# this file with real values; instead copy it to a fresh deployment as
+# `_kb/standing_orders.json` (after YAML → JSON conversion via your editor
+# or `yq -o=json`) and edit there. See `standing_orders.example.yaml` for
+# a seeded starting point.
+#
+# Phase 21-A D194: two-section layout matching the planned UI tabs.
+#   Tab 1 / Section 1 — `baseline`         autonomous architect behavior (deployment ops)
+#   Tab 2 / Section 2 — `custom_direction` founder-edited steering (60-slot structured form)
+#
+# Validation is intentionally LOOSE during 21-A. Only `version` and
+# `custom_direction.priority_areas` (exactly 6, valid ids, weight 1-5) are
+# strictly enforced. Everything else has sensible defaults applied at read
+# time so partial / evolving Standing Orders still work.
+
+# ─── REQUIRED ────────────────────────────────────────────────────────────
+
+version: 1
+# Bump on each meaningful update. Architect detects version changes and
+# triggers a `founder_priority_update` pass within ~60 seconds.
+
+# ─── TAB 1 / SECTION 1: BASELINE (autonomous behavior) ───────────────────
+#
+# What the architect does on its own — cron schedule, daily research budget,
+# dispatcher choice, auto-watch toggle. Founder rarely edits this section
+# (quarterly when ops change). Missing fields fall back to DEFAULT_BASELINE.
+
+baseline:
+  cron_schedule:
+    hour_utc: 0                       # default 0 (midnight UTC)
+    minute_utc: 0                     # default 0
+  daily_budget_usd: 1.5               # default 1.5
+  research_depth: standard            # light | standard | deep — default "standard"
+  research_dispatcher: stub           # stub (Phase 21-A) | sonnet (21-B) | opus (21-B+)
+  auto_watch_enabled: true            # architect auto-curates the watch list from inventory
+  auto_watch_disabled_ids: []         # founder explicit toggle-offs
+
+# ─── TAB 2 / SECTION 2: CUSTOM DIRECTION (founder-edited steering) ───────
+#
+# 6 priority areas × 8 fields + overall_stance + strategic_watch.
+# Founder edits monthly. ~60 fillable slots total.
+
+custom_direction:
+
+  effective_period:
+    start_date: "YYYY-MM-DD"          # When this version of priorities took effect
+    end_date: "YYYY-MM-DD"            # Intended review date (typically +3 months)
+    horizon_label: "e.g. Q3 2026"
+
+  overall_stance:
+    risk_appetite: balanced           # risk-averse | balanced | experimental
+    quality_vs_speed: balanced        # quality-first | balanced | speed-first
+    cost_sensitivity: medium          # high | medium | low
+    change_tolerance: gradual         # stable-lock | gradual | aggressive
+
+  # Exactly 6 priority_areas (REQUIRED). One entry per PriorityArea id:
+  # models / agents / languages / tools / output_quality / operations
+  priority_areas:
+
+    - id: models                       # LLM tier strategy, cost/quality posture, fine-tuning
+      weight: 3                        # 1-5; higher = more architect attention
+      current_state: |
+        One-line where-we-are.
+      target_3mo: |
+        1-3 sentences: where we want to be in ~3 months.
+      target_6mo: |
+        1-3 sentences: where we want to be in ~6 months.
+      hard_constraints:
+        - "explicit must-respect bound"
+      anti_goals:
+        - "what we explicitly do NOT want this period"
+      research_directions:
+        - "specific topics/queries the architect should scan"
+      notes: |
+        Optional free-form context for the architect.
+
+    - id: agents                       # Named pipeline agents + new candidates
+      weight: 3
+      current_state: ""
+      target_3mo: ""
+      target_6mo: ""
+      hard_constraints: []
+      anti_goals: []
+      research_directions: []
+
+    - id: languages                    # Code/output stacks the factory produces
+      weight: 3
+      current_state: ""
+      target_3mo: ""
+      target_6mo: ""
+      hard_constraints: []
+      anti_goals: []
+      research_directions: []
+
+    - id: tools                        # MCP plane, external integrations, IDE tooling
+      weight: 3
+      current_state: ""
+      target_3mo: ""
+      target_6mo: ""
+      hard_constraints: []
+      anti_goals: []
+      research_directions: []
+
+    - id: output_quality               # Tuvok rigor, Data review, Verify cycle
+      weight: 3
+      current_state: ""
+      target_3mo: ""
+      target_6mo: ""
+      hard_constraints: []
+      anti_goals: []
+      research_directions: []
+
+    - id: operations                   # Cost / speed / throughput / deployment surface
+      weight: 3
+      current_state: ""
+      target_3mo: ""
+      target_6mo: ""
+      hard_constraints: []
+      anti_goals: []
+      research_directions: []
+
+  # Founder additions on top of Tab 1's auto-curated watch list.
+  # Auto-curated entries refresh as the inventory changes; entries here are sticky.
+  strategic_watch:
+    - id: example-org
+      kind: org                        # org | product
+      name: "Example Organization"
+      importance: medium               # high | medium | low
+      url: "https://example.invalid/"
+      watch_frequency: weekly          # daily | weekly | monthly
+      notes: "Why we watch this; what we expect them to ship"
+
+  # Free-form context the architect should keep in mind across all areas.
+  notes: ""
+
+# ─── OPTIONAL TOP-LEVEL ─────────────────────────────────────────────────
+
+# Top-level free-form (architect can read; rare to use).
+# notes: |
+#   Operating context the architect should keep in mind globally.
