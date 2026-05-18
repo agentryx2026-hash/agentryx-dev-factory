@@ -1,7 +1,13 @@
 # B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-05-18 (Cohort 1 substrate fully closed in main; Cohort 2 substrate ~95% in main with 19-B closing the customer-side lifecycle via back-feed wrapper; only React UI + Courier notifications + ops credentials remain)
+**Snapshot date**: 2026-05-18 (Cohort 1 substrate fully closed in main; Cohort 2 substrate ~95% in main with 19-B closing the customer-side lifecycle via back-feed wrapper; only React UI + Courier notifications + ops credentials remain. **R1 architect first-real-cycle ACHIEVED 2026-05-18 — see [06_R1_First_Real_Cycle_Evidence.md](06_R1_First_Real_Cycle_Evidence.md). Pre_dev cycle is the only remaining R1 substrate gate.**)
 **Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
+
+## 🎯 R1 first real LLM cycle — achieved 2026-05-18 (architect path)
+
+`RP-0003 / r1_first_real_cycle / sonnet dispatcher` — **succeeded** in 4m 57s, **$0.102 spend**, **25 findings + 25 proposals** across all 6 priority areas. Real Sonnet calls via OpenRouter; no per-area failures; cost capture worked per-call; KB + proposer + audit-log all wrote correctly. Full evidence: [`06_R1_First_Real_Cycle_Evidence.md`](06_R1_First_Real_Cycle_Evidence.md).
+
+This is the **architect-side R1 gate** cleared. The remaining R1 gate is the **pre_dev cycle** (Picard/Sisko/Troi through the LangGraph pipeline with artifact-store + memory-layer chokepoints — runbook Option B, ~$2-5). After that lands, R1 is officially declared.
 
 ## 2026-05-18 update — substrate PRs landed in main + 19-B customer lifecycle closed ✅
 
