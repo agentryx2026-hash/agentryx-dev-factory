@@ -86,7 +86,11 @@ async function bootQueueWorker() {
   if (queueWorkerStarted) return;
   queueWorkerStarted = true;
   try {
-    const [queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod, trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod] = await Promise.all([
+    const [
+      queueMod, registryMod, schedulerMod, handlersMod, archHandlerMod,
+      trainingGenHandlerMod, trainingGenStoreMod, trainingGenRegistryMod, trainingGenPipelineMod,
+      videoHandlerMod, videoStoreMod, videoProviderRegistryMod, videoPipelineMod,
+    ] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handler-registry.js')).href),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'scheduler.js')).href),
@@ -96,6 +100,10 @@ async function bootQueueWorker() {
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'store.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'generators.js')).href).catch(() => null),
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-gen', 'pipeline.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'handlers', 'training-video-handler.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'store.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'providers', 'registry.js')).href).catch(() => null),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'training-videos', 'pipeline.js')).href).catch(() => null),
     ]);
     const queue = queueMod.createQueue(QUEUE_WORKSPACE);
 
@@ -165,6 +173,25 @@ async function bootQueueWorker() {
         });
       } catch (err) {
         console.warn('[queue.worker] training_gen handler not registered:', err?.message || err);
+      }
+    }
+
+    // Phase 17-B Tier B — training_video_render handler. Same pattern.
+    // All-null provider defaults (substrate at $0); real ElevenLabs/
+    // Puppeteer/ffmpeg become opt-in per-job via payload.providerChoice.
+    if (videoHandlerMod && videoStoreMod && videoProviderRegistryMod && videoPipelineMod) {
+      try {
+        videoHandlerMod.registerTrainingVideoRenderHandler(registry, {
+          createVideoStore: videoStoreMod.createVideoStore,
+          createProviderRegistry: videoProviderRegistryMod.createProviderRegistry,
+          renderFromPhase17Payload: videoPipelineMod.renderFromPhase17Payload,
+          defaultStoreRoot: path.join(QUEUE_WORKSPACE, '_videos-store'),
+          onLog: (line, jobId) => {
+            try { addLog('system', `[queue:training_video_render:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
+          },
+        });
+      } catch (err) {
+        console.warn('[queue.worker] training_video_render handler not registered:', err?.message || err);
       }
     }
 

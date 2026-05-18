@@ -15,7 +15,41 @@
 | 17-A.5 | `training-videos/pipeline.js` — `renderFromPhase17Payload` + `renderFromScript` wired to Phase 16-A training-gen | ✅ done |
 | 17-A.6 | Smoke test — 91 assertions across 13 test groups | ✅ done — all pass |
 | 17-A.7 | `training-videos/README.md` + `USE_TRAINING_VIDEOS` flag registered in admin-substrate | ✅ done |
-| 17-B | Real ElevenLabs/OpenAI TTS + real Puppeteer/Playwright + real ffmpeg + Phase 14 handler + Phase 9 Verify + cloud upload | ⏳ DEFERRED |
+| 17-B Tier B | Register `training_video_render` queue handler on Phase 14-A registry | ✅ done 2026-05-11 |
+| 17-B full | Real ElevenLabs/OpenAI TTS + real Puppeteer/Playwright + real ffmpeg + Phase 9 Verify auto-routing + cloud upload | ⏳ DEFERRED |
+
+## Phase 17-B Tier B — what shipped (2026-05-11)
+
+**`cognitive-engine/concurrency/handlers/training-video-handler.js`** (new, ~125 lines):
+- `registerTrainingVideoRenderHandler(registry, deps)` — registers `training_video_render` kind on a Phase 14-A handler registry
+- Deps DI: `createVideoStore` / `createProviderRegistry` / `renderFromPhase17Payload` (Phase 17-A); `defaultStoreRoot`; optional `onLog`
+- Payload contract: `{ project_id, script_id, phase17, providerChoice?, storyboard_id?, store_root?, meta? }`
+- Return: `{ video_id, status, duration_ms, cost_usd, mp4_ref, thumbnail_ref, captions_ref, degraded, error, providers }`
+- `DEFAULT_PROVIDER_CHOICE = { tts: "null", capture: "null", stitcher: "null" }` — substrate runs at $0 with no credentials; full backends become opt-in per-job
+- Partial `providerChoice` overrides merge with defaults (caller swaps one backend at a time)
+- `onProgress` events from the renderer forwarded as Live Trace lines (`beat_started`, `tts_done`, `stitch_done`, etc.)
+
+**`bootQueueWorker` extension** in `factory-dashboard/server/telemetry.mjs`:
+- Lazy-imports the video module + Phase 17-A store/registry/pipeline with `.catch(() => null)` (fail-tolerant)
+- Registers `training_video_render` alongside `training_gen` (when both this branch + 16-B Tier B's branch land in main, both kinds register simultaneously)
+- Default store root: `<QUEUE_WORKSPACE>/_videos-store`
+
+**Smoke test** — `cognitive-engine/concurrency/handlers/training-video-handler.smoke.js`:
+- **31 assertions** across 10 scenarios — registration; happy path with default providerChoice (all-null) producing a done VideoArtifact; partial providerChoice override (tts="stub-elevenlabs", others stay default); store-root resolution (payload / default / workingDir / throws); failure path (render returns status=failed); missing-field rejection; dep validation; DEFAULT_PROVIDER_CHOICE constant shape; onProgress event forwarding into onLog
+- All pass; no real providers, store, or filesystem needed (every dep stubbed)
+
+**Coordination with 16-B Tier B**: both training_gen (D219) and training_video_render (D220) land as sibling branches off `phase/14-b-queue-handlers`. Once both merge, the full training pipeline (script → video) is enqueueable end-to-end via the queue.
+
+## What stays for full 17-B
+
+- **Real provider backends**:
+  - `elevenlabs` TTS (needs `ELEVENLABS_API_KEY` from Key Console; ~$0.30-1/min)
+  - `openai` TTS (needs `OPENAI_API_KEY`)
+  - `puppeteer` / `playwright` capture (Chromium binary install; CPU-bound)
+  - `ffmpeg` stitcher (binary install on factory VM)
+- **Cloud upload** of finished mp4 to S3/R2 (Phase 20-B Stripe-adjacent infrastructure)
+- **Phase 9 Verify auto-routing** — when a reviewer flags a training video for re-render, automatically enqueue a `training_video_render` job with updated `providerChoice` or `meta` (depends on full 9-B fix-cycle wiring)
+- **Cost rollup integration** — video renders write `cost_usd` to the artifact; cost-tracker rollups should distinguish `training_video_render` from inline LLM calls (already free, since each VideoArtifact carries its own cost field)
 
 ## What shipped
 
