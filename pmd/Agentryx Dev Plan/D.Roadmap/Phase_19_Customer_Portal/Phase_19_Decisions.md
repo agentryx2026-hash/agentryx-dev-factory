@@ -258,3 +258,36 @@ Telemetry wires it in a new `bootSlaBreachScanner()` invoked from `server.listen
 - D226 stub-validation guard applied: the stub `raiseSLABreach` mirrors the real portal by appending the event back into the in-memory timeline, so the two-tick idempotency test reflects what production does.
 
 **Tradeoff acknowledged**: at the scale where per-tick scan cost shows up (~10k+ active submissions, or sub-minute SLAs), the per-submission timer indexed by `target_delivery_at` becomes worth the complexity. v1+ work. For v0.0.1 the per-tick scan is dramatically simpler and the cost is invisible.
+
+## D229 — Scanner hotfix: inject customer_id into index entries (added 2026-05-18)
+
+**What**: Live integration verification of D228 against the real portal API surfaced a bug: the scanner detected 0 breaches even when a submission was demonstrably past `target_delivery_at` (verified via direct `portal.sla.computeStatus()` call). Root cause: `submissions.list(customerId)` returns *index* entries (not full submission records), and the index entries omit `customer_id` by design — the per-customer subdirectory (`_customer-portal/customers/<CUST-id>/submissions/`) makes the customer_id implicit in the file path, so storing it again in the index would be redundant. But `sla.findBreaches(subs, tiersByCustomer)` reads `sub.customer_id` to look up the tier; with `customer_id === undefined`, every submission failed the `if (!tier) continue` guard, so breaches were always 0.
+
+**Fix** (one-line scanner change):
+```js
+activeSubs = all
+  .filter(s => s.status !== "delivered" && s.status !== "rejected" && s.status !== "cancelled")
+  .map(s => ({ ...s, customer_id: customer.id }));   // ← inject from iteration scope
+```
+
+The customer_id is already in scope (we're iterating per-customer), so injecting it onto each submission is free.
+
+**Tighten smoke stub** (D226 lesson re-applied):
+- The stub `submissions.list` previously included `customer_id: customerId` in each entry — permissive, didn't mirror production.
+- The smoke now omits `customer_id` from `submissions.list` output. **This would have caught the bug**: without the scanner's injection, the breach test cases would all report `breaches_found: 0` and the smoke would fail.
+- All 86 assertions still pass post-fix (proves the scanner's customer_id injection works against a production-mirroring stub).
+
+**Why this kept happening (D226 + D229 = same shape)**:
+- D226 (project_intake handler): stub `recordTimelineEvent` was permissive on event kind → live test caught invalid `phase_change` / `error` kinds. Fix: stub validates against `TIMELINE_EVENT_KINDS`.
+- D229 (sla-breach-scanner): stub `submissions.list` was permissive on field shape → live test caught missing `customer_id`. Fix: stub returns the production schema.
+- **Rule, now explicit**: every stub method MUST return EXACTLY what production returns — same fields, same types, same omissions. A stub that returns a richer object than production is worse than no stub at all because it hides drift.
+- Codifying this in the test pattern: when writing a smoke for a new module, look up the real producer's return shape first (read the source, not just the JSDoc) and write the stub to match.
+
+**Why scanner injection over portal-API change (e.g. force `customer_id` into the index)**:
+- Adding `customer_id` to every index entry would be a pure regression: redundant data, every submission write costs more bytes, every read returns more bytes, no caller (other than the scanner) needs it. The per-customer-subdir design intentionally normalises it out.
+- The scanner is the *only* caller that aggregates submissions across customers without a per-customer scope. So the scanner is the right layer to materialise the customer_id for downstream consumers (here, `findBreaches`).
+- Localised fix; no other callers affected; documents the asymmetry where it actually matters.
+
+**Live verification result** (post-fix):
+- Real portal in tmpdir, customer registered, submission walked to in_progress, scanner ran with injected clock 80h ahead (free-tier sla_hours = 72): `breaches_found: 1, raised: 1`. The actual JSONL on disk gained a `sla_breached` event with the correct note.
+- Second tick: `deduped: 1, raised: 0`. Only one breach event on disk. Idempotency works against real I/O.

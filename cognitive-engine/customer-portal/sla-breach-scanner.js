@@ -122,8 +122,16 @@ export function createSlaBreachScanner(init = {}) {
         // filter on `status` would require knowing all 3 non-terminal
         // states explicitly. Cheaper: list all + filter inline (findBreaches
         // does the same filter again, but cost is trivial for v0.0.1 scale).
+        //
+        // submissions.list() returns INDEX entries (not full records) which
+        // omit customer_id by design — the per-customer subdir makes it
+        // implicit in the path. findBreaches needs customer_id on each
+        // submission to look up the tier (D228 live-test hotfix), so we
+        // inject it here from the iteration scope.
         const all = await portal.submissions.list(customer.id);
-        activeSubs = all.filter(s => s.status !== "delivered" && s.status !== "rejected" && s.status !== "cancelled");
+        activeSubs = all
+          .filter(s => s.status !== "delivered" && s.status !== "rejected" && s.status !== "cancelled")
+          .map(s => ({ ...s, customer_id: customer.id }));
         result.submissions_checked += activeSubs.length;
       } catch (err) {
         result.errors.push({ scope: `submissions.list(${customer.id})`, error: err?.message || String(err) });
