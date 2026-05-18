@@ -91,7 +91,10 @@ function createFakeReplayRunner() {
 async function testTypesAndStateMachine() {
   console.log("[types & state machine]");
   assert(SCHEMA_VERSION === 1, "schema_version is 1");
-  assert(PROPOSAL_KINDS.length === 4, "4 proposal kinds");
+  assert(PROPOSAL_KINDS.length === 7, "7 proposal kinds (4 Phase 15-A original + 3 Phase 21-A architect)");
+  assert(PROPOSAL_KINDS.includes("tool_adoption"), "tool_adoption is a valid kind (Phase 21-A D190)");
+  assert(PROPOSAL_KINDS.includes("kb_update"), "kb_update is a valid kind (Phase 21-A D190)");
+  assert(PROPOSAL_KINDS.includes("research_finding"), "research_finding is a valid kind (Phase 21-A D190)");
   assert(PROPOSAL_STATES.length === 6, "6 proposal states");
   assert(isValidKind("prompt_change"), "prompt_change is a valid kind");
   assert(!isValidKind("bogus"), "bogus is not a valid kind");

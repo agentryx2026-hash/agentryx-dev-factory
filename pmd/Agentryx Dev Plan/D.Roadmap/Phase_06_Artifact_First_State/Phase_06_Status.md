@@ -1,8 +1,50 @@
-# Phase 6 — Status: 6-A COMPLETE ✅  (6-B DEFERRED)
+# Phase 6 — Status: 6-A + 6-B COMPLETE ✅
 
 **Phase started**: 2026-04-21
-**Phase 6-A closed**: 2026-04-21
-**Duration**: single session
+**Phase 6-A closed**: 2026-04-21 (artifact store substrate — types + sha256 store + monotonic IDs)
+**Phase 6-B closed**: 2026-05-09 (artifact dual-write hook on RouterChatModel + setProjectDir env wiring; same session as the visible-factory sprint after Phase 21-B)
+**Duration**: 6-A single session; 6-B ~30 min (substrate-only — strategic chokepoint at `RouterChatModel.invoke` covers all LLM calls in one patch)
+
+---
+
+## Phase 6-B — what shipped
+
+**llm-router/src/langchain-adapter.js**:
+- `RouterChatModel` constructor gains optional `projectDir`, `runId`, `node`, `artifactKind` fields
+- `invoke()` after `complete()` succeeds:
+  1. Resolves projectDir (per-call options → instance config → `process.env.AGENT_PROJECT_DIR`)
+  2. Resolves run_id (per-call → instance → `process.env.AGENT_RUN_ID` → minted-once-per-process fallback)
+  3. If `USE_ARTIFACT_STORE === 'true'` AND projectDir resolved → calls `archiveLLMArtifact()` with response content + cost + latency + usage + agent + model + backend + node + run_id
+  4. Returns the same `{content, _meta}` shape — artifact-write is fire-and-forget; failures swallowed (fail-open: never break an LLM call)
+- `archiveLLMArtifact()` lazy-imports Phase 6-A store, validates kind against `ARTIFACT_KINDS`, falls back to `raw_extraction` for unknown kinds, persists messages metadata (role + length, NOT content — user prompts may have PII)
+
+**cognitive-engine/tools.js**:
+- `setProjectDir()` (called by all 3 graphs) now sets `process.env.AGENT_PROJECT_DIR = <fullPath>` and mints `process.env.AGENT_RUN_ID` once per process
+- Effect: every LLM call from a graph subprocess automatically inherits these env vars; no graph-by-graph code change needed; setting env is safe unconditionally because the artifact-write hook is gated by `USE_ARTIFACT_STORE`
+
+## Activation
+
+1. Admin → Flags → toggle `USE_ARTIFACT_STORE` to ON
+2. Either flip a Standing Orders cadence dispatcher to `sonnet` (Phase 21-B) → Run cycle now → architect's 6 area calls archive 6 artifacts; or flip `PRE_DEV_USE_GRAPH` to ON and submit a Pre-Dev intake → ~12 PMD docs archived per intake
+
+## What lights up automatically once activated
+
+- Admin → 💰 Cost panel: real $/tokens/calls per model
+- Sidebar 5 (Replay): real past-run timelines via `listRunIds` + `collectRun`
+- Memory Layer page (once 7-E wires the artifact-walker → observations link)
+- Analytics & Insights: cost section populates with live rollups
+- Phase 11-A cost rollups: per-tenant + per-day breakdowns become possible
+- Phase 13-B execute (still pending): these artifacts are the source for replay-from-any-node
+
+## E2E verified (2026-05-09)
+
+  3 simulated LLM calls (picard pmd_doc / torres code_output / tuvok qa_report)
+  → all 3 artifacts persist in `_artifacts/`
+  → `listRunIds()` discovers them
+  → `collectRun()` returns the full snapshot with agents + window + cost
+  → Replay UI surfaces them on next reload
+
+---
 
 ## Subphase progress
 

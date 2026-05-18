@@ -42,6 +42,14 @@ out/
 *.sqlite-wal
 *.db
 
+# Phase 21-A — Architect KB runtime state (Standing Orders, findings,
+# proposals, passes). Per-deployment, never committed.
+/_kb/
+/_proposals/
+/_factory_runtime/
+# Phase 12-A admin audit — runtime state, not source
+/_admin-audit.jsonl
+
 # ============================================================
 # Logs
 # ============================================================

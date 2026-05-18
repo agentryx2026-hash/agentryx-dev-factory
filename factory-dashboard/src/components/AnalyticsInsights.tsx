@@ -1,103 +1,210 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
-const agentData = [
-  { name: 'JANE (PM / Triage)', model: 'Gemini 2.5 Flash', tokensIn: 1500, tokensOut: 950, time: '2m 14s', tasks: 3, efficiency: 98 },
-  { name: 'SPOCK (Research)', model: 'Gemini 3.1 Pro', tokensIn: 2500, tokensOut: 1200, time: '3m 45s', tasks: 2, efficiency: 95 },
-  { name: 'TORRES (Sr. Dev)', model: 'Gemini 3.1 Pro', tokensIn: 5000, tokensOut: 4500, time: '7m 12s', tasks: 5, efficiency: 92 },
-  { name: 'TUVOK (QA)', model: 'Gemini 3.1 Pro', tokensIn: 7500, tokensOut: 2200, time: '4m 30s', tasks: 4, efficiency: 88 },
-  { name: 'DATA (Architect)', model: 'Gemini 3.1 Pro', tokensIn: 8000, tokensOut: 150, time: '1m 20s', tasks: 1, efficiency: 99 },
-  { name: 'CRUSHER (Docs)', model: 'Gemini 2.5 Flash', tokensIn: 4200, tokensOut: 3100, time: '2m 10s', tasks: 2, efficiency: 97 },
-];
+/**
+ * Analytics & Insights — factory-pulse overview (was a static mock).
+ *
+ * Synthesizes live data from endpoints we've already wired across the
+ * other admin/architect pages. No new backend; this page is composition
+ * only — one place to glance at the factory's pulse without clicking
+ * through 5 different pages. Auto-refreshes every 15s.
+ */
+
+const PRIORITY_AREAS = ['models', 'agents', 'languages', 'tools', 'output_quality', 'operations'] as const;
+const AREA_ICON: Record<string, string> = {
+  models: '🧠', agents: '🖖', languages: '🔤', tools: '🔧', output_quality: '✨', operations: '⚙️',
+};
 
 const AnalyticsInsights: React.FC = () => {
-  const [selectedProject, setSelectedProject] = useState('HPSEDC Overseas Portal v1');
+  const [arch, setArch] = useState<any>(null);
+  const [flags, setFlags] = useState<any>(null);
+  const [queue, setQueue] = useState<any>(null);
+  const [cost, setCost] = useState<any>(null);
+  const [audit, setAudit] = useState<any>(null);
+  const [mem, setMem] = useState<any>(null);
+  const [replay, setReplay] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  // Aggregated Data
-  const totalTokensIn = agentData.reduce((acc, curr) => acc + curr.tokensIn, 0);
-  const totalTokensOut = agentData.reduce((acc, curr) => acc + curr.tokensOut, 0);
-  const totalTokens = totalTokensIn + totalTokensOut;
+  const refresh = async () => {
+    try {
+      const [a, f, q, c, au, m, r] = await Promise.all([
+        fetch('/telemetry/architect/state').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/flags').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/queue').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/cost').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/audit?limit=200').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/memory/scopes').then(x => x.ok ? x.json() : null).catch(() => null),
+        fetch('/telemetry/factory-admin/replay/runs').then(x => x.ok ? x.json() : null).catch(() => null),
+      ]);
+      setArch(a); setFlags(f); setQueue(q); setCost(c); setAudit(au); setMem(m); setReplay(r);
+      setLastRefresh(new Date());
+      setErr(null);
+    } catch (e: any) { setErr(e?.message || 'failed'); }
+  };
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const flagsOn = flags?.flags?.filter((f: any) => f.effective === 'on').length || 0;
+  const flagsTotal = flags?.flags?.length || 0;
+  const summary = arch?.summary || {};
+  const findingsByArea: Record<string, number> = summary.findings_by_area || {};
+  const maxArea = Math.max(1, ...Object.values(findingsByArea).map(n => Number(n) || 0));
+  const totalFindings = summary.finding_count || 0;
+  const auditCount = audit?.entries?.length || 0;
+  const recentAudit = audit?.entries?.slice(0, 6) || [];
 
   return (
-    <div className="section-container" style={{ padding: '24px', color: '#f8fafc' }}>
-      <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div className="fade-in">
+      <div className="page-header">
         <div>
-          <h1 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 'bold' }}>Analytics & Insights</h1>
-          <p style={{ margin: 0, color: '#94a3b8' }}>Telemetry, token economy, and agent performance tracking.</p>
+          <h1 className="page-title">📈 Analytics & Insights</h1>
+          <p className="page-subtitle">Factory pulse · synthesized from architect / admin / queue / cost / memory / replay</p>
         </div>
-        <select 
-          value={selectedProject} 
-          onChange={(e) => setSelectedProject(e.target.value)}
-          style={{ background: '#1e293b', color: 'white', border: '1px solid #334155', padding: '8px 16px', borderRadius: '8px', outline: 'none' }}
-        >
-          <option>HPSEDC Overseas Portal v1</option>
-          <option>Legacy E-Commerce App</option>
-          <option>All Projects Aggregate</option>
-        </select>
-      </header>
-
-      {/* Top Level Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-        <div style={{ background: 'rgba(30,30,40,0.5)', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-          <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Pipeline Time</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#38bdf8' }}>18m 42s</div>
-          <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '4px' }}>↑ 12% faster than baseline</div>
-        </div>
-
-        <div style={{ background: 'rgba(30,30,40,0.5)', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-          <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Compute Economy (Tokens)</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#c084fc' }}>{(totalTokens / 1000).toFixed(1)}k</div>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>In: {totalTokensIn} / Out: {totalTokensOut}</div>
-        </div>
-
-        <div style={{ background: 'rgba(30,30,40,0.5)', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-          <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Average Efficiency</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>94.8%</div>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>0 Hallucinations / 0 Rollbacks</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {lastRefresh && <span style={{ color: '#64748b', fontSize: '0.7rem' }}>refreshed {lastRefresh.toLocaleTimeString()}</span>}
+          <button onClick={refresh} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, color: '#cbd5e1', fontSize: '0.7rem', cursor: 'pointer' }}>↻ Refresh</button>
         </div>
       </div>
 
-      {/* Agents Breakdown Grid */}
-      <h3 style={{ borderBottom: '1px solid #334155', paddingBottom: '12px', marginBottom: '20px', color: '#e2e8f0', fontSize: '1.2rem' }}>Agent Contribution Matrix</h3>
-      <div style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.5)', borderRadius: '12px', border: '1px solid #334155' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-          <thead>
-            <tr style={{ background: 'rgba(30,41,59,0.8)' }}>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Swarm Agent</th>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Engine Core</th>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Context In</th>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Generated Out</th>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Active Time</th>
-              <th style={{ padding: '16px', color: '#cbd5e1', fontWeight: '600', borderBottom: '1px solid #334155' }}>Efficiency Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agentData.map((agent, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
-                <td style={{ padding: '16px', fontWeight: '500', color: '#fff' }}>{agent.name}</td>
-                <td style={{ padding: '16px' }}>
-                  <span style={{ background: agent.model.includes('3.1 Pro') ? 'rgba(56, 189, 248, 0.1)' : 'rgba(192, 132, 252, 0.1)', color: agent.model.includes('3.1 Pro') ? '#38bdf8' : '#c084fc', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
-                    {agent.model}
-                  </span>
-                </td>
-                <td style={{ padding: '16px', color: '#94a3b8', fontFamily: 'monospace' }}>{agent.tokensIn.toLocaleString()}</td>
-                <td style={{ padding: '16px', color: '#94a3b8', fontFamily: 'monospace' }}>{agent.tokensOut.toLocaleString()}</td>
-                <td style={{ padding: '16px', color: '#cbd5e1' }}>{agent.time}</td>
-                <td style={{ padding: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ flex: 1, background: '#1e293b', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ background: '#10b981', width: `${agent.efficiency}%`, height: '100%' }}></div>
+      {err && <div style={errorBar}>{err}</div>}
+
+      {/* Top stats row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <BigStat icon="👑" label="Standing Orders" value={arch?.standing_orders ? `v${arch.standing_orders.version}` : '—'} sub={arch?.paused ? '⏸ paused' : '▶ active'} color="#a855f7" />
+        <BigStat icon="🛰" label="Research passes" value={summary.pass_count ?? 0} sub={summary.last_pass_at ? `last: ${new Date(summary.last_pass_at).toLocaleDateString()}` : 'none yet'} color="#3b82f6" />
+        <BigStat icon="📍" label="Findings" value={totalFindings} sub={`${Object.keys(findingsByArea).filter(k => findingsByArea[k] > 0).length}/6 areas`} color="#06b6d4" />
+        <BigStat icon="📨" label="Proposals" value={arch?.proposals?.length ?? 0} sub="architect-emitted" color="#10b981" />
+        <BigStat icon="🔬" label="Briefs filed" value={arch?.briefs?.length ?? 0} sub="founder-driven" color="#ec4899" />
+        <BigStat icon="📊" label="Reports" value={arch?.reports?.length ?? 0} sub={arch?.unread_report_count > 0 ? `${arch.unread_report_count} unread` : 'all read'} color="#f59e0b" />
+        <BigStat icon="🚦" label="Flags ON" value={`${flagsOn}/${flagsTotal}`} sub="feature flags" color="#84cc16" />
+        <BigStat icon="📦" label="Modules" value={15} sub="A-tier catalogued" color="#a78bfa" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, marginBottom: 20 }}>
+        <div className="glass-panel">
+          <div className="panel-header">
+            <h3 className="panel-title">📈 Findings by priority area</h3>
+            <span style={{ color: '#64748b', fontSize: '0.7rem' }}>{totalFindings} total · 6 areas</span>
+          </div>
+          <div className="panel-body">
+            {totalFindings === 0 ? (
+              <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: 24 }}>
+                No findings yet. Run a research pass from the Master Architect page (or wait for the daily/weekly/monthly cadence) and they'll show up here.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {PRIORITY_AREAS.map(area => {
+                  const n = findingsByArea[area] || 0;
+                  const pct = (n / maxArea) * 100;
+                  return (
+                    <div key={area} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 40px', alignItems: 'center', gap: 10 }}>
+                      <span style={{ color: '#cbd5e1', fontSize: '0.78rem' }}>{AREA_ICON[area]} {area.replace(/_/g, ' ')}</span>
+                      <div style={{ height: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 5, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: n > 0 ? 'linear-gradient(90deg, #3b82f6, #06b6d4)' : 'transparent' }} />
+                      </div>
+                      <span style={{ color: n > 0 ? '#06b6d4' : '#475569', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.85rem', textAlign: 'right' }}>{n}</span>
                     </div>
-                    <span style={{ fontSize: '0.8rem', color: '#10b981' }}>{agent.efficiency}%</span>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="glass-panel">
+          <div className="panel-header">
+            <h3 className="panel-title">💰 Cost rollup</h3>
+          </div>
+          <div className="panel-body">
+            {!cost?.rollup ? (
+              <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', padding: 16, textAlign: 'center' }}>
+                $0 — no LLM calls yet. Lights up when the real Sonnet dispatcher (Phase 21-B) lands.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                <Stat label="Total" value={`$${(cost.rollup.total?.usd ?? 0).toFixed(2)}`} mono />
+                <Stat label="Tokens" value={(cost.rollup.total?.tokens ?? 0).toLocaleString()} mono />
+                <Stat label="Calls" value={cost.rollup.total?.calls ?? 0} mono />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+        <div className="glass-panel">
+          <div className="panel-header">
+            <h3 className="panel-title">📊 Concurrency (Phase 14-A)</h3>
+          </div>
+          <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            <Stat label="Queued" value={queue?.stats?.queue ?? 0} mono />
+            <Stat label="In flight" value={queue?.stats?.['in-flight'] ?? 0} mono />
+            <Stat label="Done" value={queue?.stats?.done ?? 0} mono />
+            <Stat label="Failed" value={queue?.stats?.failed ?? 0} mono />
+          </div>
+        </div>
+
+        <div className="glass-panel">
+          <div className="panel-header">
+            <h3 className="panel-title">🧠 Memory + 🎬 Replay</h3>
+          </div>
+          <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <Stat label="Observations" value={mem?.total ?? 0} mono />
+            <Stat label="Scopes" value={mem?.scopes?.length ?? 0} mono />
+            <Stat label="Past runs" value={replay?.runs?.length ?? 0} mono />
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel">
+        <div className="panel-header">
+          <h3 className="panel-title">📋 Recent admin activity ({auditCount})</h3>
+          <span style={{ color: '#64748b', fontSize: '0.7rem' }}>flag toggles · config writes · phase events</span>
+        </div>
+        <div className="panel-body">
+          {recentAudit.length === 0 ? (
+            <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: 16 }}>No admin activity recorded yet.</p>
+          ) : recentAudit.map((e: any, i: number) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.78rem' }}>
+              <div style={{ color: '#64748b', fontFamily: 'monospace', fontSize: '0.7rem' }}>{new Date(e.at).toLocaleString()}</div>
+              <div>
+                <span style={{ color: '#a855f7', fontWeight: 700 }}>{e.actor}</span>{' '}
+                <code style={inlineCode}>{e.action}</code>{' '}
+                {e.target && <>→ <code style={inlineCode}>{e.target}</code></>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ color: '#475569', fontSize: '0.7rem', textAlign: 'center', padding: 20 }}>
+        Auto-refresh every 15s. Synthesized from /api/architect/state and /api/factory-admin/{'{'}flags, queue, cost, audit, memory, replay{'}'}.
+      </div>
     </div>
   );
 };
+
+const BigStat: React.FC<{ icon: string; label: string; value: any; sub: string; color: string }> = ({ icon, label, value, sub, color }) => (
+  <div style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${color}33`, borderRadius: 10, padding: 14 }}>
+    <div style={{ fontSize: '1.4rem', marginBottom: 4 }}>{icon}</div>
+    <div style={{ color, fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 }}>{label}</div>
+    <div style={{ color: '#e2e8f0', fontSize: '1.4rem', fontWeight: 700, fontFamily: 'monospace', marginBottom: 4 }}>{value}</div>
+    <div style={{ color: '#64748b', fontSize: '0.7rem' }}>{sub}</div>
+  </div>
+);
+
+const Stat: React.FC<{ label: string; value: any; mono?: boolean }> = ({ label, value, mono }) => (
+  <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 6, padding: '8px 10px' }}>
+    <div style={{ color: '#64748b', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+    <div style={{ color: '#e2e8f0', fontSize: '1.05rem', fontWeight: 700, fontFamily: mono ? 'monospace' : 'inherit' }}>{String(value)}</div>
+  </div>
+);
+
+const errorBar: React.CSSProperties = { padding: 10, marginBottom: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6, color: '#f87171', fontSize: '0.8rem' };
+const inlineCode: React.CSSProperties = { background: 'rgba(0,0,0,0.4)', padding: '2px 6px', borderRadius: 4, fontSize: '0.85em', color: '#fbbf24', fontFamily: 'monospace' };
 
 export default AnalyticsInsights;

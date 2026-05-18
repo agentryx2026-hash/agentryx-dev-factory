@@ -3,9 +3,9 @@
 **Org / Author**: [Nous Research](https://github.com/NousResearch/hermes-agent)
 **Latest release**: v0.13 "Tenacity" (2026-05-07)
 **License**: MIT
-**Status**: **exploring**
-**Profile owner**: subhash
-**Last updated**: 2026-05-09
+**Status**: **testing**
+**Profile owner**: subhash (founder gate); **Seven** (Tool Evaluator) drives the evaluation work
+**Last updated**: 2026-05-09 (promoted from `exploring` on the same day after Phase 21-A.1 lands and Seven is onboarded)
 
 ---
 
@@ -77,6 +77,38 @@ Budget cap: $5 per scenario per month (target). Real Hermes runs use stub provid
 > Append-only. Each entry dated.
 
 - **2026-05-09** — Profile created. Status `exploring`. Reference: 2026-05 landscape scan + founder green-light. No code yet.
+- **2026-05-09** — Promoted `exploring → testing`. Phase 21-A.1 ship enabled the R&D pipeline (Platform Evolution Roadmap + Founder R&D Brief tab) and onboarded **Seven** (Tool Evaluator). Hermes is Seven's first mission. Founder direction (this date): "we've heard 2nd-hand info; prepare our internal first-hand report and based on that we'll take the next step." Strategic intent: lean on Hermes where useful (memory, Curator, Courier), keep building our own layer where ours fits the factory better — but only after Seven's evaluation, not before. Concrete evaluation scope deferred until Phase 21-B's real Sonnet dispatcher lands; Seven's seat is set up now, the first benchmarks run when the dispatcher is real.
+
+- **2026-05-11** — **Founder-prompted re-evaluation** ("Hermes has had a lot of development and hype — do we need to expand its role, or is our roadmap good enough until R1?"). Seven-style desk-research pass (no first-hand benchmarks yet; those still wait for Phase 21-B's dispatcher to run a real cycle). Findings:
+
+  - **Releases since last look**: v0.13 "Tenacity" (2026-05-07) shipped Kanban durability + `/goal` Ralph loop + 8 P0 security closures. **v0.14 "Foundation"** (2026-05-16) added xAI Grok OAuth (1M ctx), OpenAI-compatible local proxy (lets Codex/Aider/Cline hit any Hermes OAuth provider), `x_search` first-class X tool, full Microsoft Teams stack. 808 commits / 633 PRs / 545 issues closed in 9 days. Cadence unchanged — blistering.
+
+  - **Adoption signal**: ~140K stars in ~10 weeks; "fastest-growing agent framework of 2026" per multiple landscape scans. **Industry consensus has shifted** from "Hermes vs LangGraph" to *"Hermes 3 + LangGraph aren't competitors — they're layers"* (Hermes 3 as local reasoning engine, LangGraph for state persistence). This directly validates our 2026-05-09 hybrid stance.
+
+  - **Memory plugin model matured**: Honcho is now one of **8 supported memory providers** in Hermes (v0.7+ restored Honcho to plugin parity with profile-scoped host/peer resolution). Means we can adopt Honcho **directly** when Phase 7-E opens, rather than pattern-stealing — saves ~2-3 days of bespoke work. **→ Update Phase 7-E plan when Cohort 3 opens.**
+
+  - **Security trajectory**: improving but not safe yet. v0.13 closed 8 P0s; v0.8 → v0.13 surfaced 2 new CVEs in the meantime (**CVE-2026-6829** path traversal in WebUI, **CVE-2026-7113** missing auth on webhooks). Pattern: each release closes some, exposes others. **Reaffirms Phase 2.76 D185** (security hardening deferred to v2→v3) with a strengthening: **don't expose any Hermes component to public internet until our v3 pen-test pass**. Hermes-as-Courier-gateway stays internal-only until then.
+
+  - **Hermes 3 8B local model** (separate from the framework — separate product under same Nous brand): 91% tool-call accuracy at 8GB VRAM on Ollama is genuinely interesting for **Phase 16-B training-gen** (cheap voice-narration text) and possibly as a fallback in our LLM router. Park for now; revisit when 16-B opens.
+
+  **Verdict (Seven-style, 2026-05-11)**: **PASS for now; RE-EVALUATE at next monthly cadence (~2026-06-10)**. Our hybrid roadmap from 2026-05-09 is still right. Nothing in v0.14 or the May-2026 landscape demands re-architecting before R1.
+
+  **Explicit non-recommendations**:
+  - ❌ Switching from LangGraph to Hermes-as-runtime (security surface + pace-of-change risk for production stability).
+  - ❌ Bringing forward Hermes gateway adoption ahead of Phase 10-B (entangles scope unnecessarily).
+  - ❌ Investing in Hermes 3 8B local routing before 16-B opens (premature; LLM-router is fine for v0.0.1).
+
+  **Single roadmap adjustment captured**: when Phase 7-E gets revisited, prefer **direct Honcho adoption** over the original "pattern-steal" approach.
+
+  Founder direction (this date): "continue development; let's try to complete the entire platform." Following through — re-eval is recorded; substrate ships continue uninterrupted.
+
+  Sources consulted (web search 2026-05-11):
+  - Hermes v0.13 + v0.14 release notes (NousResearch/hermes-agent releases)
+  - Hermes vs LangChain comparisons (Respan, Hermes-agent.ai/vs/langchain, gurusup multi-agent frameworks 2026)
+  - Honcho memory docs + memory-providers comparison (vectorize.io)
+  - Security audit issue #7826 + CVE-2026-6829 (SentinelOne) + CVE-2026-7113
+
+  Next concrete action: when 21-B dispatcher runs the first real cycle (founder gates this — flip `USE_ARTIFACT_STORE=on`, set Monthly cadence dispatcher to `sonnet`), Seven should be scheduled the first first-hand benchmark task: Hermes Kanban vs Phase 14-A queue on the composition-smoke scenario, with measurement budget capped at $5.
 
 ## Security findings (parked until v3)
 

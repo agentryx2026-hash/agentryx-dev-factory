@@ -54,3 +54,15 @@
 - **Cross-replay analysis is easy.** Comparing original to replay is just: load original via `getArtifact(p, ART-0042)`, find descendants tagged `replay` with `meta.replays_artifact_id === ART-0042`.
 
 **Tradeoff**: a workspace's artifact count grows with replays. Cost dashboards (Phase 11-A) should add a "show only original / show all" toggle in 11-B. Track in Phase 11-B's plan.
+
+## D208 — 13-B splits into Tier B (read-only UI) + remainder (LLM stub + execute) (added 2026-05-09)
+
+**What**: Phase 13-B as originally scoped bundled "default LLM stub + HTTP endpoint + React timeline UI + cross-pipeline replay." Closing 13-B Tier B = the read-only visualization (timeline + artifact inspector). The execute path (LLM stub re-invokes the original agent, substitution mode, cross-pipeline) stays deferred under 13-B-remainder.
+
+**Why split**:
+- The Tier B read-only surface adds debugging value WITHOUT credentials. Founder can see what each agent did in past runs as soon as artifacts exist.
+- The execute path needs OpenRouter credit (LLM stub fires real LLM calls). Bundling it with the UI made the whole phase wait on credentials — meaningless when the substrate is already there.
+- Same composition pattern as 12-B Tier B vs 12-B-full: ship the visible read first, layer the write behind credentials.
+- Wired-but-empty discipline: Replay returns `[]` today because `USE_ARTIFACT_STORE` is OFF. Empty-state UI explains the next step (flip the flag → pipeline run → populates). When 6-B + OpenRouter land, the surface lights up automatically.
+
+**Tradeoff**: founder might expect to "click Replay → see something" and get an empty list today. Mitigation: the empty-state banner explains exactly what's missing and how to get there.

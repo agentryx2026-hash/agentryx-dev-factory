@@ -15,7 +15,7 @@ See [00_Architectural_Principles.md](00_Architectural_Principles.md) for the ful
 
 For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Architect.md](../Master_Factory_Architect.md)** — written by Claude Opus 4.7 as the target architecture this roadmap converges toward.
 
-## Roadmap (20 phases)
+## Roadmap (21 phases — Phase 21 added 2026-05-09 as the autonomous research substrate, post Phase 2.76)
 
 | # | Phase | One-line goal | Status |
 |---|---|---|---|
@@ -44,8 +44,10 @@ For the long-term vision (what R4/R5 looks like), see **[../Master_Factory_Archi
 | 18 | [Pipeline Module Marketplace](Phase_18_Pipeline_Module_Marketplace/Phase_18_Plan.md) | Install/swap agents as packages with manifest | 🟡 18-A done (manifest schema + installer + dependency resolution + catalogue of 15 built-ins spanning Phases 5-A through 17-A, 117 assertions); 18-B deferred (remote fetch + signature verification + version resolution + live swap + admin UI + Phase 3/4 catalogue entries) |
 | 19 | [Customer Portal](Phase_19_Customer_Portal/Phase_19_Plan.md) | Non-admin users submit projects; SLA + status tracking | 🟡 19-A done (accounts + submissions + timeline + SLA engine + portal facade; 3 tiers; per-customer sandbox isolation; typed error codes; 138 assertions); 19-B deferred (HTTP + React UI + queue handler + Courier + budget gate + Verify linkage + SLA scanner + password auth, needs UI work + credentials) |
 | 20 | [Public Release](Phase_20_Public_Release/Phase_20_Plan.md) | Multi-tenant, billing, hardening, compliance | 🟡 20-A done (5-capability consolidation substrate: metering + retention + GDPR compliance + readiness + backup; orchestrator; 126 assertions; **closes 100% A-tier coverage**); 20-B deferred (Stripe + health endpoints + cron retention + nightly backup + security/load/v1.0 ceremony) |
+| 21 | [Master Architect](Phase_21_Master_Architect/Phase_21_Plan.md) | Autonomous research + Knowledge Base substrate; founder steers via **Standing Orders** (Tab 1 baseline + Tab 2 custom_direction with 6 weighted priority areas); 3 new proposal kinds extend Phase 15-A; Founder Proposal Portal API | 🟡 21-A done (architect orchestrator + KB + scheduler + researcher + proposer + portal + Standing Orders schema; stub dispatcher = $0; 87 assertions; +3 in self-improvement); 21-B deferred (real Sonnet researcher + cron daemon + Phase 14 handler + 12-B UI + Phase 11 budget gate + Phase 10 notifications) |
+| 22 | Action Boundary Enforcement | Pipeline isolation, tool/egress allowlists, sandbox runtimes, signed-manifest provenance — the architect itself becomes subject to it | ⏳ scheduled at v2 → v3 boundary per D185 + D189 + D199 |
 
-Phases 16-20 will absolutely change as we learn.
+Phases 16-21 will absolutely change as we learn.
 
 ## Cross-cutting modules
 
@@ -96,4 +98,4 @@ Every phase from 5-A onwards uses PR flow, not direct-to-main.
 
 **Why**: Review gate + rollback discipline + parallel experimentation. Aligns with Master_Factory_Architect.md P9 (release-band versioning).
 
-**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`, `phase-15a-closed`, `phase-16a-closed`, `phase-17a-closed`, `phase-18a-closed`, `phase-19a-closed`, `phase-20a-closed`, `phase-2.76-closed`.
+**Phase tags**: `phase-0-baseline`, `phase-1-closed`, `phase-1.5-closed`, `phase-2-closed`, `phase-2.5-closed`, `phase-2.75-closed`, `phase-3-closed`, `phase-4-closed`, `phase-5a-closed`, `phase-6a-closed`, `phase-7a-closed`, `phase-8a-closed`, `phase-9a-closed`, `phase-10a-closed`, `phase-11a-closed`, `phase-12a-closed`, `phase-13a-closed`, `phase-14a-closed`, `phase-15a-closed`, `phase-16a-closed`, `phase-17a-closed`, `phase-18a-closed`, `phase-19a-closed`, `phase-20a-closed`, `phase-2.76-closed`, `phase-21a-closed`.

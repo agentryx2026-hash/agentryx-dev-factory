@@ -391,9 +391,9 @@ async function main() {
       "snapshot tracks agents");
 
     // Admin substrate inspection (Phase 12-A)
-    assert(FEATURE_FLAGS.length === 14, "14 feature flags catalogued");
+    assert(FEATURE_FLAGS.length === 15, "15 feature flags catalogued");
     assert(FEATURE_FLAGS.every(f => f.default_when_unset === "off"),
-      "all 14 flags default OFF (production behavior unchanged)");
+      "all 15 flags default OFF (production behavior unchanged)");
     assert(CONFIG_ENTRIES.length >= 7, "≥7 admin config entries catalogued");
 
     // -----------------------------------------------------------------------
