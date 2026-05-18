@@ -24,7 +24,7 @@ In one session, **15 PRs merged** to main + **9 phase-close tags** pushed. The 2
 - **13-B substrate** ✅ in main (#64 = read UI from #42 + LLM-stub + execute endpoint). Tag `phase-13-b-substrate-closed`. Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle.
 - **14-B** ✅ in main (#56 = Tier B + quotas) + (#57 = orphan reaper). Tag `phase-14-b-closed`. Remainder: legacy-path retirement + 19-B handler.
 - **18-B** 🟡 catalogue read UI in main (#42). Remainder: remote fetch + signature verification.
-- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) both shipped 2026-05-18. **What remains**: React customer dashboard + pre_dev→delivered back-feed + SLA breach scanner + admin auth (Phase 22).
+- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (#67, D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) + idempotency hotfix (#68, D226 — caught by live test) all shipped 2026-05-18. **Live end-to-end verified**: registered customer via HTTP → submitted project → project_intake handler ran clean on attempt 1 → downstream pre_dev job enqueued with customer-prefixed project_id. **What remains**: React customer dashboard + pre_dev→delivered back-feed + SLA breach scanner + admin auth (Phase 22).
 
 **Cohort 3** — unchanged (scale-gated). **Cohort 4** — unchanged (v3 release work).
 
