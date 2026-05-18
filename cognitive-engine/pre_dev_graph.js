@@ -1,7 +1,8 @@
 import { StateGraph, Annotation, END } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { fileReadTool, fileWriteTool, fileListTool, terminalTool, gitTool, broadcastTelemetry, broadcastWorkItem, setProjectDir, getProjectDir, readTemplate } from "./tools.js";
+import { fileReadTool, fileWriteTool, fileListTool } from "./tool-selector.js"; // Phase 5-B: USE_MCP_TOOLS-aware
+import { terminalTool, gitTool, broadcastTelemetry, broadcastWorkItem, setProjectDir, getProjectDir, readTemplate } from "./tools.js";
 import 'dotenv/config';
 
 /* ═══════════════════════════════════════════════════════════
