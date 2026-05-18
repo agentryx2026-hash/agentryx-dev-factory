@@ -2042,8 +2042,6 @@ server.listen(PORT, '0.0.0.0', () => {
   // pre_dev/dev/post_dev get processed automatically.
   bootQueueWorker().catch(err => console.error('[queue.worker] boot error:', err));
 });
-<<<<<<< HEAD
-=======
 
 // Phase 5-B cleanup — on SIGTERM/SIGINT (systemctl stop, Ctrl+C, etc.),
 // disconnect any cached MCP subprocesses before the Node process exits.
@@ -2091,4 +2089,3 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
->>>>>>> origin/main
