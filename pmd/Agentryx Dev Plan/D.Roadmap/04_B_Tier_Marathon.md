@@ -35,7 +35,7 @@ Two autonomous sessions (2026-05-10 + 2026-05-11) closed the substrate for most 
 **Lab profile updates**
 - Hermes re-evaluated 2026-05-11 → PASS for now, RE-EVALUATE 2026-06-10. Roadmap adjustment: when 7-E opens, prefer **direct Honcho adoption** (now stable plugin) over the original pattern-steal plan.
 
-**See also**: `pmd/.../01_First_Real_Cycle_Runbook.md` for the concrete founder action to validate the new substrate end-to-end.
+**See also**: [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md) for the concrete founder action to validate the new substrate end-to-end.
 
 This is a living doc. Update it after every B-subphase ships, after every Lab profile graduation, and at every release-band cut.
 
@@ -227,7 +227,7 @@ Three viable sequences, depending on what's available:
 
 ──── ALL SUBSTRATE NOW SHIPPED ────
 
-6. First real validation cycle  → ⏳ founder action (see First_Real_Cycle_Runbook.md)
+6. First real validation cycle  → ⏳ founder action (see [`05_First_Real_Cycle_Runbook.md`](05_First_Real_Cycle_Runbook.md))
 7. PR merges + tag closes        → ⏳ founder action
 8. Cohort 2 remainder (9-B/10-B/11-B/19-B)  → needs creds + multi-session work
 9. Stripe + ceremony (20-B)      → v3 release work
