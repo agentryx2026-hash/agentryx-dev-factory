@@ -1,11 +1,11 @@
 # B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-05-18 (15 PRs merged today — Cohort 1 substrate fully closed in main; Cohort 2 substrate ~90% in main; only 19-B HTTP/UI + ops credentials remain)
+**Snapshot date**: 2026-05-18 (Cohort 1 substrate fully closed in main; Cohort 2 substrate ~95% in main with 19-B closing the customer-side lifecycle via back-feed wrapper; only React UI + Courier notifications + ops credentials remain)
 **Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
 
-## 2026-05-18 update — all substrate PRs landed in main ✅
+## 2026-05-18 update — substrate PRs landed in main + 19-B customer lifecycle closed ✅
 
-In one session, **15 PRs merged** to main + **9 phase-close tags** pushed. The 2026-05-11 substrate sweep that lived across 14 open PRs is now fully integrated. Stack depth: 0.
+In one session, **15 substrate PRs merged** to main + **9 phase-close tags** pushed, followed by 19-B Tier B closing the customer pipeline end-to-end (project_intake handler + HTTP surface + back-feed wrapper). The 2026-05-11 substrate sweep that lived across 14 open PRs is now fully integrated. Stack depth: 0.
 
 **Cohort 1 — all substrate in main**
 - **5-B** ✅ in main (#63) — `tool-selector.js` + 5 graphs rewired under `USE_MCP_TOOLS`. Tag `phase-5-b-closed`.
@@ -24,7 +24,7 @@ In one session, **15 PRs merged** to main + **9 phase-close tags** pushed. The 2
 - **13-B substrate** ✅ in main (#64 = read UI from #42 + LLM-stub + execute endpoint). Tag `phase-13-b-substrate-closed`. Remainder: side-by-side diff UI + cross-pipeline UI + first real cycle.
 - **14-B** ✅ in main (#56 = Tier B + quotas) + (#57 = orphan reaper). Tag `phase-14-b-closed`. Remainder: legacy-path retirement + 19-B handler.
 - **18-B** 🟡 catalogue read UI in main (#42). Remainder: remote fetch + signature verification.
-- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (#67, D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) + idempotency hotfix (#68, D226 — caught by live test) all shipped 2026-05-18. **Live end-to-end verified**: registered customer via HTTP → submitted project → project_intake handler ran clean on attempt 1 → downstream pre_dev job enqueued with customer-prefixed project_id. **What remains**: React customer dashboard + pre_dev→delivered back-feed + SLA breach scanner + admin auth (Phase 22).
+- **19-A** ✅ in main since 2026-04-24 — customer-portal substrate, 138 smoke assertions. **19-B**: project_intake queue handler (#66, D224) + HTTP surface (#67, D225, 6 endpoints under `/api/customer-portal/*` with bearer auth + auto-enqueue) + idempotency hotfix (#68, D226 — caught by live test) + **pre_dev → delivered back-feed wrapper (D227, 78-assertion smoke)** all shipped 2026-05-18. **Live end-to-end verified through pre_dev intake**: registered customer via HTTP → submitted project → project_intake handler ran clean on attempt 1 → downstream pre_dev job enqueued with customer-prefixed project_id. Wrapper is wired into bootQueueWorker; full-loop verification (submission → pre_dev → delivered) happens on next live run. **What remains**: React customer dashboard + Courier notifications + SLA breach scanner + admin auth (Phase 22).
 
 **Cohort 3** — unchanged (scale-gated). **Cohort 4** — unchanged (v3 release work).
 
@@ -40,7 +40,10 @@ In one session, **15 PRs merged** to main + **9 phase-close tags** pushed. The 2
 - Telemetry merge-marker hotfix (#59)
 
 **What's now LIVE on the running telemetry**:
-- Queue worker registers 6 kinds: `pre_dev, dev, post_dev, architect_research, training_gen, training_video_render`
+- Queue worker registers 7 kinds: `pre_dev (back-feed-wrapped), dev, post_dev, architect_research, training_gen, training_video_render, project_intake`
+- Customer portal HTTP surface served at `/api/customer-portal/*` (6 endpoints; admin register/list open, customer submit/list/status/cancel bearer-gated)
+- Customer back-feed wrapper installed on pre_dev: customer-tagged jobs auto-transition parent submission `in_progress → delivered`; regular pipeline jobs unaffected; fail-isolated
+- Shared `sharedCustomerPortal` instance used by intake handler + back-feed wrapper (single hook into `_customer-portal/`)
 - Architect cadence daemon runs (inline by default; `USE_ARCHITECT_QUEUE=true` switches to queue mode)
 - Orphan reaper sweeps stale in-flight jobs on every boot
 - Graceful SIGTERM/SIGINT shutdown closes MCP connections + HTTP server with 8s grace
