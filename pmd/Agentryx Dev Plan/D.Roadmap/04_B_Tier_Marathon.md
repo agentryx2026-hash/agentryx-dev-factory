@@ -1,13 +1,30 @@
 # B-Tier Marathon — Path from v0.0.1 to v3 production
 
-**Snapshot date**: 2026-05-18 (Cohort 1 substrate fully closed in main; Cohort 2 substrate ~95% in main with 19-B closing the customer-side lifecycle via back-feed wrapper; only React UI + Courier notifications + ops credentials remain. **R1 architect first-real-cycle ACHIEVED 2026-05-18 — see [06_R1_First_Real_Cycle_Evidence.md](06_R1_First_Real_Cycle_Evidence.md). Pre_dev cycle is the only remaining R1 substrate gate.**)
-**Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; this maps the work between today and v3 production cutover (~5-6 months).
+**Snapshot date**: 2026-05-18 (Cohort 1 substrate fully closed in main; Cohort 2 substrate ~95% in main; 19-B customer lifecycle complete; **R1 fully ACHIEVED 2026-05-18 — both gates cleared at $1.77 total spend. See [06_R1_First_Real_Cycle_Evidence.md](06_R1_First_Real_Cycle_Evidence.md).**)
+**Purpose**: the *forward-looking* document. v0.0.1 A-tier substrate is complete; **R1 substrate validation complete**; this maps the work between R1 and v3 production cutover (~5-6 months).
 
-## 🎯 R1 first real LLM cycle — achieved 2026-05-18 (architect path)
+## 🏁 R1 — both real-LLM gates cleared 2026-05-18
 
-`RP-0003 / r1_first_real_cycle / sonnet dispatcher` — **succeeded** in 4m 57s, **$0.102 spend**, **25 findings + 25 proposals** across all 6 priority areas. Real Sonnet calls via OpenRouter; no per-area failures; cost capture worked per-call; KB + proposer + audit-log all wrote correctly. Full evidence: [`06_R1_First_Real_Cycle_Evidence.md`](06_R1_First_Real_Cycle_Evidence.md).
+| Gate | Trigger | Spend | Wall-clock | Outcome | Tag |
+|---|---|---|---|---|---|
+| **Architect path** | `POST /api/architect/run_pass` w/ `dispatcher: sonnet` → pass `RP-0003` | $0.102 | 4m 57s | 25 findings + 25 proposals across 6 priority areas | `r1-first-real-cycle` |
+| **Pre_dev path** | `POST /api/factory-admin/queue/submit` w/ `kind: pre_dev` → JOB-0005 | $1.664 | 5m 34s | exit_code 0; 7 artifacts (Opus + Haiku via OpenRouter); 629 lines of PMD prose | `r1-complete` |
 
-This is the **architect-side R1 gate** cleared. The remaining R1 gate is the **pre_dev cycle** (Picard/Sisko/Troi through the LangGraph pipeline with artifact-store + memory-layer chokepoints — runbook Option B, ~$2-5). After that lands, R1 is officially declared.
+**Total R1 spend: $1.77** (under runbook budget). OpenRouter remaining: ~$6.95.
+
+What's now proven:
+- Both LLM dispatch paths (architect researcher direct + LangGraph RouterChatModel chokepoint)
+- Multi-tier model routing (Opus 4.7 for architect tier; Sonnet 4.6 for research; Haiku 4.5 for cheap) — all via OpenRouter
+- Cost capture end-to-end (per-call + per-area + per-pipeline)
+- Substrate composition under real load (queue → handler → spawnGraph → chokepoint → router → backend)
+- Per-pipeline-step substantive output (Picard authored a real F1-F7 acceptance checklist from a single-sentence task)
+
+What's deliberately NOT validated yet (post-R1 cycles, each is a quick follow-on):
+- Cycle 3: `dev` cycle with parallel dev_graph (Spock + Torres + Tuvok code synthesis)
+- Cycle 4: `dev`/`post_dev` chain through to deployment
+- MCP tools flag on (`USE_MCP_TOOLS=true`)
+- Memory layer observations (manual sync trigger or auto on Phase 7-E)
+- Customer-portal end-to-end (substrate verified at PR #70, integration verified at the live-verify; needs one full customer submit → delivered run for full proof)
 
 ## 2026-05-18 update — substrate PRs landed in main + 19-B customer lifecycle closed ✅
 
