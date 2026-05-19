@@ -14,12 +14,15 @@ import MasterArchitect from './components/MasterArchitect';
 import Replay from './components/Replay';
 import CustomerPortal from './components/CustomerPortal';
 import Notifications from './components/Notifications';
+import ServicesHealth from './components/ServicesHealth';
+import EmbeddedConsole from './components/EmbeddedConsole';
 
 type Page =
   | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
-  | 'system' | 'settings' | 'admin-keys';
+  | 'system' | 'settings' | 'admin-keys' | 'services-health'
+  | 'console-n8n' | 'console-langfuse' | 'console-paperclip' | 'console-litellm';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('pre-dev');
@@ -39,6 +42,35 @@ function App() {
       case 'settings':        return <AdminConfig />;
       case 'admin-keys':      return <AdminKeys />;
       case 'cost-panel':      return <CostPanel />;
+      case 'services-health': return <ServicesHealth />;
+      // Embedded tool consoles — UI-E. Same-origin (served via nginx proxy)
+      // so cookies + auth work. Each tool's own UI runs inside iframe.
+      case 'console-n8n':
+        return <EmbeddedConsole
+          title="n8n — Workflow Editor"
+          description="Visual workflow builder (Docker container factory-n8n on port 5678)"
+          url="/n8n/"
+        />;
+      case 'console-langfuse':
+        return <EmbeddedConsole
+          title="Langfuse — LLM Observability"
+          description="Trace + cost + latency analytics (Docker container factory-langfuse on port 3000)"
+          url="/langfuse/"
+        />;
+      case 'console-paperclip':
+        return <EmbeddedConsole
+          title="Paperclip — Document Parser"
+          description="Document ingestion + extraction console (own service on port 3101)"
+          url="/paperclip/"
+          warning={`Paperclip is a Vite dev server that currently blocks the dev-hub.agentryx.dev host. To allow embedding, add this to /home/subhash.thakur.india/Projects/paperclip/ui/vite.config.ts → server: { allowedHosts: ['dev-hub.agentryx.dev'] } and restart factory-paperclip.service. Until then, iframe stays blank — use "Open in new tab" against http://127.0.0.1:3101/ from a browser on the VM, or fix the config.`}
+        />;
+      case 'console-litellm':
+        return <EmbeddedConsole
+          title="LiteLLM — LLM Proxy Admin"
+          description="Provider routing + key admin + spend monitor (Docker container factory-litellm on port 4000)"
+          url="http://127.0.0.1:4000/ui"
+          warning="LiteLLM admin UI loads from port 4000 directly (not yet proxied through nginx). If the iframe stays blank, use 'Open in new tab' — some browsers block mixed-origin iframes."
+        />;
       default:                return <PreDev />;
     }
   };

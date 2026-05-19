@@ -2420,6 +2420,105 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── UI-E: Services Health endpoint ─────────────────────────────────
+  // Pings every factory service in parallel + returns a single rollup so
+  // the React "Services Health" tab can render a status grid without
+  // 10+ network round-trips from the browser. Per-service config:
+  //   - kind: 'http' (probe via fetch) | 'tcp' (probe via net.connect)
+  //   - check_url: full URL the probe hits (must respond < 3s)
+  //   - console_url: where the user clicks to actually USE the service
+  //   - has_console: true if there's a real web UI (vs API/JSON only)
+  // Fail-isolated: one slow/down service doesn't block the others
+  // (Promise.allSettled + per-probe timeout).
+  if (req.url?.startsWith('/api/factory-admin/services/health') && req.method === 'GET') {
+    (async () => {
+      try {
+        const net = await import('node:net');
+        const SERVICES = [
+          // Own services
+          { id: 'telemetry',  name: 'Factory Telemetry',     port: 4401, kind: 'http', check_url: 'http://127.0.0.1:4401/api/factory-admin/flags', console_url: null,                                       has_console: false, role: 'own',     note: 'This dashboard\'s backend' },
+          { id: 'dashboard',  name: 'Factory Dashboard (Vite)', port: 5173, kind: 'tcp', check_url: null,                                     console_url: 'https://dev-hub.agentryx.dev/',            has_console: true,  role: 'own',     note: 'This React app' },
+          { id: 'metrics',    name: 'Factory Metrics',       port: 4400, kind: 'http', check_url: 'http://127.0.0.1:4400/api/health',        console_url: null,                                       has_console: false, role: 'own',     note: 'API only — feeds Cost Panel + Memory Layer' },
+          { id: 'key-console',name: 'Key Console (Phase 2.5)', port: 4402, kind: 'tcp', check_url: null,                                     console_url: 'https://dev-hub.agentryx.dev/admin/api/',  has_console: true,  role: 'own',     note: 'LLM provider keys + presets' },
+          { id: 'paperclip',  name: 'Paperclip',             port: 3101, kind: 'http', check_url: 'http://127.0.0.1:3101/api/health',        console_url: 'https://dev-hub.agentryx.dev/paperclip/',  has_console: true,  role: 'own',     note: 'Document parser (React UI)' },
+          { id: 'claw-web',   name: 'Claw Code (terminal)',  port: 7681, kind: 'tcp', check_url: null,                                     console_url: 'https://claw-code.agentryx.dev/',          has_console: true,  role: 'own',     note: 'Web terminal (ttyd)' },
+          // Docker-hosted infra services
+          { id: 'litellm',    name: 'LiteLLM',               port: 4000, kind: 'http', check_url: 'http://127.0.0.1:4000/health/liveliness', console_url: 'http://127.0.0.1:4000/ui',                  has_console: true,  role: 'infra',   note: 'LLM proxy (own UI at /ui)' },
+          { id: 'n8n',        name: 'n8n Workflows',         port: 5678, kind: 'http', check_url: 'http://127.0.0.1:5678/healthz',           console_url: 'https://dev-hub.agentryx.dev/n8n/',        has_console: true,  role: 'infra',   note: 'Workflow automation' },
+          { id: 'langfuse',   name: 'Langfuse',              port: 3000, kind: 'http', check_url: 'http://127.0.0.1:3000/api/public/health', console_url: 'https://dev-hub.agentryx.dev/langfuse/',   has_console: true,  role: 'infra',   note: 'LLM observability + traces' },
+          { id: 'chromadb',   name: 'ChromaDB',              port: 8000, kind: 'http', check_url: 'http://127.0.0.1:8000/api/v2/heartbeat',  console_url: null,                                       has_console: false, role: 'infra',   note: 'Vector store (API only)' },
+          { id: 'postgres',   name: 'PostgreSQL',            port: 5432, kind: 'tcp', check_url: null,                                     console_url: null,                                       has_console: false, role: 'infra',   note: 'Primary DB' },
+          { id: 'redis',      name: 'Redis',                 port: 6379, kind: 'tcp', check_url: null,                                     console_url: null,                                       has_console: false, role: 'infra',   note: 'Cache' },
+          // Not currently deployed but documented for visibility
+          { id: 'hermes',     name: 'Hermes Agent (Lab)',    port: null, kind: 'absent', check_url: null,                                  console_url: null,                                       has_console: true,  role: 'lab',     note: 'Container present at hermes/docker-compose.yml — not currently running (evaluation only, Phase 2.75)' },
+          { id: 'honcho',     name: 'Honcho (Lab — pending)', port: null, kind: 'absent', check_url: null,                                console_url: null,                                       has_console: true,  role: 'lab',     note: 'Memory backend candidate — not yet deployed (Phase 7-E Lab profile)' },
+          // External services
+          { id: 'openrouter', name: 'OpenRouter',            port: null, kind: 'external', check_url: null,                               console_url: 'https://openrouter.ai/settings/credits',   has_console: true,  role: 'external', note: 'LLM provider account + billing' },
+          { id: 'anthropic',  name: 'Anthropic Console',     port: null, kind: 'external', check_url: null,                               console_url: 'https://console.anthropic.com/',           has_console: true,  role: 'external', note: 'Direct API key (BYOK path)' },
+          { id: 'gcp',        name: 'GCP Console',           port: null, kind: 'external', check_url: null,                               console_url: 'https://console.cloud.google.com/compute', has_console: true,  role: 'external', note: 'VM + infra' },
+          { id: 'github',     name: 'GitHub Repo',           port: null, kind: 'external', check_url: null,                               console_url: 'https://github.com/agentryx2026-hash/agentryx-factory', has_console: true, role: 'external', note: 'Source + PRs + tags' },
+        ];
+
+        const PROBE_TIMEOUT_MS = 4000;
+
+        async function probeHttp(svc) {
+          const t0 = Date.now();
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+          try {
+            const res = await fetch(svc.check_url, { signal: controller.signal });
+            return { status: res.ok ? 'up' : 'degraded', http_status: res.status, latency_ms: Date.now() - t0 };
+          } catch (err) {
+            return { status: 'down', latency_ms: Date.now() - t0, error: err?.name === 'AbortError' ? 'timeout' : (err?.message || String(err)) };
+          } finally { clearTimeout(timer); }
+        }
+
+        function probeTcp(svc) {
+          return new Promise((resolve) => {
+            const t0 = Date.now();
+            const sock = new net.Socket();
+            const finish = (status, extra) => {
+              try { sock.destroy(); } catch {}
+              resolve({ status, latency_ms: Date.now() - t0, ...extra });
+            };
+            sock.setTimeout(PROBE_TIMEOUT_MS);
+            sock.once('connect', () => finish('up'));
+            sock.once('timeout', () => finish('down', { error: 'timeout' }));
+            sock.once('error', (err) => finish('down', { error: err?.message || 'connect failed' }));
+            sock.connect(svc.port, '127.0.0.1');
+          });
+        }
+
+        const probed = await Promise.allSettled(SERVICES.map(async (svc) => {
+          let probe;
+          if (svc.kind === 'http' && svc.check_url) probe = await probeHttp(svc);
+          else if (svc.kind === 'tcp' && svc.port)  probe = await probeTcp(svc);
+          else if (svc.kind === 'absent')           probe = { status: 'absent' };
+          else if (svc.kind === 'external')         probe = { status: 'external' };
+          else                                       probe = { status: 'unknown' };
+          return { ...svc, ...probe, checked_at: new Date().toISOString() };
+        }));
+        const services = probed.map(p => p.status === 'fulfilled' ? p.value : { status: 'down', error: p.reason?.message || 'probe rejected' });
+        return jsonResponse(res, 200, {
+          services,
+          summary: {
+            total:      services.length,
+            up:         services.filter(s => s.status === 'up').length,
+            degraded:   services.filter(s => s.status === 'degraded').length,
+            down:       services.filter(s => s.status === 'down').length,
+            absent:     services.filter(s => s.status === 'absent').length,
+            external:   services.filter(s => s.status === 'external').length,
+            with_console: services.filter(s => s.has_console).length,
+          },
+        });
+      } catch (err) {
+        console.error('[factory-admin/services/health]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 21-A: Master Architect ─────────────────────────────────────
   // All routes are namespaced under /api/architect/* and read/write the
   // factory's KB at <repo>/_kb/. The architect ships with a stub
