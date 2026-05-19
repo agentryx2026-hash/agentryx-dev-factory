@@ -9,8 +9,9 @@
 |---|---|---|---|---|---|
 | **Architect path** | `POST /api/architect/run_pass` w/ `dispatcher: sonnet` → pass `RP-0003` | $0.102 | 4m 57s | 25 findings + 25 proposals across 6 priority areas | `r1-first-real-cycle` |
 | **Pre_dev path** | `POST /api/factory-admin/queue/submit` w/ `kind: pre_dev` → JOB-0005 | $1.664 | 5m 34s | exit_code 0; 7 artifacts (Opus + Haiku via OpenRouter); 629 lines of PMD prose | `r1-complete` |
+| **Customer-flow E2E** (bonus, unplanned during D231 verify) | `POST /api/customer-portal/submit` → SUB-0001 → JOB-0006 (project_intake) → JOB-0007 (pre_dev) → D227 back-feed | $1.591 | 4m 28s | submission `delivered`; D224+D225+D227+D231 chain validated end-to-end on real LLM | (rolled into D231 PR) |
 
-**Total R1 spend: $1.77** (under runbook budget). OpenRouter remaining: ~$6.95.
+**Total R1 spend: $3.35** (under runbook budget). OpenRouter remaining: ~$5.35.
 
 What's now proven:
 - Both LLM dispatch paths (architect researcher direct + LangGraph RouterChatModel chokepoint)

@@ -343,3 +343,35 @@ All six types get matching routing rules in `configs/courier-routing.json` — f
 - D226 stub-strictness applied: stub `courier.dispatch` calls real `validateEvent` from `courier/types.js`, so any malformed event from the notifier (wrong type, missing title, bad severity) surfaces at test time — not in live.
 
 **Tradeoff acknowledged**: per-customer routing (so customer A gets emails, customer B gets Slack) is NOT in this ship. v0.0.1 routes everything to stdout = founder log. When `account.notification_prefs` lands (19-C), the notifier will read it before dispatch and override the target per-channel. The CourierEvent shape already supports this via `meta` — no Courier-side change needed.
+
+## D231 — Notifier wirings for HTTP /submit + /cancel (added 2026-05-18)
+
+**What**: Two new methods added to `createPortalNotifier`: `onSubmitted({ account, submission })` fires `customer.submission_received` Courier event; `onCancelled({ account, submission, note })` fires `customer.submission_cancelled` Courier event with the customer's cancel note threaded through `meta.cancel_note`. Both wired into the HTTP route handlers in `telemetry.mjs`:
+
+- `POST /api/customer-portal/submit` → after `portal.submitProject` succeeds + after auto-enqueue of project_intake, calls `notifier.onSubmitted({ account, submission })`.
+- `POST /api/customer-portal/submissions/:id/cancel` → after `portal.cancelSubmission` succeeds, calls `notifier.onCancelled({ account, submission, note })`.
+
+Same fail-isolated posture as D230: notifier failures never reject the HTTP request (submission/cancellation is already persisted; logging a notification miss is acceptable).
+
+**Telemetry refactor — shared notifier instance**:
+- Hoisted the notifier construction out of `bootSlaBreachScanner` into a module-level lazy getter `getPortalNotifier()` mirroring the existing `getCustomerPortal()` pattern.
+- The scanner and the HTTP routes now share ONE notifier instance + ONE Courier instance + ONE event-history surface. Previously the scanner had its own local notifier; HTTP routes couldn't dispatch.
+- `NOTIFIER_DISABLED=true` env still opts out (now applied at the module level instead of just at scanner boot).
+- Init-once-fail-don't-retry semantics: if module load or Courier construction throws, `getPortalNotifier()` returns null on all subsequent calls without re-trying. Avoids per-request retry storms when something is genuinely broken.
+
+**Why scanner-first then HTTP wirings (D230 → D231 sequence)**:
+- D230 built the notifier module + the Courier event taxonomy + the scanner integration. That was the "biggest fan-out, smallest blast radius" first move — scanner has tight `runOnce` semantics so the wiring was easy to test in isolation.
+- D231 adds the 2 simplest HTTP source wirings (submit + cancel) — these don't depend on any queue handler internals, just on the HTTP route reaching the notifier through the new lazy getter.
+- D232 will wire the queue-handler sources (project_intake `onAccepted` + back-feed `onDelivered`) and D233 the admin `onRejected`. Splitting per-ship keeps each PR small + reviewable + independently revertable.
+
+**Test coverage**:
+- `notifier.smoke.js` extended 51 → **88 assertions**: full-shape verification of `customer.submission_received` (severity=info, title mentions email + project_title, body mentions tier + intake handler, meta includes submission_status); full-shape verification of `customer.submission_cancelled` (note carried into meta.cancel_note; (none provided) fallback when no note); input validation for both new methods (3-4 missing-field variants each → ok:false without dispatch); fail-isolation for onSubmitted (throw); surface guard expanded to track D231 vs D232+ method presence (catches regressions if a future method drops or appears prematurely).
+- D226 stub-strictness preserved: stub `courier.dispatch` runs real `validateEvent` from `courier/types.js`, so any malformed event from the new methods surfaces at test time.
+
+**Live integration verification** (real portal + real Courier in tmpdir, no LLM spend): **14/14 assertions pass** — both events land in Courier history with correct type/severity/channels/meta; `meta.cancel_note` carries through; both events scoped to the same `project_id`; fake backend records 2 sends on the stdout channel.
+
+**Bonus production-cycle validation** (unintended but evidence-positive): the live HTTP test of D231 triggered the full auto-enqueue chain — submission `SUB-0001` from customer `CUST-0003` went `submitted → accepted (D224) → in_progress (D224) → pre_dev runs through real LLM (JOB-0007, $1.59, 7 artifacts) → delivered (D227 back-feed wrapper)`. This is the **first end-to-end production validation of D224 + D225 + D227 + D231 together on real LLM** — substrate hold-up under real load + the back-feed wrapper firing correctly. Submission was delivered with `delivered_by_job_id: JOB-0007` stamped. (See `06_R1_First_Real_Cycle_Evidence.md` § Bonus customer-flow cycle.)
+
+**Architecture note** — the shared `getPortalNotifier()` getter is now the canonical access point for notifier across the dashboard process. The earlier `bootSlaBreachScanner`-local construction is removed; the scanner reaches the notifier through the shared getter. This sets up D232 (intake + back-feed wirings) and D233 (admin reject) to reuse the same instance — no further telemetry plumbing changes needed there, just `await getPortalNotifier()` + call the appropriate method.
+
+**Tradeoff acknowledged**: the D231 HTTP wirings can't be easily tested via the HTTP boundary as a "verify the wiring" check, because every successful /submit auto-enqueues real pre_dev (~$1.50-$2 spend per attempt). The integration-script pattern (real portal + real Courier in tmpdir) is the right test path for wiring verifies; HTTP routes are for actual production use. Saved as a feedback memory so future sessions don't repeat the mistake.

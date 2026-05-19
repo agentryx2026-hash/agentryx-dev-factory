@@ -219,16 +219,117 @@ group("onSlaBreached — courier drops event (no rule / severity threshold) → 
   ok("log mentions dropped",          logs.some(l => l.includes("dropped")));
 }
 
-// ─── only the wired method is exported in this ship ────────────────────────
+// ─── D231 — onSubmitted (HTTP /submit wiring) ──────────────────────────────
 
-group("notifier surface — only onSlaBreached is exported (other methods land per subsequent ships)");
+group("onSubmitted — happy path → dispatches customer.submission_received");
+{
+  const logs = [];
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier, onLog: (l) => logs.push(l) });
+  const res = await notifier.onSubmitted({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "submitted" },
+  });
+
+  check("dispatched once",                   _calls.dispatched.length, 1);
+  check("event type",                        _calls.dispatched[0].type, "customer.submission_received");
+  check("severity = info",                   _calls.dispatched[0].severity, "info");
+  check("project_id customer_sub scoped",    _calls.dispatched[0].project_id, "CUST-0001_SUB-0001");
+  ok("title mentions submission id",         _calls.dispatched[0].title.includes("SUB-0001"));
+  ok("title mentions email",                 _calls.dispatched[0].title.includes("alice@example.com"));
+  ok("title mentions project_title",         _calls.dispatched[0].title.includes("Test Project"));
+  ok("body mentions tier",                   _calls.dispatched[0].body.includes("free"));
+  ok("body mentions intake handler",         _calls.dispatched[0].body.includes("project_intake"));
+  check("meta.customer_id",                  _calls.dispatched[0].meta.customer_id, "CUST-0001");
+  check("meta.submission_id",                _calls.dispatched[0].meta.submission_id, "SUB-0001");
+  check("meta.submission_status = submitted",_calls.dispatched[0].meta.submission_status, "submitted");
+  check("event passes Courier validateEvent",validateEvent(_calls.dispatched[0]), null);
+  ok("result.ok",                            res.ok === true);
+  ok("log fired once",                       logs.length === 1);
+}
+
+group("onSubmitted — input validation");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const r1 = await notifier.onSubmitted();
+  ok("no input → ok:false", r1.ok === false);
+  const r2 = await notifier.onSubmitted({ account: { id: "X" }, submission: SUBMISSION });
+  ok("missing account.email → ok:false", r2.ok === false);
+  const r3 = await notifier.onSubmitted({ account: ACCOUNT, submission: { id: "S" } });
+  ok("missing target_delivery_at → ok:false", r3.ok === false);
+  check("no dispatches on bad input", _calls.dispatched.length, 0);
+}
+
+group("onSubmitted — courier.dispatch throws → fail-isolated");
+{
+  const { courier } = buildCourier({ throws: true });
+  const notifier = createPortalNotifier({ courier });
+  let didThrow = false;
+  let res;
+  try { res = await notifier.onSubmitted({ account: ACCOUNT, submission: SUBMISSION }); }
+  catch { didThrow = true; }
+  ok("did not throw",      didThrow === false);
+  ok("result.ok === false", res.ok === false);
+}
+
+// ─── D231 — onCancelled (HTTP /cancel wiring) ──────────────────────────────
+
+group("onCancelled — happy path → dispatches customer.submission_cancelled with note");
+{
+  const logs = [];
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier, onLog: (l) => logs.push(l) });
+  const res = await notifier.onCancelled({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "cancelled" },
+    note: "scope changed; will resubmit later",
+  });
+
+  check("dispatched once",                   _calls.dispatched.length, 1);
+  check("event type",                        _calls.dispatched[0].type, "customer.submission_cancelled");
+  check("severity = info",                   _calls.dispatched[0].severity, "info");
+  ok("title mentions cancelled + email",     _calls.dispatched[0].title.includes("cancelled") && _calls.dispatched[0].title.includes("alice@example.com"));
+  ok("body mentions customer note",          _calls.dispatched[0].body.includes("scope changed; will resubmit later"));
+  check("meta.cancel_note carried",          _calls.dispatched[0].meta.cancel_note, "scope changed; will resubmit later");
+  check("event passes Courier validateEvent",validateEvent(_calls.dispatched[0]), null);
+  ok("result.ok",                            res.ok === true);
+}
+
+group("onCancelled — no note → body shows '(none provided)' + meta.cancel_note = null");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  await notifier.onCancelled({ account: ACCOUNT, submission: { ...SUBMISSION, status: "cancelled" } });
+  ok("body shows (none provided)", _calls.dispatched[0].body.includes("(none provided)"));
+  ok("meta.cancel_note = null",    _calls.dispatched[0].meta.cancel_note === null);
+}
+
+group("onCancelled — input validation");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const r1 = await notifier.onCancelled();
+  ok("no input → ok:false", r1.ok === false);
+  const r2 = await notifier.onCancelled({ account: ACCOUNT });
+  ok("missing submission → ok:false", r2.ok === false);
+  const r3 = await notifier.onCancelled({ account: ACCOUNT, submission: { project_title: "x" } });
+  ok("missing submission.id → ok:false", r3.ok === false);
+  check("no dispatches on bad input", _calls.dispatched.length, 0);
+}
+
+// ─── surface — D231 ships expand the export set ────────────────────────────
+
+group("notifier surface — D231 ships onSubmitted + onCancelled (D232+ still pending)");
 {
   const { courier } = buildCourier();
   const notifier = createPortalNotifier({ courier });
   ok("onSlaBreached is a function", typeof notifier.onSlaBreached === "function");
-  ok("onSubmitted not exported (D231)", typeof notifier.onSubmitted !== "function");
-  ok("onAccepted not exported (D231)",  typeof notifier.onAccepted !== "function");
-  ok("onDelivered not exported (D231)", typeof notifier.onDelivered !== "function");
+  ok("onSubmitted is a function (D231 new)", typeof notifier.onSubmitted === "function");
+  ok("onCancelled is a function (D231 new)", typeof notifier.onCancelled === "function");
+  ok("onAccepted not exported (D232)", typeof notifier.onAccepted !== "function");
+  ok("onDelivered not exported (D232)", typeof notifier.onDelivered !== "function");
+  ok("onRejected not exported (D233)",  typeof notifier.onRejected !== "function");
 }
 
 console.log(`\n${passed} passed · ${failed} failed`);

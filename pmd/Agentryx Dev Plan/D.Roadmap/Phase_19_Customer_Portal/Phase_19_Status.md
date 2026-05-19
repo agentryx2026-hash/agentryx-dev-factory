@@ -7,6 +7,7 @@
 **Phase 19-B back-feed wrapper closed**: 2026-05-18 (`wrapForCustomerBackfeed` — pre_dev completion transitions submission to `delivered`; closes the customer-side lifecycle for v0.0.1)
 **Phase 19-B SLA breach scanner closed**: 2026-05-18 (`createSlaBreachScanner` — periodic background daemon emits `sla_breached` timeline events for non-terminal submissions past their target; idempotent via timeline dedup; D229 hotfix injects customer_id into index entries after live-test catch — same D226 lesson re-applied)
 **Phase 19-B portal notifier (scanner wiring) closed**: 2026-05-18 (`createPortalNotifier` — translates portal lifecycle events to Courier `customer.*` event dispatches; scanner-first wiring delivers `customer.sla_breached` on every fresh breach; other 3 sources wire per follow-on D231-D233 ships)
+**Phase 19-B portal notifier (HTTP /submit + /cancel wirings) closed**: 2026-05-18 (`onSubmitted` + `onCancelled` methods added to notifier; shared `getPortalNotifier()` getter hoisted to module scope; bonus: live HTTP test triggered first end-to-end production validation of D224+D225+D227+D231 chain on real LLM — submission delivered, $1.59 spend)
 **Duration**: 19-A single session; 19-B handler ~30 min; HTTP surface ~45 min; back-feed wrapper ~30 min; SLA scanner ~30 min over the substrate
 
 ## Subphase progress
@@ -26,7 +27,8 @@
 | 19-B back-feed wrapper | `wrapForCustomerBackfeed` wraps pre_dev → on completion transitions submission `in_progress → delivered` + records timeline event; fail-isolated | ✅ done 2026-05-18 |
 | 19-B SLA breach scanner | `createSlaBreachScanner` — periodic daemon scans non-terminal submissions, emits `sla_breached` timeline events past target; idempotent via timeline dedup; opt-out via `SLA_SCANNER_DISABLED=true` | ✅ done 2026-05-18 |
 | 19-B portal notifier (scanner-first wiring) | `createPortalNotifier({courier}).onSlaBreached` — translates portal events → Courier `customer.*` dispatches; SLA scanner wired first; 6 new event types + 6 routing rules; default backend=fake (in-memory history); opt-out via `NOTIFIER_DISABLED=true` | ✅ done 2026-05-18 |
-| 19-B portal notifier (other 3 sources wiring) | onSubmitted (HTTP /submit) + onCancelled (HTTP /cancel) + onAccepted + onDelivered (queue handlers); will wire D231-D233 | ⏳ in-progress (substrate ready) |
+| 19-B portal notifier (HTTP /submit + /cancel) | `onSubmitted` + `onCancelled` methods added; HTTP routes wired through shared `getPortalNotifier()` getter; live integration verify 14/14 pass; **bonus: D224+D225+D227+D231 chain validated end-to-end on real LLM via the verify itself** | ✅ done 2026-05-18 |
+| 19-B portal notifier (intake + back-feed + admin reject) | onAccepted (project_intake) + onDelivered (back-feed) + onRejected (admin); D232-D233 follow-on ships | ⏳ next (substrate ready) |
 | 19-B full | React UI + Courier per-customer notification prefs (19-C) + budget gate + Verify linkage + password auth | ⏳ DEFERRED |
 
 ## Phase 19-B Tier B handler — what shipped (2026-05-18)

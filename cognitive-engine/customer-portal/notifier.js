@@ -136,14 +136,88 @@ export function createPortalNotifier(init = {}) {
     },
 
     /**
-     * Reserved for future wiring (D231+). Same shape as onSlaBreached;
-     * each method maps to one customer.* event type with appropriate
-     * title/body/severity. Adding here is cheap (no callers yet); the
-     * cost is each WIRING in its respective source module.
+     * Fire `customer.submission_received` Courier event. Called by the
+     * HTTP /submit route AFTER `portal.submitProject` succeeds + AFTER
+     * auto-enqueue of project_intake (D225 + D231 wiring).
      *
-     * Intentionally omitted in this ship to keep the PR focused on the
-     * scanner integration. The smoke test asserts that only the wired
-     * method (onSlaBreached) is exported; the rest land per-ship.
+     * @param {object} input
+     * @param {object} input.account                 CustomerAccount record (id, email, tier required)
+     * @param {object} input.submission              ProjectSubmission record (id, project_title, status, target_delivery_at required)
+     * @returns {Promise<NotifyResult>}
+     */
+    async onSubmitted({ account, submission } = {}) {
+      if (!account?.id || !account?.email)        return { ok: false, error: "account.id + account.email required" };
+      if (!submission?.id || !submission?.target_delivery_at) return { ok: false, error: "submission.id + submission.target_delivery_at required" };
+
+      const event = {
+        type: "customer.submission_received",
+        severity: "info",
+        project_id: `${account.id}_${submission.id}`,
+        title: `Submission received: ${submission.id} from ${account.email} — "${submission.project_title || "(no title)"}"`,
+        body: [
+          `New submission \`${submission.id}\` from \`${account.email}\` (tier=${account.tier}).`,
+          ``,
+          `- **Project**: ${submission.project_title || "(no title)"}`,
+          `- **Status**: ${submission.status}`,
+          `- **Target delivery**: ${submission.target_delivery_at}`,
+          ``,
+          `_The factory will pick this up via the project_intake queue handler within seconds._`,
+        ].join("\n"),
+        meta: {
+          customer_id: account.id,
+          submission_id: submission.id,
+          tier: account.tier,
+          target_delivery_at: submission.target_delivery_at,
+          submission_status: submission.status,
+        },
+      };
+      return dispatchSafely(event, `customer.submission_received(${submission.id})`);
+    },
+
+    /**
+     * Fire `customer.submission_cancelled` Courier event. Called by the
+     * HTTP /submissions/:id/cancel route AFTER `portal.cancelSubmission`
+     * succeeds. Carries the cancel note so ops can see WHY (customer
+     * regret / typo / scope change / etc.).
+     *
+     * @param {object} input
+     * @param {object} input.account             CustomerAccount record (id, email, tier required)
+     * @param {object} input.submission          ProjectSubmission record (id, project_title required; status will be 'cancelled' post-transition)
+     * @param {string} [input.note]              customer-provided cancel note (forwarded into the event body)
+     * @returns {Promise<NotifyResult>}
+     */
+    async onCancelled({ account, submission, note } = {}) {
+      if (!account?.id || !account?.email) return { ok: false, error: "account.id + account.email required" };
+      if (!submission?.id)                  return { ok: false, error: "submission.id required" };
+
+      const event = {
+        type: "customer.submission_cancelled",
+        severity: "info",
+        project_id: `${account.id}_${submission.id}`,
+        title: `Submission cancelled: ${submission.id} by ${account.email}`,
+        body: [
+          `Submission \`${submission.id}\` — "${submission.project_title || "(no title)"}" — was cancelled by the customer.`,
+          ``,
+          `- **Customer**: ${account.email} (\`${account.id}\`, tier=${account.tier})`,
+          `- **Status**: ${submission.status}`,
+          `- **Customer note**: ${note || "(none provided)"}`,
+        ].join("\n"),
+        meta: {
+          customer_id: account.id,
+          submission_id: submission.id,
+          tier: account.tier,
+          submission_status: submission.status,
+          cancel_note: note || null,
+        },
+      };
+      return dispatchSafely(event, `customer.submission_cancelled(${submission.id})`);
+    },
+
+    /**
+     * Reserved for D232+: onAccepted (project_intake handler) +
+     * onDelivered (back-feed wrapper) + onRejected (admin reject).
+     * Each lands in its own ship as the corresponding source module
+     * gets wired.
      */
   };
 }

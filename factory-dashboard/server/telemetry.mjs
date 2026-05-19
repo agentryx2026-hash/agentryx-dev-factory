@@ -96,6 +96,42 @@ async function getCustomerPortal() {
   return _customerPortalInstance;
 }
 
+// Phase 19-B (D231) — lazy-loaded shared portal notifier instance.
+// Constructed on first need (HTTP routes for /submit + /cancel; SLA
+// scanner; future intake handler / back-feed wrapper wirings). Shares
+// the same Courier instance across all callsites — single source of
+// truth for outbound customer notifications.
+// Fail-tolerant: if notifier module or Courier module is missing /
+// crashes, returns null and callers no-op (notifications skipped, but
+// the request itself succeeds — same fail-isolated posture as the
+// scanner wiring).
+// Opt-out: NOTIFIER_DISABLED=true (also honoured by bootSlaBreachScanner).
+let _portalNotifierInstance = null;
+let _portalNotifierInitTried = false;
+async function getPortalNotifier() {
+  if (_portalNotifierInstance) return _portalNotifierInstance;
+  if (_portalNotifierInitTried) return null;  // tried + failed once → don't keep retrying per-request
+  _portalNotifierInitTried = true;
+  if (process.env.NOTIFIER_DISABLED === 'true') return null;
+  try {
+    const [notifierMod, courierMod] = await Promise.all([
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'notifier.js')).href),
+      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'service.js')).href),
+    ]);
+    const courier = await courierMod.getCourier();
+    _portalNotifierInstance = notifierMod.createPortalNotifier({
+      courier,
+      onLog: (line) => {
+        try { addLog('system', `📨 [portal.notifier] ${line.substring(0, 220)}`); broadcast(); } catch {}
+      },
+    });
+    return _portalNotifierInstance;
+  } catch (err) {
+    console.warn('[portal.notifier] init failed (continuing without notifications):', err?.message || err);
+    return null;
+  }
+}
+
 // Extract the bearer token from `Authorization: Bearer <token>` header.
 function extractBearerToken(req) {
   const auth = req.headers['authorization'] || req.headers['Authorization'];
@@ -440,35 +476,19 @@ async function bootSlaBreachScanner() {
     return null;
   }
   try {
-    const [scannerMod, notifierMod, courierMod] = await Promise.all([
+    const [scannerMod] = await Promise.all([
       import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'sla-breach-scanner.js')).href),
-      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'notifier.js')).href).catch(() => null),
-      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'service.js')).href).catch(() => null),
     ]);
     const portal = await getCustomerPortal();
     const intervalMs = Number(process.env.SLA_SCANNER_INTERVAL_MS) || 5 * 60 * 1000;
 
-    // D230 — Courier notifier wiring. Default backend = "fake" (in-memory
-    // history; events are inspectable via the courier instance but not
-    // delivered anywhere external). Set COURIER_BACKEND=http + provide
-    // Hermes credentials to deliver to real Slack/email/etc when 10-B
-    // wiring lands. NOTIFIER_DISABLED=true opts out entirely.
-    let notifier = null;
-    if (notifierMod && courierMod && process.env.NOTIFIER_DISABLED !== 'true') {
-      try {
-        const courier = await courierMod.getCourier();
-        notifier = notifierMod.createPortalNotifier({
-          courier,
-          onLog: (line) => {
-            try { addLog('system', `📨 [portal.notifier] ${line.substring(0, 220)}`); broadcast(); } catch {}
-          },
-        });
-        console.log(`📨 Portal notifier wired (courier backend=${courier.backend?.kind || 'unknown'})`);
-      } catch (err) {
-        console.warn('[sla.scanner] notifier wiring failed (continuing without notifications):', err?.message || err);
-        notifier = null;
-      }
-    }
+    // D231 — use the shared module-level notifier (also used by HTTP
+    // routes for /submit and /cancel). Single Courier instance + single
+    // event-history surface. getPortalNotifier() returns null if the
+    // module is missing or NOTIFIER_DISABLED=true, in which case the
+    // scanner runs without notifications (timeline events still land).
+    const notifier = await getPortalNotifier();
+    if (notifier) console.log('📨 Portal notifier wired (shared instance) — scanner + HTTP routes will dispatch customer.* events');
 
     slaBreachScannerHandle = scannerMod.createSlaBreachScanner({
       portal,
@@ -1641,11 +1661,11 @@ const server = http.createServer((req, res) => {
         // Auto-enqueue project_intake so the queue handler chain (D224)
         // picks it up. Resolve customer_id from the submission record
         // (portal.submitProject returns receipt without it).
+        let resolvedAccount = null;
+        let subRecord = null;
         try {
-          const subRecord = await portal.submissions.get(
-            (await portal.accounts.authenticate(token)).id,
-            receipt.submission_id
-          );
+          resolvedAccount = await portal.accounts.authenticate(token);
+          subRecord = await portal.submissions.get(resolvedAccount.id, receipt.submission_id);
           const queueMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'concurrency', 'queue.js')).href);
           const q = queueMod.createQueue(QUEUE_WORKSPACE);
           await q.enqueue({
@@ -1662,6 +1682,22 @@ const server = http.createServer((req, res) => {
           // Admin → Queue panel. The submission record persists.
           console.warn('[customer-portal/submit] auto-enqueue failed (submission accepted, manual queue needed):', enqErr?.message || enqErr);
         }
+
+        // D231 — fire customer.submission_received Courier event.
+        // Fail-isolated: a notifier failure must not reject the submission
+        // (submission is already persisted + auto-enqueued). Notifier's own
+        // dispatchSafely catches throws + maps ok:false; we just discard
+        // the result here (logged via notifier's onLog).
+        try {
+          const notifier = await getPortalNotifier();
+          if (notifier && resolvedAccount && subRecord) {
+            await notifier.onSubmitted({ account: resolvedAccount, submission: subRecord });
+          }
+        } catch (notifyErr) {
+          // Defence-in-depth — notifier swore not to throw, but never propagate.
+          console.warn('[customer-portal/submit] notifier.onSubmitted failed:', notifyErr?.message || notifyErr);
+        }
+
         broadcast();
         return jsonResponse(res, 201, receipt);
       } catch (err) {
@@ -1719,6 +1755,19 @@ const server = http.createServer((req, res) => {
         const portal = await getCustomerPortal();
         const updated = await portal.cancelSubmission(token, submissionId, { note: body?.note });
         addLog('system', `🛑 Customer portal: cancelled ${submissionId}${body?.note ? ` (${body.note})` : ''}`);
+
+        // D231 — fire customer.submission_cancelled Courier event.
+        // Fail-isolated; cancellation is already persisted.
+        try {
+          const notifier = await getPortalNotifier();
+          if (notifier) {
+            const account = await portal.accounts.authenticate(token);
+            await notifier.onCancelled({ account, submission: updated, note: body?.note });
+          }
+        } catch (notifyErr) {
+          console.warn('[customer-portal/cancel] notifier.onCancelled failed:', notifyErr?.message || notifyErr);
+        }
+
         broadcast();
         return jsonResponse(res, 200, { submission: updated });
       } catch (err) {
