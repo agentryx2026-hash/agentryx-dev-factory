@@ -2212,13 +2212,19 @@ const server = http.createServer((req, res) => {
       try {
         const url = new URL(req.url, 'http://localhost');
         const { getRollup } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'cost-tracker', 'service.js')).href);
-        const since = url.searchParams.get('since') || undefined;
-        const until = url.searchParams.get('until') || undefined;
-        const rollup = await getRollup({
-          workspace_root: REPO_ROOT,
-          since,
-          until,
-        }, { source: 'artifacts' });
+        // artifact-source filter uses `from` / `to` (not since/until); accept
+        // both query-param names for back-compat with anything wired to the
+        // old shape.
+        const since = url.searchParams.get('since') || url.searchParams.get('from') || undefined;
+        const until = url.searchParams.get('until') || url.searchParams.get('to')   || undefined;
+        // Fix (was: workspace_root in filter; getRollup expected workspaceRoot
+        // in opts AND artifacts live under QUEUE_WORKSPACE/<project>/_artifacts/
+        // — REPO_ROOT was wrong). Cost rollup now reads the real per-project
+        // artifact stores written by the Phase 6-B RouterChatModel chokepoint.
+        const rollup = await getRollup(
+          { from: since, to: until },
+          { source: 'artifacts', workspaceRoot: QUEUE_WORKSPACE },
+        );
         return jsonResponse(res, 200, { rollup, period: { since, until } });
       } catch (err) {
         console.error('[factory-admin/cost]', err);
