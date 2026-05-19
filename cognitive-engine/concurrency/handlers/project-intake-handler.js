@@ -63,6 +63,7 @@ const PROJECT_INTAKE_KIND = "project_intake";
  * @param {object} deps
  * @param {object} deps.portal                       Phase 19-A `createCustomerPortal(...)` instance
  * @param {object} deps.queue                        Phase 14-A `createQueue(...)` instance — used to enqueue downstream pre_dev jobs
+ * @param {object} [deps.notifier]                   Optional Phase 19-B portal notifier (D230). When present + has .onAccepted, fires a customer.submission_accepted Courier event immediately after the submitted→accepted transition (D232 wiring). Fail-isolated — notifier errors never propagate.
  * @param {(line: string, jobId: string) => void} [deps.onLog]
  *   Optional progress sink — pipes each lifecycle event to a Live Trace stream.
  */
@@ -74,6 +75,7 @@ export function registerProjectIntakeHandler(registry, deps = {}) {
   if (!deps?.queue?.enqueue) {
     throw new Error("registerProjectIntakeHandler: deps.queue (Phase 14-A queue instance) required");
   }
+  const notifier = deps.notifier && typeof deps.notifier.onAccepted === "function" ? deps.notifier : null;
 
   registry.register(PROJECT_INTAKE_KIND, async (job /*, ctx */) => {
     const payload = job.payload || {};
@@ -124,6 +126,23 @@ export function registerProjectIntakeHandler(registry, deps = {}) {
         note: `intake handler ${job.id}`,
       });
       log(`accepted at ${acceptedAt}`);
+
+      // D232 — fire customer.submission_accepted Courier event. Only on
+      // FRESH transitions (skipped on idempotent-resume to avoid double-
+      // notifications). Fail-isolated: notifier errors never propagate
+      // — the transition already succeeded.
+      if (notifier) {
+        try {
+          // Re-fetch so the event meta carries the post-transition state.
+          const acceptedSub = await deps.portal.submissions.get(payload.customer_id, payload.submission_id);
+          if (acceptedSub) {
+            const account = await deps.portal.accounts.getById(payload.customer_id);
+            if (account) await notifier.onAccepted({ account, submission: acceptedSub, intake_job_id: job.id });
+          }
+        } catch (notifyErr) {
+          log(`notifier.onAccepted failed for ${payload.submission_id}: ${notifyErr?.message || notifyErr}`);
+        }
+      }
     } else {
       log(`already in '${submission.status}'; skipping submitted→accepted (resuming from prior partial attempt)`);
     }

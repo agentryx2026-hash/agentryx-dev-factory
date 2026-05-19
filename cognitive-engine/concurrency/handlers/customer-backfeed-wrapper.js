@@ -82,6 +82,10 @@ export function wrapForCustomerBackfeed(originalHandler, deps = {}) {
   const finalKind  = deps.finalKind  || DEFAULT_FINAL_KIND;
   const phaseKinds = new Set(deps.phaseKinds || DEFAULT_PHASE_KINDS);
   const log = (msg, jobId) => { if (deps.onLog) { try { deps.onLog(msg, jobId); } catch {} } };
+  // D232 — optional portal notifier. When present + has .onDelivered,
+  // fires customer.submission_delivered Courier event after the
+  // in_progress→delivered transition succeeds. Fail-isolated.
+  const notifier = deps.notifier && typeof deps.notifier.onDelivered === "function" ? deps.notifier : null;
 
   return async function wrappedHandler(job, ctx) {
     // 1. Run the inner handler unchanged.
@@ -128,6 +132,21 @@ export function wrapForCustomerBackfeed(originalHandler, deps = {}) {
           note: `${job.kind} job ${job.id} completed`,
         });
         log(`back-feed: ${submission_id} → delivered (via ${job.kind} ${job.id})`, job.id);
+
+        // D232 — fire customer.submission_delivered Courier event.
+        // Fail-isolated: notifier errors never propagate (the transition
+        // already succeeded; not delivering a notification is acceptable).
+        if (notifier && deps.portal.accounts?.getById) {
+          try {
+            const deliveredSub = await deps.portal.submissions.get(customer_id, submission_id);
+            const account = await deps.portal.accounts.getById(customer_id);
+            if (account && deliveredSub) {
+              await notifier.onDelivered({ account, submission: deliveredSub, delivered_by_job_id: job.id });
+            }
+          } catch (notifyErr) {
+            log(`notifier.onDelivered failed for ${submission_id}: ${notifyErr?.message || notifyErr}`, job.id);
+          }
+        }
       } else if (phaseKinds.has(job.kind)) {
         // Intermediate phase — record completion only.
         await deps.portal.recordTimelineEvent(customer_id, submission_id, {

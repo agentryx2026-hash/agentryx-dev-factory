@@ -375,3 +375,78 @@ Same fail-isolated posture as D230: notifier failures never reject the HTTP requ
 **Architecture note** — the shared `getPortalNotifier()` getter is now the canonical access point for notifier across the dashboard process. The earlier `bootSlaBreachScanner`-local construction is removed; the scanner reaches the notifier through the shared getter. This sets up D232 (intake + back-feed wirings) and D233 (admin reject) to reuse the same instance — no further telemetry plumbing changes needed there, just `await getPortalNotifier()` + call the appropriate method.
 
 **Tradeoff acknowledged**: the D231 HTTP wirings can't be easily tested via the HTTP boundary as a "verify the wiring" check, because every successful /submit auto-enqueues real pre_dev (~$1.50-$2 spend per attempt). The integration-script pattern (real portal + real Courier in tmpdir) is the right test path for wiring verifies; HTTP routes are for actual production use. Saved as a feedback memory so future sessions don't repeat the mistake.
+
+## D232 — Notifier wirings for project_intake (onAccepted) + back-feed (onDelivered) (added 2026-05-19)
+
+**What**: Adds two new methods to `createPortalNotifier` — `onAccepted({ account, submission, intake_job_id? })` fires `customer.submission_accepted` and `onDelivered({ account, submission, delivered_by_job_id? })` fires `customer.submission_delivered`. Wires them into the corresponding queue-handler sources:
+
+- **project_intake handler** (D224) now accepts `deps.notifier` and fires `notifier.onAccepted({ account, submission, intake_job_id })` immediately after the `submitted → accepted` transition succeeds. Skipped on idempotent-resume (when `submission.status !== "submitted"`) to avoid double-notifications.
+- **Back-feed wrapper** (D227) now accepts `deps.notifier` and fires `notifier.onDelivered({ account, submission, delivered_by_job_id })` immediately after the `in_progress → delivered` transition succeeds (the `finalKind` branch only — phase kinds don't reach delivered).
+
+Both call sites are **fail-isolated**: notifier errors are logged via `onLog` + caught — the transition already succeeded; a missed notification is acceptable. Notifier is **null-safe** in both handlers (treated as no-op when absent, when `init.notifier` is missing the right method, or when the shared `getPortalNotifier()` returned null).
+
+**Telemetry `bootQueueWorker`** plumbing: both the project_intake handler registration AND the back-feed wrapper construction now receive `await getPortalNotifier()` — same shared module-level instance used by the SLA scanner (D230) and HTTP /submit/cancel routes (D231). Single Courier instance + single event history surface across all 5 notifier sources.
+
+**Why a single ship (D232 = onAccepted + onDelivered together)**:
+- The two share identical structure (fire after a transition; pass the job id for traceability; fail-isolated). Splitting would have been two PRs of the same shape.
+- D231 already proved the substrate works for HTTP-route notifier wirings; D232 just extends the pattern to queue-handler sources.
+- The third remaining source is the admin reject path (D233 below) — that one needs a NEW HTTP endpoint, so it gets its own decision entry even though it ships in the same PR.
+
+**Why fire-after-transition (not before)**:
+- Same rationale as D227: a notification represents a state change that ACTUALLY HAPPENED. If we fired before, then the transition failed, we'd have notified about a non-event.
+- For onAccepted: the submission record is re-fetched after the transition so `meta.submission_status` shows `"accepted"` (post-state), not stale data.
+- For onDelivered: same — re-fetched + `delivered_by_job_id` is read from the live submission record.
+
+**Why explicit intake_job_id / delivered_by_job_id in the method signature** (not just from `submission.delivered_by_job_id`):
+- For onDelivered the back-feed wrapper has the job id directly (it's `job.id` from the wrapped handler). Pass it explicitly so the notifier event meta is authoritative even if the timeline write or transition patch fails.
+- For onAccepted there's no analog field in the submission record (intake job id isn't stamped onto the submission — it's the project_intake job that's about to enqueue pre_dev). Explicit param keeps it traceable.
+
+**Test coverage**:
+- `notifier.smoke.js` extended 88 → **130 assertions** (42 new): onAccepted happy path + intake_job_id absence + input validation; onDelivered happy path + fallback to `submission.delivered_by_job_id` when not passed; onRejected happy path + no-reason fallback + input validation; surface guard verifies all 6 methods now exported.
+- `project-intake-handler.smoke.js`: unchanged (50/50 still pass — notifier dep is optional + backward-compat preserved by `init.notifier && typeof ... === "function"` guard).
+- `customer-backfeed-wrapper.smoke.js`: unchanged (78/78 still pass — same backward-compat).
+- Live integration verify (real portal + real Courier in tmpdir): **13/13 assertions** pass. Full customer lifecycle journey through all 5 notifier methods produces 5 Courier events with correct types, severities, meta fields.
+
+## D233 — Admin reject HTTP endpoint + notifier wiring + UI Reject button (added 2026-05-19)
+
+**What**: Closes the last of the 6 customer.* event sources.
+
+Backend (`telemetry.mjs`):
+- New endpoint `POST /api/customer-portal/admin/submissions/:cid/:sid/reject` with body `{ reason }`. Calls `portal.rejectSubmission(customerId, submissionId, { reason })` (existing 19-A admin API — transitions to `rejected` + records `kind: "rejected"` timeline event). Returns 400 with `code: "VALIDATION"` on illegal transitions.
+- After the transition succeeds, fires `notifier.onRejected({ account, submission, reason })` — fail-isolated per the D231 pattern.
+
+Frontend (`CustomerPortal.tsx`):
+- New **Reject button** alongside the existing Cancel button on non-terminal rows. Uses a 2-step confirm UX: `window.prompt` for the reason (required — empty rejected) → `window.confirm` with the full action description + reason preview. Posts to the admin reject endpoint.
+- Cancel button restyled to neutral grey (was red) — Reject is now the red destructive action; Cancel is closer to "don't process this" than "kick out forever."
+- Success flash + list reload + detail-drawer close on success.
+
+Notifier method (`notifier.js`):
+- `onRejected({ account, submission, reason? })` — severity `warn` (admin operational event the founder/ops should always see), `meta.reject_reason` carries the reason through to Courier history.
+
+**Why severity=warn for rejection** (vs info for delivered/accepted):
+- Rejections are operational decisions that ops should be able to scan in a notification feed without diving into every event. `warn` puts them visually distinct in the Notifications panel (yellow pill vs blue info pill) and lets future Courier routing rules (10-B) treat them differently (e.g. email to ops on every reject).
+- D230 already uses `severity: warn` for `customer.sla_breached` for the same reason — both are events that demand attention.
+
+**Why require a reason** (UI rejects empty input):
+- A rejection without a reason is impossible to debug or explain to the customer. Forcing the founder to type SOMETHING ensures the timeline + Courier event always carry context.
+- The portal's `rejectSubmission` doesn't enforce this server-side (it accepts no-reason calls), so the guard is purely UI-layer. Acceptable for v0.0.1; could promote to server-side validation in Phase 22 hardening.
+
+**UI tracking backend (founder's standing instruction)**:
+- D232 onAccepted + onDelivered notifications appear automatically in the existing Notifications panel — no UI code needed because the table renders any `customer.*` event type generically.
+- D233 onRejected ALSO surfaces in Notifications automatically — PLUS gets a dedicated Reject button on the Customer Portal table since the action itself is admin-initiated.
+- This matches the founder's standing instruction that no substrate ship should leave the UI unchanged.
+
+**Test coverage**: notifier.smoke 130/130 pass (all 6 methods covered). Live integration verify 13/13 pass. HTTP /reject endpoint verified — returns 400 with VALIDATION code for missing submission, 200 for valid transitions.
+
+**Net post-ship state**: all 6 customer-portal notifier sources are wired end-to-end on real LLM-eligible code paths:
+
+| Source | Method | Trigger |
+|---|---|---|
+| HTTP /submit | `onSubmitted` (D231) | POST /api/customer-portal/submit succeeds + auto-enqueue |
+| project_intake handler | `onAccepted` (D232) | submitted → accepted transition |
+| back-feed wrapper | `onDelivered` (D232) | in_progress → delivered transition |
+| HTTP /cancel | `onCancelled` (D231) | customer-route /cancel succeeds |
+| admin /reject | `onRejected` (D233) | admin /reject succeeds |
+| SLA scanner | `onSlaBreached` (D230) | fresh breach detected; dedup'd via timeline |
+
+The notification taxonomy is complete; per-customer prefs (real Slack/email targets) is the remaining 19-C ship before this fully serves customers (today: all events route to stdout, observable in the Notifications panel).

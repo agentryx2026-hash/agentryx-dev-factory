@@ -259,8 +259,13 @@ async function bootQueueWorker() {
       try {
         const originalPreDev = registry.get('pre_dev');
         if (typeof originalPreDev === 'function') {
+          // D232 — pass the shared notifier so onDelivered fires after
+          // the in_progress→delivered transition. Notifier is null-safe
+          // (wrapper treats absent notifier as no-op).
+          const notifierForBackfeed = await getPortalNotifier();
           const wrappedPreDev = backfeedWrapperMod.wrapForCustomerBackfeed(originalPreDev, {
             portal: sharedCustomerPortal,
+            notifier: notifierForBackfeed,
             onLog: (line, jobId) => {
               try { addLog('system', `[queue:pre_dev:backfeed:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
             },
@@ -336,9 +341,14 @@ async function bootQueueWorker() {
     // import: customer-portal module is optional at boot.
     if (intakeHandlerMod && sharedCustomerPortal) {
       try {
+        // D232 — pass the shared notifier so onAccepted fires after the
+        // submitted→accepted transition. Notifier is null-safe (handler
+        // treats absent notifier as no-op).
+        const notifierForIntake = await getPortalNotifier();
         intakeHandlerMod.registerProjectIntakeHandler(registry, {
           portal: sharedCustomerPortal,
-          queue,  // same queue instance so downstream pre_dev jobs land here
+          queue,                       // same queue instance so downstream pre_dev jobs land here
+          notifier: notifierForIntake, // optional — null when NOTIFIER_DISABLED=true
           onLog: (line, jobId) => {
             try { addLog('system', `[queue:project_intake:${jobId}] ${line.substring(0, 180)}`); broadcast(); } catch {}
           },
@@ -1775,6 +1785,48 @@ const server = http.createServer((req, res) => {
         return jsonResponse(res, 200, { submission: updated });
       } catch (err) {
         console.error('[customer-portal/admin/cancel]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // POST /api/customer-portal/admin/submissions/:cid/:sid/reject — admin
+  // reject (terminal, with reason). Mirrors /cancel but uses rejectSubmission
+  // which is the portal's dedicated admin path: state-machine→rejected +
+  // timeline rejected event with the admin's reason.
+  // D233 — fires notifier.onRejected so the customer.submission_rejected
+  // Courier event lands. Same fail-isolated posture as /cancel.
+  if (req.url?.match(/^\/api\/customer-portal\/admin\/submissions\/([^/]+)\/([^/]+)\/reject$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const match = req.url.match(/^\/api\/customer-portal\/admin\/submissions\/([^/]+)\/([^/]+)\/reject$/);
+        const customerId = decodeURIComponent(match[1]);
+        const submissionId = decodeURIComponent(match[2]);
+        const body = await readRequestBody(req).catch(() => ({}));
+        const reason = body?.reason || '(no reason provided)';
+        const portal = await getCustomerPortal();
+        let updated;
+        try {
+          updated = await portal.rejectSubmission(customerId, submissionId, { reason });
+        } catch (err) {
+          return jsonResponse(res, 400, { error: err?.message || String(err), code: 'VALIDATION' });
+        }
+        addLog('system', `🚫 Admin reject: ${customerId}/${submissionId} — ${reason}`);
+        // D233 notifier wiring — fail-isolated.
+        try {
+          const notifier = await getPortalNotifier();
+          const account = await portal.accounts.getById(customerId);
+          if (notifier && account) {
+            await notifier.onRejected({ account, submission: updated, reason });
+          }
+        } catch (notifyErr) {
+          console.warn('[admin/reject] notifier.onRejected failed:', notifyErr?.message || notifyErr);
+        }
+        broadcast();
+        return jsonResponse(res, 200, { submission: updated });
+      } catch (err) {
+        console.error('[customer-portal/admin/reject]', err);
         return portalErrorToHttp(res, err);
       }
     })();

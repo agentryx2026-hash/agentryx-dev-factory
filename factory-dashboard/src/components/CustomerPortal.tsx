@@ -161,11 +161,43 @@ const CustomerPortal: React.FC = () => {
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
       setFlashMsg(`✅ Cancelled ${submissionId}`);
       setTimeout(() => setFlashMsg(null), 4000);
-      // Reload list + close detail panel.
       setOpenDetail(null);
       await load();
     } catch (e: any) {
       setErr(`Cancel failed: ${e?.message || String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // D233 — admin reject with reason. Terminal; fires
+  // customer.submission_rejected Courier event via the notifier wiring.
+  const rejectSubmission = async (customerId: string, submissionId: string) => {
+    const reason = window.prompt(
+      'Reject this submission?\n\nReason (will be saved to the timeline + notification):',
+      ''
+    );
+    if (reason === null) return;
+    if (!reason.trim()) { alert('Reason required for reject.'); return; }
+    if (!window.confirm(`Confirm REJECT of ${submissionId}?\n\nThis is a terminal action — customer would need to resubmit a fresh project.\n\nReason:\n${reason}`)) return;
+    setBusy(`reject-${submissionId}`);
+    try {
+      const res = await fetch(
+        `/telemetry/customer-portal/admin/submissions/${encodeURIComponent(customerId)}/${encodeURIComponent(submissionId)}/reject`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        }
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      setFlashMsg(`🚫 Rejected ${submissionId}`);
+      setTimeout(() => setFlashMsg(null), 4000);
+      setOpenDetail(null);
+      await load();
+    } catch (e: any) {
+      setErr(`Reject failed: ${e?.message || String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -255,13 +287,23 @@ const CustomerPortal: React.FC = () => {
                     <td style={cellStyle}>
                       <button onClick={() => openSubmission(s.customer_id, s.id)} style={detailBtn}>Detail</button>
                       {!isTerminal && (
-                        <button
-                          onClick={() => cancelSubmission(s.customer_id, s.id)}
-                          disabled={busy === `cancel-${s.id}`}
-                          style={cancelBtn}
-                        >
-                          {busy === `cancel-${s.id}` ? '⏳' : 'Cancel'}
-                        </button>
+                        <>
+                          <button
+                            onClick={() => cancelSubmission(s.customer_id, s.id)}
+                            disabled={busy === `cancel-${s.id}`}
+                            style={cancelBtn}
+                          >
+                            {busy === `cancel-${s.id}` ? '⏳' : 'Cancel'}
+                          </button>
+                          <button
+                            onClick={() => rejectSubmission(s.customer_id, s.id)}
+                            disabled={busy === `reject-${s.id}`}
+                            style={rejectBtn}
+                            title="Admin reject — terminal, fires customer.submission_rejected notification"
+                          >
+                            {busy === `reject-${s.id}` ? '⏳' : 'Reject'}
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -370,6 +412,12 @@ const detailBtn: React.CSSProperties = {
   padding: '3px 10px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '6px',
 };
 const cancelBtn: React.CSSProperties = {
+  background: 'rgba(100, 116, 139, 0.2)', color: '#cbd5e1',
+  border: '1px solid rgba(100, 116, 139, 0.3)', borderRadius: '4px',
+  padding: '3px 10px', cursor: 'pointer', fontSize: '0.75rem',
+  marginRight: '6px',
+};
+const rejectBtn: React.CSSProperties = {
   background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5',
   border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '4px',
   padding: '3px 10px', cursor: 'pointer', fontSize: '0.75rem',
