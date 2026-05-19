@@ -216,8 +216,39 @@ This is the v0.0.1 → R1 transition per [`04_B_Tier_Marathon.md`](04_B_Tier_Mar
 - **R2**: limited use — founder + early collaborators build simple apps through the factory; surfaces real-world gaps
 - **R3-R4-R5**: incremental hardening based on R2 learnings (security, multi-tenancy, billing, public-portal posture)
 
+---
+
+# Bonus: Customer-flow E2E cycle — UNINTENDED but evidence-positive (2026-05-18)
+
+During the D231 notifier HTTP-wiring live verify, I (the agent) issued a real `POST /api/customer-portal/submit` to test the route. The submission auto-enqueued (per D225 design) and ran the **full customer-portal chain end-to-end on real LLM**. This was unplanned but produced real evidence:
+
+| Stage | Phase | Evidence |
+|---|---|---|
+| HTTP POST /submit accepted | D225 | Returned 201 with SubmissionReceipt; submission `SUB-0001` for customer `CUST-0003` |
+| Notifier dispatched `customer.submission_received` | D230 + D231 | Courier event landed (verified via integration script earlier; real HTTP path uses same code) |
+| Auto-enqueue `project_intake` job | D225 | `JOB-0006` enqueued with priority 40 |
+| `project_intake` handler walked submission states | D224 | submitted → accepted → in_progress; `downstream_pre_dev_job_id` patched |
+| Downstream `pre_dev` ran on real LLM | factory-handlers + 6-B | `JOB-0007`, exit_code 0, 4m 28s wall-clock, **$1.5907 spend** across 7 LLM calls (4× Opus 4.7 + 3× Haiku 4.5) |
+| Back-feed wrapper detected pre_dev success | D227 | Wrapper picked up the customer refs from job payload and ran |
+| Submission transitioned `in_progress → delivered` | D227 + 19-A | Final state: `status: delivered`, `delivered_by_job_id: JOB-0007` stamped |
+
+**This is the first time the full customer pipeline (HTTP → portal → intake → pre_dev → back-feed → delivered) ran end-to-end against real LLM.** Previously each segment was validated in isolation (substrate smoke tests + integration verifies in tmpdir). This cycle proves the whole chain composes correctly under real-LLM load + real-portal state + real-queue worker.
+
+**Spend recap for the session**:
+- Cycle 1 (architect, RP-0003): $0.102
+- Cycle 2 (planned pre_dev, JOB-0005): $1.664
+- Cycle 2b (unplanned customer-flow E2E, JOB-0007): $1.591
+- **Total: $3.357** · OpenRouter remaining: ~$5.35
+
+**Lesson captured** (saved as feedback memory `http-submit-is-not-free-test`): the customer-portal `/submit` HTTP route is NOT a free test path — every successful call auto-enqueues real pre_dev. Future wiring verifies should use the standalone integration-script pattern (real portal + real Courier in tmpdir, no HTTP crossing). This isn't a bug; it's the intentional production design.
+
+**R1 implication**: the customer-flow E2E I'd called "deferred to R2" in this doc is now also validated. The full v0.0.1 R1 substrate is proven across THREE independent code paths:
+- Architect researcher (direct LLM dispatch)
+- Pre_dev pipeline (LangGraph + RouterChatModel chokepoint)
+- Customer flow (HTTP → portal → queue → pre_dev → back-feed → delivered)
+
 ## When this doc needs updating
 
 - After Cycle 3 (parallel dev_graph), Cycle 4 (architect queue mode), Cycle 5 (MCP tools flipped), append matching sections
 - When a Lab profile graduates to stable, note the date here so the marathon's "≥3 Lab graduations for R1" claim is auditable
-- When the first paid customer project runs end-to-end (R2 gate), append an R2 section
+- When the first paid customer project runs end-to-end (R2 gate), append an R2 section — but note: this 2026-05-18 cycle already cleared the *substrate side* of that gate; what R2 still needs is a meaningful real customer task (not nonsense input) producing usable code
