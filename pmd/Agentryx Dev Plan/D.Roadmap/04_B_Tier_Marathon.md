@@ -10,8 +10,11 @@
 | **Architect path** | `POST /api/architect/run_pass` w/ `dispatcher: sonnet` → pass `RP-0003` | $0.102 | 4m 57s | 25 findings + 25 proposals across 6 priority areas | `r1-first-real-cycle` |
 | **Pre_dev path** | `POST /api/factory-admin/queue/submit` w/ `kind: pre_dev` → JOB-0005 | $1.664 | 5m 34s | exit_code 0; 7 artifacts (Opus + Haiku via OpenRouter); 629 lines of PMD prose | `r1-complete` |
 | **Customer-flow E2E** (bonus, unplanned during D231 verify) | `POST /api/customer-portal/submit` → SUB-0001 → JOB-0006 (project_intake) → JOB-0007 (pre_dev) → D227 back-feed | $1.591 | 4m 28s | submission `delivered`; D224+D225+D227+D231 chain validated end-to-end on real LLM | (rolled into D231 PR) |
+| **Dev cycle path** (Cycle 3 — Phase 8-B parallel) | `POST /api/factory-admin/queue/submit` w/ kind:dev → JOB-0008 → dev_graph.js w/ USE_PARALLEL_DEV_GRAPH=on | $1.434 | 5m 45s | exit_code 0; **3 model tiers used in one cycle** (Haiku+Sonnet+Opus); **Phase 8-B parallel proven** (Tuvok ∥ Data started 1.9s apart after Torres); real Express+Jest code with JSDoc, validation, edge-case tests | `r1-cycle-3-dev` |
 
-**Total R1 spend: $3.35** (under runbook budget). OpenRouter remaining: ~$5.35.
+**Total R1 spend: $4.79** (well under runbook budget). OpenRouter remaining: ~$3.92.
+
+**R1 SUBSTRATE FULLY VALIDATED across all 4 code paths**: architect researcher · pre_dev pipeline · customer-flow E2E · dev cycle with parallel topology. Every major factory substrate that R1 was meant to gate is now proven on real LLM.
 
 What's now proven:
 - Both LLM dispatch paths (architect researcher direct + LangGraph RouterChatModel chokepoint)
