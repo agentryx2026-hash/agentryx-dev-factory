@@ -129,6 +129,10 @@ const MasterArchitect: React.FC = () => {
   const [draft, setDraft] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('roadmap');
   const [openReport, setOpenReport] = useState<any | null>(null);
+  // Founder-selectable dispatcher for manual run-pass.
+  // stub = synthetic findings (no LLM spend); sonnet = ~$0.10-0.20 per
+  // pass on Sonnet 4.6 via OpenRouter; opus = ~$0.50-1.50 on Opus 4.7.
+  const [dispatcher, setDispatcher] = useState<'stub' | 'sonnet' | 'opus'>('stub');
 
   const refresh = async () => {
     try {
@@ -191,16 +195,28 @@ const MasterArchitect: React.FC = () => {
   };
 
   const runPass = async () => {
+    // Confirm real-LLM dispatch before spending money. stub is safe + free.
+    if (dispatcher !== 'stub') {
+      const ok = window.confirm(
+        `Run a real LLM cycle with dispatcher="${dispatcher}"?\n\n` +
+        `Approximate cost:\n` +
+        `  - sonnet: ~$0.10-$0.20 per pass\n` +
+        `  - opus:   ~$0.50-$1.50 per pass\n\n` +
+        `Sequential LLM calls across ${(cd?.priority_areas?.length ?? 6)} priority areas.`
+      );
+      if (!ok) return;
+    }
     setBusy('run_pass');
     try {
       const res = await fetch('/telemetry/architect/run_pass', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passKind: 'manual' }),
+        body: JSON.stringify({ passKind: `manual_${dispatcher}`, dispatcher }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `run_pass failed: ${res.status}`);
-      flash(`✅ Pass ${data.pass?.id || ''} done — ${data.findings_count ?? 0} findings, ${data.proposals_count ?? 0} proposals.`);
+      const costNote = typeof data.cost_usd === 'number' ? ` · cost $${data.cost_usd.toFixed(4)}` : '';
+      flash(`✅ Pass ${data.pass?.id || ''} done (${dispatcher}) — ${data.findings_count ?? 0} findings, ${data.proposals_count ?? 0} proposals${costNote}.`);
       await refresh();
     } catch (e: any) { setError(e?.message || 'run pass failed'); }
     finally { setBusy(null); }
@@ -425,7 +441,32 @@ const MasterArchitect: React.FC = () => {
                   {!editing && <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{cd?.effective_period?.horizon_label || '—'}</span>}
                   {editing && <span style={{ color: '#fbbf24', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>● Editing</span>}
                   {!editing && <button onClick={enterEdit} style={smallBtn}>✎ Edit</button>}
-                  {!editing && <button onClick={runPass} disabled={busy === 'run_pass'} style={runBtn}>{busy === 'run_pass' ? '⏳' : '▶'} Run pass</button>}
+                  {!editing && (
+                    <>
+                      <select
+                        value={dispatcher}
+                        onChange={e => setDispatcher(e.target.value as 'stub' | 'sonnet' | 'opus')}
+                        disabled={busy === 'run_pass'}
+                        title="Pick the dispatcher tier for this manual pass. stub = $0 synthetic; sonnet = ~$0.10-$0.20; opus = ~$0.50-$1.50."
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.8)',
+                          color: dispatcher === 'stub' ? '#94a3b8' : dispatcher === 'sonnet' ? '#10b981' : '#fbbf24',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '0.78rem',
+                          cursor: busy === 'run_pass' ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <option value="stub">stub · $0 (synthetic)</option>
+                        <option value="sonnet">sonnet · ~$0.10–$0.20 (real)</option>
+                        <option value="opus">opus · ~$0.50–$1.50 (real)</option>
+                      </select>
+                      <button onClick={runPass} disabled={busy === 'run_pass'} style={runBtn}>
+                        {busy === 'run_pass' ? '⏳' : '▶'} Run pass
+                      </button>
+                    </>
+                  )}
                   {editing && <>
                     <button onClick={cancelEdit} style={smallBtn}>Cancel</button>
                     <button onClick={saveDraft} disabled={busy === 'save'} style={saveBtn}>{busy === 'save' ? '💾 Saving…' : '💾 Save'}</button>

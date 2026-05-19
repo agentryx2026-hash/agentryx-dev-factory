@@ -1,25 +1,94 @@
 import React, { useState, useEffect } from 'react';
 
-type Page = 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay' | 'analytics' | 'settings' | 'skills' | 'system' | 'admin-keys' | 'cost-panel';
+type Page =
+  | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
+  | 'customer-portal' | 'notifications'
+  | 'analytics' | 'skills' | 'cost-panel'
+  | 'system' | 'settings' | 'admin-keys';
 
 interface SidebarProps {
   activePage: Page;
   setActivePage: (page: Page) => void;
 }
 
-const navItems: { page: Page; icon: string; label: string }[] = [
-  { page: 'pre-dev', icon: '📥', label: '1. Intake (Pre-Dev)' },
-  { page: 'factory', icon: '🏭', label: '2. Live Dev Floor' },
-  { page: 'post-dev', icon: '🚀', label: '3. Releases (Ship)' },
-  { page: 'architect', icon: '👑', label: '4. Master Architect' },
-  { page: 'replay', icon: '🎬', label: '5. Replay (debug)' },
-  { page: 'analytics', icon: '📈', label: 'Analytics & Insights' },
-  { page: 'skills', icon: '🧠', label: 'Memory Layer' },
-  { page: 'system', icon: '📊', label: 'System Resources' },
-  { page: 'settings', icon: '⚙️', label: 'Admin · Configuration' },
-  { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
-  { page: 'cost-panel', icon: '💰', label: 'Cost Panel' },
+// Grouped IA — adopted 2026-05-18 per founder's "intuitive, structured,
+// professional, easier to navigate with so many features" requirement.
+// Sections collapse the now-large feature set into 4 intent buckets so
+// the scan path is short. New tabs slot into their natural group rather
+// than appending to a flat list.
+type NavSection = {
+  label: string;          // section header text
+  hint?: string;          // optional short subtext under the header
+  items: { page: Page; icon: string; label: string; badge?: string }[];
+};
+
+const navSections: NavSection[] = [
+  {
+    label: 'Factory Floor',
+    hint:  'The dev pipeline you drive',
+    items: [
+      { page: 'pre-dev',   icon: '📥', label: '1. Intake (Pre-Dev)' },
+      { page: 'factory',   icon: '🏭', label: '2. Live Dev Floor' },
+      { page: 'post-dev',  icon: '🚀', label: '3. Releases (Ship)' },
+      { page: 'architect', icon: '👑', label: '4. Master Architect' },
+      { page: 'replay',    icon: '🎬', label: '5. Replay (debug)' },
+    ],
+  },
+  {
+    label: 'Customer View',
+    hint:  'Submissions your customers drive',
+    items: [
+      { page: 'customer-portal', icon: '👥', label: 'Customer Portal', badge: 'NEW' },
+      { page: 'notifications',   icon: '📨', label: 'Notifications',   badge: 'NEW' },
+    ],
+  },
+  {
+    label: 'Insights',
+    hint:  'What the factory has produced',
+    items: [
+      { page: 'analytics',  icon: '📈', label: 'Analytics & Insights' },
+      { page: 'skills',     icon: '🧠', label: 'Memory Layer' },
+      { page: 'cost-panel', icon: '💰', label: 'Cost Panel' },
+    ],
+  },
+  {
+    label: 'Ops',
+    hint:  'Operate + configure the system',
+    items: [
+      { page: 'system',     icon: '📊', label: 'System Resources' },
+      { page: 'settings',   icon: '⚙️', label: 'Admin · Configuration' },
+      { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
+    ],
+  },
 ];
+
+const sectionHeaderStyle: React.CSSProperties = {
+  margin: '1rem 16px 0.25rem 16px',
+  padding: 0,
+};
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: '0.65rem',
+  color: '#64748b',
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px',
+  fontWeight: 600,
+};
+const sectionHintStyle: React.CSSProperties = {
+  fontSize: '0.62rem',
+  color: '#475569',
+  marginTop: '2px',
+  fontStyle: 'italic',
+};
+const badgeStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  fontSize: '0.55rem',
+  background: '#10b981',
+  color: '#0f172a',
+  padding: '1px 6px',
+  borderRadius: '999px',
+  fontWeight: 700,
+  letterSpacing: '0.5px',
+};
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
   const [latestLogs, setLatestLogs] = useState<any[]>([]);
@@ -33,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         try {
             const state = JSON.parse(e.data);
             if (state.logs && state.logs.length > 0) {
-                setLatestLogs(state.logs.slice(0, 3)); // Get newest 3 logs which are at the start
+                setLatestLogs(state.logs.slice(0, 3));
             }
         } catch (err) {}
     };
@@ -59,26 +128,35 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         className="sidebar-nav"
         style={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'thin' }}
       >
-        {navItems.map((item) => (
-          <div
-            key={item.page}
-            id={`nav-${item.page}`}
-            className={`nav-item ${activePage === item.page ? 'active' : ''}`}
-            onClick={() => setActivePage(item.page)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && setActivePage(item.page)}
-          >
-            <span className="nav-icon">{item.icon}</span>
-            <span className="nav-label">{item.label}</span>
-          </div>
+        {navSections.map((section) => (
+          <React.Fragment key={section.label}>
+            <div style={sectionHeaderStyle}>
+              <div style={sectionLabelStyle}>{section.label}</div>
+              {section.hint && <div style={sectionHintStyle}>{section.hint}</div>}
+            </div>
+            {section.items.map((item) => (
+              <div
+                key={item.page}
+                id={`nav-${item.page}`}
+                className={`nav-item ${activePage === item.page ? 'active' : ''}`}
+                onClick={() => setActivePage(item.page)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setActivePage(item.page)}
+                style={{ display: 'flex', alignItems: 'center' }}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+                {item.badge && <span style={badgeStyle}>{item.badge}</span>}
+              </div>
+            ))}
+          </React.Fragment>
         ))}
 
-        {/* ─── Tools & Portals (external links) ─── */}
-        <div style={{ marginTop: '1.5rem', marginBottom: '0.5rem', padding: '0 16px' }}>
-          <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Tools & Portals
-          </div>
+        {/* ─── Tools & Portals (external links) — kept as its own section ─── */}
+        <div style={sectionHeaderStyle}>
+          <div style={sectionLabelStyle}>Tools &amp; Portals</div>
+          <div style={sectionHintStyle}>External services</div>
         </div>
         {[
           { href: '/n8n/',                                                icon: '🔗', label: 'n8n Workflows' },
