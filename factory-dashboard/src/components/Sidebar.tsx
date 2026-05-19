@@ -4,21 +4,19 @@ type Page =
   | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
-  | 'system' | 'settings' | 'admin-keys';
+  | 'system' | 'settings' | 'admin-keys' | 'services-health'
+  | 'console-n8n' | 'console-langfuse' | 'console-paperclip' | 'console-litellm';
 
 interface SidebarProps {
   activePage: Page;
   setActivePage: (page: Page) => void;
 }
 
-// Grouped IA — adopted 2026-05-18 per founder's "intuitive, structured,
-// professional, easier to navigate with so many features" requirement.
-// Sections collapse the now-large feature set into 4 intent buckets so
-// the scan path is short. New tabs slot into their natural group rather
-// than appending to a flat list.
+// Grouped IA — 5 intent buckets. Sections collapse the now-large feature
+// set so the scan path is short.
 type NavSection = {
-  label: string;          // section header text
-  hint?: string;          // optional short subtext under the header
+  label: string;
+  hint?: string;
   items: { page: Page; icon: string; label: string; badge?: string }[];
 };
 
@@ -38,8 +36,8 @@ const navSections: NavSection[] = [
     label: 'Customer View',
     hint:  'Submissions your customers drive',
     items: [
-      { page: 'customer-portal', icon: '👥', label: 'Customer Portal', badge: 'NEW' },
-      { page: 'notifications',   icon: '📨', label: 'Notifications',   badge: 'NEW' },
+      { page: 'customer-portal', icon: '👥', label: 'Customer Portal' },
+      { page: 'notifications',   icon: '📨', label: 'Notifications' },
     ],
   },
   {
@@ -52,12 +50,23 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    label: 'Embedded Consoles',
+    hint:  'Each tool\'s own UI, inside Dev-Hub',
+    items: [
+      { page: 'console-n8n',       icon: '🔗', label: 'n8n Workflows',  badge: 'NEW' },
+      { page: 'console-langfuse',  icon: '🔍', label: 'Langfuse Traces', badge: 'NEW' },
+      { page: 'console-paperclip', icon: '📎', label: 'Paperclip',       badge: 'NEW' },
+      { page: 'console-litellm',   icon: '🧮', label: 'LiteLLM Admin',   badge: 'NEW' },
+    ],
+  },
+  {
     label: 'Ops',
     hint:  'Operate + configure the system',
     items: [
-      { page: 'system',     icon: '📊', label: 'System Resources' },
-      { page: 'settings',   icon: '⚙️', label: 'Admin · Configuration' },
-      { page: 'admin-keys', icon: '🔑', label: 'API Keys' },
+      { page: 'services-health', icon: '💓', label: 'Services Health', badge: 'NEW' },
+      { page: 'system',          icon: '📊', label: 'System Resources' },
+      { page: 'settings',        icon: '⚙️', label: 'Admin · Configuration' },
+      { page: 'admin-keys',      icon: '🔑', label: 'API Keys' },
     ],
   },
 ];
@@ -121,9 +130,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         </div>
       </div>
 
-      {/* Scrollable nav region — flex middle child needs min-height: 0
-          so overflow can kick in on column flex. Brand + Live Trace +
-          Footer stay pinned (flex-shrink: 0). */}
       <nav
         className="sidebar-nav"
         style={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'thin' }}
@@ -153,17 +159,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
           </React.Fragment>
         ))}
 
-        {/* ─── Tools & Portals (external links) — kept as its own section ─── */}
+        {/* External Links — now slimmer because the consoles with real UIs
+            got promoted to the Embedded Consoles section above. This
+            section is for things you OPEN ELSEWHERE (no usable UI to embed,
+            or a dedicated separate domain). */}
         <div style={sectionHeaderStyle}>
-          <div style={sectionLabelStyle}>Tools &amp; Portals</div>
-          <div style={sectionHintStyle}>External services</div>
+          <div style={sectionLabelStyle}>External Links</div>
+          <div style={sectionHintStyle}>Hosted dashboards + repos</div>
         </div>
         {[
-          { href: '/n8n/',                                                icon: '🔗', label: 'n8n Workflows' },
-          { href: '/langfuse/',                                            icon: '🔍', label: 'Langfuse Traces' },
-          { href: '/paperclip/api/health',                                 icon: '📎', label: 'Paperclip (health)' },
-          { href: '/chromadb/api/v2/heartbeat',                            icon: '🧮', label: 'ChromaDB' },
           { href: 'https://claw-code.agentryx.dev/',                       icon: '🦞', label: 'Claw Code (terminal)' },
+          { href: 'https://openrouter.ai/settings/credits',                icon: '🛰️', label: 'OpenRouter (billing)' },
+          { href: 'https://console.anthropic.com/',                        icon: '🤖', label: 'Anthropic Console' },
           { href: 'https://github.com/agentryx2026-hash/agentryx-factory', icon: '🐙', label: 'GitHub Repo' },
           { href: 'https://console.cloud.google.com/compute',              icon: '☁️', label: 'GCP Console' },
         ].map(tool => (
@@ -173,7 +180,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
             target="_blank"
             rel="noreferrer"
             className="nav-item"
-            style={{ textDecoration: 'none', color: 'inherit' }}
+            style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}
           >
             <span className="nav-icon">{tool.icon}</span>
             <span className="nav-label">{tool.label}</span>
@@ -181,7 +188,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
         ))}
       </nav>
 
-      {/* Mini Activity Trail — pinned (flex-shrink: 0 so it never gets squeezed) */}
+      {/* Mini Activity Trail — pinned */}
       <div style={{ flexShrink: 0, margin: '0 16px 16px 16px', background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Live Trace</span>
