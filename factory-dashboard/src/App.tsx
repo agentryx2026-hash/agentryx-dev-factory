@@ -17,12 +17,26 @@ import Notifications from './components/Notifications';
 import ServicesHealth from './components/ServicesHealth';
 import EmbeddedConsole from './components/EmbeddedConsole';
 
+// Embedded-Consoles design note (UI-F):
+//   We only embed services that natively support a basePath matching the
+//   nginx proxy prefix. n8n is configured with N8N_PATH=/n8n/ so it
+//   generates HTML with /n8n/-prefixed asset URLs that nginx routes back
+//   to n8n. Paperclip / Langfuse / LiteLLM all serve HTML with absolute
+//   paths starting at /, which the browser then loads from
+//   dev-hub.agentryx.dev/... → routed to the Dev-Hub itself → iframe
+//   ends up rendering Dev-Hub recursively (the "image of itself" bug).
+//   Plus Langfuse explicitly sets `frame-ancestors 'none'` and
+//   X-Frame-Options: SAMEORIGIN — even with correct paths it would
+//   refuse to embed.
+//
+//   So: Paperclip / Langfuse / LiteLLM live in External Links (open in
+//   new tab works perfectly). n8n stays embedded.
 type Page =
   | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
-  | 'console-n8n' | 'console-langfuse' | 'console-paperclip' | 'console-litellm';
+  | 'console-n8n';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('pre-dev');
@@ -43,32 +57,11 @@ function App() {
       case 'admin-keys':      return <AdminKeys />;
       case 'cost-panel':      return <CostPanel />;
       case 'services-health': return <ServicesHealth />;
-      // Embedded tool consoles — UI-E. Same-origin (served via nginx proxy)
-      // so cookies + auth work. Each tool's own UI runs inside iframe.
       case 'console-n8n':
         return <EmbeddedConsole
           title="n8n — Workflow Editor"
-          description="Visual workflow builder (Docker container factory-n8n on port 5678)"
+          description="Visual workflow builder (Docker container factory-n8n on port 5678; N8N_PATH=/n8n/ ensures asset URLs respect the proxy prefix)"
           url="/n8n/"
-        />;
-      case 'console-langfuse':
-        return <EmbeddedConsole
-          title="Langfuse — LLM Observability"
-          description="Trace + cost + latency analytics (Docker container factory-langfuse on port 3000)"
-          url="/langfuse/"
-        />;
-      case 'console-paperclip':
-        return <EmbeddedConsole
-          title="Paperclip — Document Parser"
-          description="Document ingestion + extraction console (own service on port 3101)"
-          url="/paperclip/"
-        />;
-      case 'console-litellm':
-        return <EmbeddedConsole
-          title="LiteLLM — LLM Proxy Admin"
-          description="Provider routing + key admin + spend monitor (Docker container factory-litellm on port 4000)"
-          url="http://127.0.0.1:4000/ui"
-          warning="LiteLLM admin UI loads from port 4000 directly (not yet proxied through nginx). If the iframe stays blank, use 'Open in new tab' — some browsers block mixed-origin iframes."
         />;
       default:                return <PreDev />;
     }

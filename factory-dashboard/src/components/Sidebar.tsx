@@ -5,7 +5,7 @@ type Page =
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
-  | 'console-n8n' | 'console-langfuse' | 'console-paperclip' | 'console-litellm';
+  | 'console-n8n';
 
 interface SidebarProps {
   activePage: Page;
@@ -51,19 +51,21 @@ const navSections: NavSection[] = [
   },
   {
     label: 'Embedded Consoles',
-    hint:  'Each tool\'s own UI, inside Dev-Hub',
+    hint:  'Tools whose UI we render inline',
     items: [
-      { page: 'console-n8n',       icon: '🔗', label: 'n8n Workflows',  badge: 'NEW' },
-      { page: 'console-langfuse',  icon: '🔍', label: 'Langfuse Traces', badge: 'NEW' },
-      { page: 'console-paperclip', icon: '📎', label: 'Paperclip',       badge: 'NEW' },
-      { page: 'console-litellm',   icon: '🧮', label: 'LiteLLM Admin',   badge: 'NEW' },
+      // Only services configured with a matching basePath embed cleanly.
+      // n8n has N8N_PATH=/n8n/ which makes its assets respect the proxy
+      // prefix. Paperclip / Langfuse / LiteLLM all serve absolute / paths
+      // → iframe routes back to Dev-Hub. Plus Langfuse explicitly sets
+      // frame-ancestors 'none'. Those three live in External Links.
+      { page: 'console-n8n', icon: '🔗', label: 'n8n Workflows' },
     ],
   },
   {
     label: 'Ops',
     hint:  'Operate + configure the system',
     items: [
-      { page: 'services-health', icon: '💓', label: 'Services Health', badge: 'NEW' },
+      { page: 'services-health', icon: '💓', label: 'Services Health' },
       { page: 'system',          icon: '📊', label: 'System Resources' },
       { page: 'settings',        icon: '⚙️', label: 'Admin · Configuration' },
       { page: 'admin-keys',      icon: '🔑', label: 'API Keys' },
@@ -159,15 +161,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
           </React.Fragment>
         ))}
 
-        {/* External Links — now slimmer because the consoles with real UIs
-            got promoted to the Embedded Consoles section above. This
-            section is for things you OPEN ELSEWHERE (no usable UI to embed,
-            or a dedicated separate domain). */}
+        {/* External Links — tools that can't be safely iframed (either
+            they serve absolute root paths that conflict with the proxy
+            prefix, or they explicitly refuse iframing via CSP /
+            X-Frame-Options). Each opens in a new tab. Status of each
+            service is visible in Ops → Services Health. */}
         <div style={sectionHeaderStyle}>
           <div style={sectionLabelStyle}>External Links</div>
-          <div style={sectionHintStyle}>Hosted dashboards + repos</div>
+          <div style={sectionHintStyle}>Hosted dashboards + repos (open in new tab)</div>
         </div>
         {[
+          { href: 'https://dev-hub.agentryx.dev/langfuse/',                icon: '🔍', label: 'Langfuse Traces' },
+          { href: 'https://dev-hub.agentryx.dev/paperclip/',               icon: '📎', label: 'Paperclip' },
+          { href: 'https://dev-hub.agentryx.dev/litellm/ui',               icon: '🧮', label: 'LiteLLM Admin' },
           { href: 'https://claw-code.agentryx.dev/',                       icon: '🦞', label: 'Claw Code (terminal)' },
           { href: 'https://openrouter.ai/settings/credits',                icon: '🛰️', label: 'OpenRouter (billing)' },
           { href: 'https://console.anthropic.com/',                        icon: '🤖', label: 'Anthropic Console' },
