@@ -62,7 +62,6 @@ function App() {
           title="Paperclip — Document Parser"
           description="Document ingestion + extraction console (own service on port 3101)"
           url="/paperclip/"
-          warning={`Paperclip is a Vite dev server that currently blocks the dev-hub.agentryx.dev host. To allow embedding, add this to /home/subhash.thakur.india/Projects/paperclip/ui/vite.config.ts → server: { allowedHosts: ['dev-hub.agentryx.dev'] } and restart factory-paperclip.service. Until then, iframe stays blank — use "Open in new tab" against http://127.0.0.1:3101/ from a browser on the VM, or fix the config.`}
         />;
       case 'console-litellm':
         return <EmbeddedConsole
