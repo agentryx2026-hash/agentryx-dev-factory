@@ -318,18 +318,142 @@ group("onCancelled — input validation");
   check("no dispatches on bad input", _calls.dispatched.length, 0);
 }
 
-// ─── surface — D231 ships expand the export set ────────────────────────────
+// ─── D232 — onAccepted (project_intake handler wiring) ─────────────────────
 
-group("notifier surface — D231 ships onSubmitted + onCancelled (D232+ still pending)");
+group("onAccepted — happy path → dispatches customer.submission_accepted with intake_job_id");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const res = await notifier.onAccepted({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "accepted" },
+    intake_job_id: "JOB-INTAKE-42",
+  });
+  check("dispatched once",                _calls.dispatched.length, 1);
+  check("event type",                     _calls.dispatched[0].type, "customer.submission_accepted");
+  check("severity = info",                _calls.dispatched[0].severity, "info");
+  ok("title mentions submission + email", _calls.dispatched[0].title.includes("SUB-0001") && _calls.dispatched[0].title.includes("alice@example.com"));
+  ok("body mentions intake job id",       _calls.dispatched[0].body.includes("JOB-INTAKE-42"));
+  ok("body mentions tier",                _calls.dispatched[0].body.includes("free"));
+  check("meta.intake_job_id carried",     _calls.dispatched[0].meta.intake_job_id, "JOB-INTAKE-42");
+  check("meta.submission_status",         _calls.dispatched[0].meta.submission_status, "accepted");
+  check("event passes validateEvent",     validateEvent(_calls.dispatched[0]), null);
+  ok("result.ok",                         res.ok === true);
+}
+
+group("onAccepted — without intake_job_id");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  await notifier.onAccepted({ account: ACCOUNT, submission: { ...SUBMISSION, status: "accepted" } });
+  ok("body shows '(unknown)' when no intake_job_id", _calls.dispatched[0].body.includes("(unknown)"));
+  check("meta.intake_job_id = null",                 _calls.dispatched[0].meta.intake_job_id, null);
+}
+
+group("onAccepted — input validation");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const r1 = await notifier.onAccepted();
+  ok("no input → ok:false", r1.ok === false);
+  const r2 = await notifier.onAccepted({ account: { id: "X" }, submission: SUBMISSION });
+  ok("missing account.email → ok:false", r2.ok === false);
+  const r3 = await notifier.onAccepted({ account: ACCOUNT, submission: { id: "S" } });
+  ok("missing target_delivery_at → ok:false", r3.ok === false);
+  check("no dispatches on bad input", _calls.dispatched.length, 0);
+}
+
+// ─── D232 — onDelivered (back-feed wrapper wiring) ─────────────────────────
+
+group("onDelivered — happy path → dispatches customer.submission_delivered with delivered_by_job_id");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const res = await notifier.onDelivered({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "delivered", completed_at: "2026-05-19T18:00:00Z" },
+    delivered_by_job_id: "JOB-PREDEV-99",
+  });
+  check("dispatched once",            _calls.dispatched.length, 1);
+  check("event type",                 _calls.dispatched[0].type, "customer.submission_delivered");
+  check("severity = info",            _calls.dispatched[0].severity, "info");
+  ok("title is celebratory (🎉)",     _calls.dispatched[0].title.includes("🎉") && _calls.dispatched[0].title.includes("SUB-0001"));
+  ok("body mentions delivered_by",    _calls.dispatched[0].body.includes("JOB-PREDEV-99"));
+  ok("body mentions completed_at",    _calls.dispatched[0].body.includes("2026-05-19T18:00:00Z"));
+  check("meta.delivered_by_job_id",   _calls.dispatched[0].meta.delivered_by_job_id, "JOB-PREDEV-99");
+  check("meta.completed_at carried",  _calls.dispatched[0].meta.completed_at, "2026-05-19T18:00:00Z");
+  check("event passes validateEvent", validateEvent(_calls.dispatched[0]), null);
+  ok("result.ok",                     res.ok === true);
+}
+
+group("onDelivered — falls back to submission.delivered_by_job_id when input not given");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  await notifier.onDelivered({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "delivered", delivered_by_job_id: "JOB-STAMPED-1" },
+  });
+  check("meta.delivered_by_job_id from submission record",
+        _calls.dispatched[0].meta.delivered_by_job_id, "JOB-STAMPED-1");
+  ok("body mentions stamped job id", _calls.dispatched[0].body.includes("JOB-STAMPED-1"));
+}
+
+// ─── D233 — onRejected (admin reject wiring) ───────────────────────────────
+
+group("onRejected — happy path → dispatches customer.submission_rejected with reason");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const res = await notifier.onRejected({
+    account: ACCOUNT,
+    submission: { ...SUBMISSION, status: "rejected" },
+    reason: "scope outside factory's supported tech stack",
+  });
+  check("dispatched once",                  _calls.dispatched.length, 1);
+  check("event type",                       _calls.dispatched[0].type, "customer.submission_rejected");
+  check("severity = warn",                  _calls.dispatched[0].severity, "warn");
+  ok("title mentions rejected + email",     _calls.dispatched[0].title.includes("rejected") && _calls.dispatched[0].title.includes("alice@example.com"));
+  ok("body mentions admin reason",          _calls.dispatched[0].body.includes("scope outside factory"));
+  check("meta.reject_reason carried",       _calls.dispatched[0].meta.reject_reason, "scope outside factory's supported tech stack");
+  check("event passes validateEvent",       validateEvent(_calls.dispatched[0]), null);
+  ok("result.ok",                           res.ok === true);
+}
+
+group("onRejected — no reason → body shows '(none provided)' + meta.reject_reason = null");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  await notifier.onRejected({ account: ACCOUNT, submission: { ...SUBMISSION, status: "rejected" } });
+  ok("body shows (none provided)",  _calls.dispatched[0].body.includes("(none provided)"));
+  ok("meta.reject_reason = null",   _calls.dispatched[0].meta.reject_reason === null);
+}
+
+group("onRejected — input validation");
+{
+  const { courier, _calls } = buildCourier();
+  const notifier = createPortalNotifier({ courier });
+  const r1 = await notifier.onRejected();
+  ok("no input → ok:false", r1.ok === false);
+  const r2 = await notifier.onRejected({ account: ACCOUNT });
+  ok("missing submission → ok:false", r2.ok === false);
+  const r3 = await notifier.onRejected({ account: ACCOUNT, submission: { project_title: "x" } });
+  ok("missing submission.id → ok:false", r3.ok === false);
+  check("no dispatches on bad input", _calls.dispatched.length, 0);
+}
+
+// ─── surface — D232 + D233 complete the notification taxonomy ───────────────
+
+group("notifier surface — all 5 customer.* methods exported (D230 + D231 + D232 + D233 complete)");
 {
   const { courier } = buildCourier();
   const notifier = createPortalNotifier({ courier });
-  ok("onSlaBreached is a function", typeof notifier.onSlaBreached === "function");
-  ok("onSubmitted is a function (D231 new)", typeof notifier.onSubmitted === "function");
-  ok("onCancelled is a function (D231 new)", typeof notifier.onCancelled === "function");
-  ok("onAccepted not exported (D232)", typeof notifier.onAccepted !== "function");
-  ok("onDelivered not exported (D232)", typeof notifier.onDelivered !== "function");
-  ok("onRejected not exported (D233)",  typeof notifier.onRejected !== "function");
+  ok("onSlaBreached is a function (D230)", typeof notifier.onSlaBreached === "function");
+  ok("onSubmitted is a function (D231)",   typeof notifier.onSubmitted === "function");
+  ok("onCancelled is a function (D231)",   typeof notifier.onCancelled === "function");
+  ok("onAccepted is a function (D232)",    typeof notifier.onAccepted === "function");
+  ok("onDelivered is a function (D232)",   typeof notifier.onDelivered === "function");
+  ok("onRejected is a function (D233)",    typeof notifier.onRejected === "function");
 }
 
 console.log(`\n${passed} passed · ${failed} failed`);
