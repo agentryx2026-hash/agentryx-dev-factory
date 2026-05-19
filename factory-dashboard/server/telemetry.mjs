@@ -1640,6 +1640,128 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // GET /api/customer-portal/admin/submissions — flat list of all
+  // submissions across all customers, with each customer's tier joined
+  // in + SLA status computed at request time. Optional filters via
+  // query string: ?status=in_progress&tier=free.
+  // PR-C admin surface for the Customer Portal tab. No auth in v0.0.1
+  // per the same posture as other admin endpoints (founder is sole
+  // operator; nginx restricts external access; Phase 22 hardens).
+  if (req.url?.startsWith('/api/customer-portal/admin/submissions') && req.method === 'GET' && !req.url.includes('/cancel')) {
+    (async () => {
+      try {
+        const url = new URL(req.url, 'http://localhost');
+        const detailMatch = url.pathname.match(/^\/api\/customer-portal\/admin\/submissions\/([^/]+)\/([^/]+)$/);
+        const portal = await getCustomerPortal();
+
+        if (detailMatch) {
+          // Single submission detail: record + timeline + SLA status.
+          const customerId = decodeURIComponent(detailMatch[1]);
+          const submissionId = decodeURIComponent(detailMatch[2]);
+          const submission = await portal.submissions.get(customerId, submissionId);
+          if (!submission) return jsonResponse(res, 404, { error: 'submission not found' });
+          const account = await portal.accounts.getById(customerId);
+          const timeline = await portal.timeline.read(customerId, submissionId);
+          const slaStatus = account ? portal.sla.computeStatus(submission, account.tier) : null;
+          return jsonResponse(res, 200, { submission, account: account || null, timeline, sla_status: slaStatus });
+        }
+
+        // Flat list across all customers.
+        const statusFilter = url.searchParams.get('status') || null;
+        const tierFilter   = url.searchParams.get('tier')   || null;
+        const customers = await portal.listCustomers();
+        const rows = [];
+        for (const c of customers) {
+          if (tierFilter && c.tier !== tierFilter) continue;
+          let subs = [];
+          try { subs = await portal.submissions.list(c.id); }
+          catch (err) {
+            // One customer's read failure shouldn't blank the whole admin
+            // page — record + continue (D229 fail-isolation pattern).
+            console.warn(`[admin/submissions] list failed for ${c.id}:`, err?.message || err);
+            continue;
+          }
+          for (const s of subs) {
+            if (statusFilter && s.status !== statusFilter) continue;
+            // Inject customer_id + tier (index entries omit these by
+            // design — D229 lesson) so the UI doesn't need a second
+            // lookup per row.
+            const withRefs = { ...s, customer_id: c.id, customer_email: c.email, tier: c.tier };
+            // Compute SLA status inline so the UI can colour breach rows
+            // without doing N round-trips.
+            try {
+              const full = await portal.submissions.get(c.id, s.id);
+              if (full) withRefs.sla_status = portal.sla.computeStatus(full, c.tier);
+            } catch {}
+            rows.push(withRefs);
+          }
+        }
+        // Newest-first across all customers (each per-customer list is
+        // already newest-first per Phase 19-A; merge sort by submitted_at).
+        rows.sort((a, b) => String(b.submitted_at).localeCompare(String(a.submitted_at)));
+        return jsonResponse(res, 200, {
+          submissions: rows,
+          counts: {
+            total: rows.length,
+            by_status: rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {}),
+            by_tier:   rows.reduce((acc, r) => { acc[r.tier]   = (acc[r.tier]   || 0) + 1; return acc; }, {}),
+            breached:  rows.filter(r => r.sla_status?.status === 'breached').length,
+          },
+        });
+      } catch (err) {
+        console.error('[customer-portal/admin/submissions]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
+  // POST /api/customer-portal/admin/submissions/:cid/:sid/cancel — admin
+  // cancel (founder operating on behalf of customer). Bypasses the
+  // submitted/accepted-only customer cancel guard but still goes through
+  // the same state-machine — illegal transitions (delivered/cancelled/
+  // rejected) will refuse.
+  if (req.url?.match(/^\/api\/customer-portal\/admin\/submissions\/([^/]+)\/([^/]+)\/cancel$/) && req.method === 'POST') {
+    (async () => {
+      try {
+        const match = req.url.match(/^\/api\/customer-portal\/admin\/submissions\/([^/]+)\/([^/]+)\/cancel$/);
+        const customerId = decodeURIComponent(match[1]);
+        const submissionId = decodeURIComponent(match[2]);
+        const body = await readRequestBody(req).catch(() => ({}));
+        const portal = await getCustomerPortal();
+        // Direct state-machine transition — bypasses the customer-route
+        // cancel guard that refuses cancel on in_progress.
+        let updated;
+        try {
+          updated = await portal.transitionSubmission(customerId, submissionId, 'cancelled', { note: body?.note });
+        } catch (err) {
+          return jsonResponse(res, 400, { error: err?.message || String(err), code: 'VALIDATION' });
+        }
+        await portal.recordTimelineEvent(customerId, submissionId, {
+          kind: 'cancelled',
+          note: body?.note || 'cancelled by admin',
+        });
+        addLog('system', `🛑 Admin cancel: ${customerId}/${submissionId}${body?.note ? ` (${body.note})` : ''}`);
+        // D231 onCancelled — fail-isolated.
+        try {
+          const notifier = await getPortalNotifier();
+          const account = await portal.accounts.getById(customerId);
+          if (notifier && account) {
+            await notifier.onCancelled({ account, submission: updated, note: body?.note });
+          }
+        } catch (notifyErr) {
+          console.warn('[admin/cancel] notifier.onCancelled failed:', notifyErr?.message || notifyErr);
+        }
+        broadcast();
+        return jsonResponse(res, 200, { submission: updated });
+      } catch (err) {
+        console.error('[customer-portal/admin/cancel]', err);
+        return portalErrorToHttp(res, err);
+      }
+    })();
+    return;
+  }
+
   // POST /api/customer-portal/submit — Bearer auth.
   // Body: { project_title, intake_payload, tags?, meta? }
   // Returns: SubmissionReceipt — also auto-enqueues project_intake.
