@@ -106,6 +106,27 @@ async function getCustomerPortal() {
 // the request itself succeeds — same fail-isolated posture as the
 // scanner wiring).
 // Opt-out: NOTIFIER_DISABLED=true (also honoured by bootSlaBreachScanner).
+// Shared module-level Courier instance — single in-memory event history
+// for the process. Both getPortalNotifier (writes via dispatch) and the
+// admin /api/factory-admin/courier/* endpoints (reads via getHistory)
+// reach the same instance. UI-D (Notifications panel) consumes the
+// history for the live event feed.
+let _sharedCourierInstance = null;
+let _sharedCourierInitTried = false;
+async function getSharedCourier() {
+  if (_sharedCourierInstance) return _sharedCourierInstance;
+  if (_sharedCourierInitTried) return null;
+  _sharedCourierInitTried = true;
+  try {
+    const courierMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'service.js')).href);
+    _sharedCourierInstance = await courierMod.getCourier();
+    return _sharedCourierInstance;
+  } catch (err) {
+    console.warn('[courier] init failed:', err?.message || err);
+    return null;
+  }
+}
+
 let _portalNotifierInstance = null;
 let _portalNotifierInitTried = false;
 async function getPortalNotifier() {
@@ -114,11 +135,9 @@ async function getPortalNotifier() {
   _portalNotifierInitTried = true;
   if (process.env.NOTIFIER_DISABLED === 'true') return null;
   try {
-    const [notifierMod, courierMod] = await Promise.all([
-      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'notifier.js')).href),
-      import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'courier', 'service.js')).href),
-    ]);
-    const courier = await courierMod.getCourier();
+    const courier = await getSharedCourier();
+    if (!courier) return null;
+    const notifierMod = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'customer-portal', 'notifier.js')).href);
     _portalNotifierInstance = notifierMod.createPortalNotifier({
       courier,
       onLog: (line) => {
@@ -1919,6 +1938,12 @@ const server = http.createServer((req, res) => {
         } catch (err) {
           routing = { error: err?.message || 'failed to load courier-routing.json' };
         }
+        // UI-D — surface recent events from the shared Courier instance.
+        // The fake backend records every dispatch in memory (in addition
+        // to the courier-level history); both are inspectable now that
+        // the notifier + admin endpoints share one instance.
+        const courier = await getSharedCourier();
+        const history = courier ? courier.getHistory() : [];
         return jsonResponse(res, 200, {
           enabled: process.env.USE_COURIER === 'true',
           flag_required: 'USE_COURIER',
@@ -1926,11 +1951,49 @@ const server = http.createServer((req, res) => {
           channels: [...CHANNELS],
           severities: [...SEVERITIES],
           routing,
-          recent_events: [], // Phase 10-B will wire in-memory ring buffer
-          note: 'Real Slack / GitHub / SMTP backends + Hermes gateway = Phase 10-B (deferred). Today: routing config visible; events fire-and-forget through the registered backends; no event log yet.',
+          backend_kind: courier?.backend?.kind || null,
+          recent_events: history.slice(-20).reverse(), // newest-first, last 20
+          history_count: history.length,
+          note: 'Default backend=fake (in-memory). Set COURIER_BACKEND=http + provide Hermes credentials for real Slack/email/etc delivery (10-B).',
         });
       } catch (err) {
         console.error('[factory-admin/courier/state]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
+  // UI-D — Courier history endpoint with filters. Powers the
+  // Notifications panel feed. Query params: ?type=customer.sla_breached
+  // &severity=warn&limit=100 (defaults: no filters, limit=200).
+  if (req.url?.startsWith('/api/factory-admin/courier/history') && req.method === 'GET') {
+    (async () => {
+      try {
+        const url = new URL(req.url, 'http://localhost');
+        const typeFilter     = url.searchParams.get('type') || null;
+        const severityFilter = url.searchParams.get('severity') || null;
+        const limit          = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 1000);
+        const courier = await getSharedCourier();
+        if (!courier) {
+          return jsonResponse(res, 200, { events: [], count: 0, error: 'no shared Courier instance available' });
+        }
+        const all = courier.getHistory();
+        const filtered = all.filter(entry => {
+          if (typeFilter     && entry.event.type     !== typeFilter)     return false;
+          if (severityFilter && entry.event.severity !== severityFilter) return false;
+          return true;
+        });
+        // Newest-first.
+        const events = filtered.slice(-limit).reverse();
+        return jsonResponse(res, 200, {
+          events,
+          count: events.length,
+          total_unfiltered: all.length,
+          backend_kind: courier.backend?.kind || null,
+        });
+      } catch (err) {
+        console.error('[factory-admin/courier/history]', err);
         return jsonResponse(res, 500, { error: err?.message || String(err) });
       }
     })();
