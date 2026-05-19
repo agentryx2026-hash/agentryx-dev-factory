@@ -36,7 +36,7 @@ type Page =
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
-  | 'console-n8n';
+  | 'console-n8n' | 'console-hermes';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('pre-dev');
@@ -62,6 +62,13 @@ function App() {
           title="n8n — Workflow Editor"
           description="Visual workflow builder (Docker container factory-n8n on port 5678; N8N_PATH=/n8n/ ensures asset URLs respect the proxy prefix)"
           url="/n8n/"
+        />;
+      case 'console-hermes':
+        return <EmbeddedConsole
+          title="Hermes Agent — Dashboard (Lab evaluation)"
+          description="NousResearch Hermes Agent web dashboard (config, API keys, sessions, skills). Phase 2.75 Lab profile — evaluating for adoption beyond R1. Container factory-hermes (port 9119); nginx sub_filter rewrites absolute /api/ + /assets/ paths into /hermes/-prefixed ones."
+          url="/hermes/"
+          warning="Lab-profile service. The dashboard exposes Hermes config + API keys; current access requires the dev-hub.agentryx.dev TLS. v0.0.1 acceptable, but Phase 22 hardening should add basic-auth in front of /hermes/. Capabilities here will inform pipeline integration post-R1."
         />;
       default:                return <PreDev />;
     }

@@ -37,9 +37,22 @@ services:
       - PYTHONUNBUFFERED=1
       - HERMES_HOME=/opt/data
 
-    # Port mapping — Hermes's Dockerfile doesn't EXPOSE any ports, so gateway
-    # modes (TUI, web, webhook) come in after `hermes setup`. Reserve 4600 on
-    # the host for whatever Hermes's primary gateway ends up being. Leave
-    # this commented until we know — first run figures it out.
-    # ports:
-    #   - "4600:4600"
+    # Launch Hermes's native web dashboard automatically. Port 9119 is
+    # Hermes's default. Binding inside the container to 0.0.0.0 requires
+    # --insecure (Hermes considers anything beyond 127.0.0.1 a risk
+    # because the dashboard surfaces API keys). We mitigate:
+    #   - Container port 9119 bound to 0.0.0.0 INSIDE the container only
+    #   - Host port 9119 listens on 127.0.0.1 only (loopback)
+    #   - nginx /hermes/ proxies dev-hub.agentryx.dev → 127.0.0.1:9119
+    #   - External access requires the dev-hub hostname + TLS
+    # Future hardening (post-R1): add nginx basic-auth in front of /hermes/.
+    ports:
+      - "127.0.0.1:9119:9119"
+    command:
+      - "dashboard"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "9119"
+      - "--no-open"
+      - "--insecure"
