@@ -171,9 +171,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
           <div style={sectionHintStyle}>Hosted dashboards + repos (open in new tab)</div>
         </div>
         {[
-          { href: 'https://dev-hub.agentryx.dev/langfuse/',                icon: '🔍', label: 'Langfuse Traces' },
+          // Local services with their own admin UIs (fixed basePath
+          // routing — UI-G ship of 2026-05-19):
+          //   Paperclip: base: '/paperclip/' in paperclip/ui/vite.config.ts
+          //   LiteLLM:   SERVER_ROOT_PATH=/litellm in docker-compose
+          // Langfuse intentionally not listed — its Next.js basePath
+          // is baked at build time; would need a custom image rebuild
+          // and we're not currently sending traces to it anyway.
           { href: 'https://dev-hub.agentryx.dev/paperclip/',               icon: '📎', label: 'Paperclip' },
-          { href: 'https://dev-hub.agentryx.dev/litellm/ui',               icon: '🧮', label: 'LiteLLM Admin' },
+          { href: 'https://dev-hub.agentryx.dev/litellm/ui/',              icon: '🧮', label: 'LiteLLM Admin' },
           { href: 'https://claw-code.agentryx.dev/',                       icon: '🦞', label: 'Claw Code (terminal)' },
           { href: 'https://openrouter.ai/settings/credits',                icon: '🛰️', label: 'OpenRouter (billing)' },
           { href: 'https://console.anthropic.com/',                        icon: '🤖', label: 'Anthropic Console' },

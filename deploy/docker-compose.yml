@@ -102,6 +102,13 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-dev}
       - LITELLM_LOG=INFO
+      # Serve under /litellm prefix when behind the Agentryx Dev-Hub nginx
+      # proxy. Without this, LiteLLM's admin UI uses absolute root paths
+      # (/ui, /sso/key/generate etc.) that resolve against
+      # dev-hub.agentryx.dev/ and route to the Dev-Hub Vite instead of
+      # LiteLLM. SERVER_ROOT_PATH tells LiteLLM (FastAPI) to generate
+      # URLs with the /litellm prefix.
+      - SERVER_ROOT_PATH=/litellm
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health/liveliness"]
