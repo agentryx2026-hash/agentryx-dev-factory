@@ -5,7 +5,7 @@ type Page =
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
-  | 'console-n8n';
+  | 'console-n8n' | 'console-hermes';
 
 interface SidebarProps {
   activePage: Page;
@@ -53,12 +53,14 @@ const navSections: NavSection[] = [
     label: 'Embedded Consoles',
     hint:  'Tools whose UI we render inline',
     items: [
-      // Only services configured with a matching basePath embed cleanly.
-      // n8n has N8N_PATH=/n8n/ which makes its assets respect the proxy
-      // prefix. Paperclip / Langfuse / LiteLLM all serve absolute / paths
-      // → iframe routes back to Dev-Hub. Plus Langfuse explicitly sets
-      // frame-ancestors 'none'. Those three live in External Links.
-      { page: 'console-n8n', icon: '🔗', label: 'n8n Workflows' },
+      // n8n: native N8N_PATH=/n8n/ basePath → clean iframe.
+      // Hermes: no native basePath but nginx sub_filter rewrites the
+      //   absolute /api/ + /assets/ refs in the response HTML+JS so the
+      //   dashboard renders correctly under /hermes/. Hermes is a Lab
+      //   profile evaluation (Phase 2.75) — embedding it lets you test
+      //   capabilities and inform pipeline-adoption decisions post-R1.
+      { page: 'console-n8n',    icon: '🔗', label: 'n8n Workflows' },
+      { page: 'console-hermes', icon: '🦊', label: 'Hermes Agent', badge: 'LAB' },
     ],
   },
   {
@@ -90,16 +92,21 @@ const sectionHintStyle: React.CSSProperties = {
   marginTop: '2px',
   fontStyle: 'italic',
 };
-const badgeStyle: React.CSSProperties = {
+const badgeBaseStyle: React.CSSProperties = {
   marginLeft: 'auto',
   fontSize: '0.55rem',
-  background: '#10b981',
   color: '#0f172a',
   padding: '1px 6px',
   borderRadius: '999px',
   fontWeight: 700,
   letterSpacing: '0.5px',
 };
+const badgeStyleByLabel: Record<string, React.CSSProperties> = {
+  NEW: { ...badgeBaseStyle, background: '#10b981' },        // green — shipped + working
+  LAB: { ...badgeBaseStyle, background: '#fbbf24' },        // amber — evaluation profile
+};
+const badgeStyleFor = (label: string): React.CSSProperties =>
+  badgeStyleByLabel[label] || { ...badgeBaseStyle, background: '#10b981' };
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
   const [latestLogs, setLatestLogs] = useState<any[]>([]);
@@ -155,7 +162,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage }) => {
               >
                 <span className="nav-icon">{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
-                {item.badge && <span style={badgeStyle}>{item.badge}</span>}
+                {item.badge && <span style={badgeStyleFor(item.badge)}>{item.badge}</span>}
               </div>
             ))}
           </React.Fragment>
