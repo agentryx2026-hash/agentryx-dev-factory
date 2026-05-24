@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 type Page =
   | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
+  | 'roadmap'
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
@@ -21,6 +22,13 @@ type NavSection = {
 };
 
 const navSections: NavSection[] = [
+  {
+    label: 'Architecture & Roadmap',
+    hint:  'The 22-phase plan, alive + active',
+    items: [
+      { page: 'roadmap', icon: '🗺️', label: 'Roadmap · Phases · Tasks', badge: 'NEW' },
+    ],
+  },
   {
     label: 'Factory Floor',
     hint:  'The dev pipeline you drive',

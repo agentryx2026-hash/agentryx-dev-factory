@@ -16,6 +16,7 @@ import CustomerPortal from './components/CustomerPortal';
 import Notifications from './components/Notifications';
 import ServicesHealth from './components/ServicesHealth';
 import EmbeddedConsole from './components/EmbeddedConsole';
+import ArchitectureRoadmap from './components/ArchitectureRoadmap';
 
 // Embedded-Consoles design note (UI-F):
 //   We only embed services that natively support a basePath matching the
@@ -33,6 +34,7 @@ import EmbeddedConsole from './components/EmbeddedConsole';
 //   new tab works perfectly). n8n stays embedded.
 type Page =
   | 'pre-dev' | 'factory' | 'post-dev' | 'architect' | 'replay'
+  | 'roadmap'
   | 'customer-portal' | 'notifications'
   | 'analytics' | 'skills' | 'cost-panel'
   | 'system' | 'settings' | 'admin-keys' | 'services-health'
@@ -57,6 +59,7 @@ function App() {
       case 'admin-keys':      return <AdminKeys />;
       case 'cost-panel':      return <CostPanel />;
       case 'services-health': return <ServicesHealth />;
+      case 'roadmap':         return <ArchitectureRoadmap />;
       case 'console-n8n':
         return <EmbeddedConsole
           title="n8n — Workflow Editor"

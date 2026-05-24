@@ -1,0 +1,60 @@
+{
+  "_comment": "Release bands per the founder's R1→R5 trajectory. Each band has a semver mapping + status + (when applicable) achieved date/tag. The Architecture & Roadmap UI tab consumes this directly.",
+  "_schema_version": 1,
+  "_updated_at": "2026-05-19",
+  "bands": [
+    {
+      "id": "v0.0.1",
+      "semver": "0.0.1",
+      "label": "v0.0.1 — pre-R1 substrate",
+      "status": "done",
+      "achieved_at": "2026-04-24",
+      "achieved_tag": "phase-19a-closed",
+      "description": "All 16 A-tier modules shipped + most B-tier substrate code committed. Engine not yet exercised end-to-end on real LLM."
+    },
+    {
+      "id": "R1",
+      "semver": "1.0.0",
+      "label": "R1 — internal R&D substrate validated",
+      "status": "done",
+      "achieved_at": "2026-05-19",
+      "achieved_tag": "r1-cycle-3-dev",
+      "description": "First real LLM cycle proven across 4 code paths: architect researcher, pre_dev pipeline, customer-flow E2E, dev cycle with Phase 8-B parallel topology. Total spend $4.79. Substrate fully validated."
+    },
+    {
+      "id": "R1+",
+      "semver": "1.1.0",
+      "label": "R1+ — real-use hardening",
+      "status": "in_progress",
+      "description": "Bug fixes from R1 cycles + small polish (dev_graph project-naming fix, Cost Panel rollup mismatch, etc.). Substrate already proven; this band cleans up rough edges before R2 push."
+    },
+    {
+      "id": "R2",
+      "semver": "2.0.0",
+      "label": "R2 — limited use (founder + early collaborators build real apps)",
+      "status": "pending",
+      "description": "You and early collaborators use the factory to build at least one real (non-toy) application end-to-end. Surfaces real-world gaps that R3-R5 address. Substrate dependencies: 19-C per-customer prefs + React customer dashboard + password auth + real Courier backends."
+    },
+    {
+      "id": "R3",
+      "semver": "3.0.0",
+      "label": "R3 — multi-tenancy + admin auth + real Courier",
+      "status": "pending",
+      "description": "Phase 22 admin auth (founder + role checks) + per-tenant isolation hardening + real Slack/SMTP/GitHub Courier backends with rotated credentials. First step toward acceptable external surface."
+    },
+    {
+      "id": "R4",
+      "semver": "4.0.0",
+      "label": "R4 — Stripe billing + retention + GDPR",
+      "status": "pending",
+      "description": "Phase 20-B Stripe live + S3/R2 retention + nightly backup operational + GDPR cron + per-tenant cost visibility for customers. Customer can self-serve billing."
+    },
+    {
+      "id": "R5",
+      "semver": "5.0.0",
+      "label": "R5 — public-portal ready",
+      "status": "pending",
+      "description": "External pen test passed + final security hardening + public-portal positioning (like Replit). Cycle 3+4 patterns from runbook fully wired. Sign-up flow + onboarding + docs polished. Multi-host eventual (deferred from R3 if single-VM holds)."
+    }
+  ]
+}
