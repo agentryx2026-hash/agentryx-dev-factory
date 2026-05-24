@@ -1,0 +1,691 @@
+{
+  "_comment": "Flat task list. Each task has a stable id (T-NNNN), a phase_id link, a band_id (which release band closes this task), and status. Tasks tagged 'done' carry git_tag + pr + shipped_at when known. Tasks tagged 'pending'/'in_progress' carry notes describing what's needed. UI lets founder move tasks between phases, re-enable completed ones for enhancement, edit titles/notes, etc.",
+  "_schema_version": 1,
+  "_updated_at": "2026-05-24T06:49:54.898Z",
+  "_next_id": 121,
+  "tasks": [
+    {
+      "id": "T-0001",
+      "phase_id": "phase-01",
+      "band_id": "v0.0.1",
+      "title": "Restore + observe baseline factory state",
+      "status": "done",
+      "shipped_at": "2026-03-15"
+    },
+    {
+      "id": "T-0010",
+      "phase_id": "phase-02",
+      "band_id": "v0.0.1",
+      "title": "Phase 2 — multi-provider LLM router (OpenRouter + LiteLLM + Anthropic direct)",
+      "status": "done",
+      "shipped_at": "2026-04-15"
+    },
+    {
+      "id": "T-0011",
+      "phase_id": "phase-02",
+      "band_id": "R1",
+      "title": "Validate router multi-tier task routing on real LLM",
+      "status": "done",
+      "shipped_at": "2026-05-19",
+      "git_tag": "r1-cycle-3-dev",
+      "notes": "R1 Cycle 3 first cycle to exercise all 3 tiers (Haiku + Sonnet + Opus) in one run"
+    },
+    {
+      "id": "T-0015",
+      "phase_id": "phase-2.5",
+      "band_id": "v0.0.1",
+      "title": "Phase 2.5 — Key Console (Anthropic + OpenRouter + Gemini key admin)",
+      "status": "done",
+      "shipped_at": "2026-04-15"
+    },
+    {
+      "id": "T-0020",
+      "phase_id": "phase-2.75",
+      "band_id": "v0.0.1",
+      "title": "Hermes Agent — isolated Docker evaluation stack",
+      "status": "done",
+      "shipped_at": "2026-04-20",
+      "git_tag": "phase-2.76-closed"
+    },
+    {
+      "id": "T-0021",
+      "phase_id": "phase-2.75",
+      "band_id": "R1+",
+      "title": "Hermes — embed dashboard inside Dev-Hub via nginx sub_filter",
+      "status": "done",
+      "shipped_at": "2026-05-19",
+      "pr": 85,
+      "git_tag": null,
+      "notes": "UI-H: /hermes/ proxied + asset paths rewritten"
+    },
+    {
+      "id": "T-0022",
+      "phase_id": "phase-2.75",
+      "band_id": "R1+",
+      "title": "Hermes — founder hands-on exploration → adopt/pattern-steal decision",
+      "status": "pending",
+      "notes": "Founder-driven. Use Dev-Hub → Embedded Consoles → Hermes Agent tab. Decision documented in Phase 2.75 status when done."
+    },
+    {
+      "id": "T-0023",
+      "phase_id": "phase-2.75",
+      "band_id": "R2",
+      "title": "Hermes — wire into pipeline (MCP plane / Courier per decision)",
+      "status": "pending",
+      "notes": "Conditional on T-0022 adopt decision. Could fold into Phase 5-B (MCP) or Phase 10 (Courier)."
+    },
+    {
+      "id": "T-0024",
+      "phase_id": "phase-2.76",
+      "band_id": "v0.0.1",
+      "title": "Lab + Strategy Update 2026-05 (Hermes/Honcho/Tinker positioning)",
+      "status": "done",
+      "shipped_at": "2026-05-09",
+      "git_tag": "phase-2.76-closed"
+    },
+    {
+      "id": "T-0030",
+      "phase_id": "phase-03",
+      "band_id": "v0.0.1",
+      "title": "Genovi intake agent — structured FR extraction",
+      "status": "done",
+      "shipped_at": "2026-04-15"
+    },
+    {
+      "id": "T-0031",
+      "phase_id": "phase-03",
+      "band_id": "R1+",
+      "title": "Pre_dev intake — add A5_PRD_Phase1 to output (currently produced only A0/A3/A6 + B4/B6)",
+      "status": "pending",
+      "notes": "Caught during R1 dev_graph attempt — JANE expects A5_PRD_Phase1 for richer triage context. Bug filed."
+    },
+    {
+      "id": "T-0040",
+      "phase_id": "phase-04",
+      "band_id": "v0.0.1",
+      "title": "PMD Template Registry — 12 standard docs (A0-A6, B4-B7, etc.)",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0050",
+      "phase_id": "phase-05",
+      "band_id": "v0.0.1",
+      "title": "Phase 5-A — MCP scaffold (5 servers: fs/git/github/postgres/browser)",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0051",
+      "phase_id": "phase-05",
+      "band_id": "v0.0.1",
+      "title": "Phase 5-B — tool-selector + 5 graphs rewired under USE_MCP_TOOLS",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-5-b-closed",
+      "pr": 63
+    },
+    {
+      "id": "T-0052",
+      "phase_id": "phase-05",
+      "band_id": "R2",
+      "title": "USE_MCP_TOOLS=true flip + Cycle 5 of runbook (MCP subprocess validation)",
+      "status": "pending",
+      "notes": "Substrate ready; needs a real cycle with the flag on to validate the subprocess path"
+    },
+    {
+      "id": "T-0060",
+      "phase_id": "phase-06",
+      "band_id": "v0.0.1",
+      "title": "Phase 6-B RouterChatModel chokepoint — _artifacts/ writes",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0061",
+      "phase_id": "phase-06",
+      "band_id": "R1",
+      "title": "Validate Phase 6-B with real LLM (artifacts captured + provenance)",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "r1-complete",
+      "notes": "Pre_dev JOB-0005: 7 artifacts; dev_graph JOB-0008: 9 artifacts. All with model + tokens + cost + run_id."
+    },
+    {
+      "id": "T-0070",
+      "phase_id": "phase-07",
+      "band_id": "v0.0.1",
+      "title": "Phase 7-A memory layer substrate (observations + lessons)",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0071",
+      "phase_id": "phase-07",
+      "band_id": "v0.0.1",
+      "title": "Phase 7-E sync-from-artifacts",
+      "status": "done",
+      "shipped_at": "2026-05-11"
+    },
+    {
+      "id": "T-0072",
+      "phase_id": "phase-07",
+      "band_id": "R1+",
+      "title": "Auto-trigger 7-E sync after each pre_dev/dev cycle (vs manual)",
+      "status": "pending",
+      "notes": "Currently sync is a manual button click in Memory Layer tab. Auto-run after cycle done = cleaner UX."
+    },
+    {
+      "id": "T-0073",
+      "phase_id": "phase-07",
+      "band_id": "—",
+      "title": "7-B/7-C/7-D — scale-gated (100+ observations / multi-host / semantic-search)",
+      "status": "pending",
+      "notes": "Cohort 3 — deferred until demand actually shows up."
+    },
+    {
+      "id": "T-0080",
+      "phase_id": "phase-08",
+      "band_id": "v0.0.1",
+      "title": "Phase 8-A — parallel artifact substrate (tuvok ∥ data after torres)",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0081",
+      "phase_id": "phase-08",
+      "band_id": "v0.0.1",
+      "title": "Phase 8-B — dev_graph.js parallel topology under USE_PARALLEL_DEV_GRAPH",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-8-b-closed",
+      "pr": 46
+    },
+    {
+      "id": "T-0082",
+      "phase_id": "phase-08",
+      "band_id": "R1",
+      "title": "Validate Phase 8-B in production (parallel timing under real LLM)",
+      "status": "done",
+      "shipped_at": "2026-05-19",
+      "git_tag": "r1-cycle-3-dev",
+      "notes": "JOB-0008: Tuvok started 1.9s after Data — full parallel confirmed"
+    },
+    {
+      "id": "T-0090",
+      "phase_id": "phase-09",
+      "band_id": "v0.0.1",
+      "title": "Phase 9-A Verify portal substrate + mock client",
+      "status": "done",
+      "shipped_at": "2026-04-20"
+    },
+    {
+      "id": "T-0091",
+      "phase_id": "phase-09",
+      "band_id": "v0.0.1",
+      "title": "Phase 9-B substrate — webhook receive + HMAC verification",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-9-b-substrate-closed",
+      "pr": 62
+    },
+    {
+      "id": "T-0092",
+      "phase_id": "phase-09",
+      "band_id": "R2",
+      "title": "Verify-stg deploy + real http client + auto-routed fix cycle",
+      "status": "pending",
+      "notes": "Needs Verify-stg URL + GitHub creds + a deploy step. Founder ops action."
+    },
+    {
+      "id": "T-0100",
+      "phase_id": "phase-10",
+      "band_id": "v0.0.1",
+      "title": "Phase 10-A Courier substrate (events + routing + fake backend)",
+      "status": "done",
+      "shipped_at": "2026-04-25"
+    },
+    {
+      "id": "T-0101",
+      "phase_id": "phase-10",
+      "band_id": "R1",
+      "title": "19-B portal notifier wired (6 customer.* event types)",
+      "status": "done",
+      "shipped_at": "2026-05-19",
+      "git_tag": "phase-19-b-notifier-complete",
+      "pr": 86
+    },
+    {
+      "id": "T-0102",
+      "phase_id": "phase-10",
+      "band_id": "R3",
+      "title": "Real backends — Hermes gateway + Slack + SMTP + GitHub creds",
+      "status": "pending",
+      "notes": "Currently all events route to fake backend (in-memory history visible in Notifications tab). Needs ops creds + Hermes-gateway deploy for external delivery."
+    },
+    {
+      "id": "T-0110",
+      "phase_id": "phase-11",
+      "band_id": "v0.0.1",
+      "title": "Phase 11-A cost-tracker substrate",
+      "status": "done",
+      "shipped_at": "2026-04-25"
+    },
+    {
+      "id": "T-0111",
+      "phase_id": "phase-11",
+      "band_id": "v0.0.1",
+      "title": "Phase 11-B read UI (Cost Panel)",
+      "status": "done",
+      "shipped_at": "2026-04-25"
+    },
+    {
+      "id": "T-0112",
+      "phase_id": "phase-11",
+      "band_id": "R1+",
+      "title": "Fix Cost Panel rollup endpoint (workspace_root → workspaceRoot, project_id matching)",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "pr": 77,
+      "notes": "Partial — fixes per-project rollup but dev_graph cycle's project_id mismatch (T-0117) still misses some runs"
+    },
+    {
+      "id": "T-0113",
+      "phase_id": "phase-11",
+      "band_id": "R1+",
+      "title": "Per-tenant charts + threshold alerts via 10-B Courier",
+      "status": "pending",
+      "notes": "Substrate (per-project rollup) ready; UI charts + alert wiring open"
+    },
+    {
+      "id": "T-0114",
+      "phase_id": "phase-11",
+      "band_id": "R1+",
+      "title": "Capture architect-cycle spend in cost-tracker (currently bypasses chokepoint)",
+      "status": "pending",
+      "notes": "Architect researcher calls llm-router/router.js directly, not the RouterChatModel chokepoint. Needs a cost-capture wrapper around the architect dispatcher OR moving architect to the chokepoint."
+    },
+    {
+      "id": "T-0120",
+      "phase_id": "phase-12",
+      "band_id": "v0.0.1",
+      "title": "Phase 12 — B7 Admin Module (8 sub-tabs)",
+      "status": "done",
+      "shipped_at": "2026-05-11",
+      "pr": 42
+    },
+    {
+      "id": "T-0130",
+      "phase_id": "phase-13",
+      "band_id": "v0.0.1",
+      "title": "Phase 13-A — pipeline replay substrate",
+      "status": "done",
+      "shipped_at": "2026-04-30"
+    },
+    {
+      "id": "T-0131",
+      "phase_id": "phase-13",
+      "band_id": "v0.0.1",
+      "title": "Phase 13-B substrate — Replay UI + LLM stub + execute endpoint",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-13-b-substrate-closed",
+      "pr": 64
+    },
+    {
+      "id": "T-0132",
+      "phase_id": "phase-13",
+      "band_id": "R2",
+      "title": "Side-by-side diff UI + cross-pipeline UI + first real comparison cycle",
+      "status": "pending"
+    },
+    {
+      "id": "T-0140",
+      "phase_id": "phase-14",
+      "band_id": "v0.0.1",
+      "title": "Phase 14-A queue substrate (POSIX-rename leasing + round-robin)",
+      "status": "done",
+      "shipped_at": "2026-04-30"
+    },
+    {
+      "id": "T-0141",
+      "phase_id": "phase-14",
+      "band_id": "v0.0.1",
+      "title": "Phase 14-B Tier B handlers + per-project quotas",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-14-b-closed",
+      "pr": 56
+    },
+    {
+      "id": "T-0142",
+      "phase_id": "phase-14",
+      "band_id": "v0.0.1",
+      "title": "Phase 14-B orphan reaper",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "pr": 57
+    },
+    {
+      "id": "T-0143",
+      "phase_id": "phase-14",
+      "band_id": "R2",
+      "title": "Phase 14-B legacy-path retirement",
+      "status": "pending"
+    },
+    {
+      "id": "T-0150",
+      "phase_id": "phase-15",
+      "band_id": "v0.0.1",
+      "title": "Phase 15-A self-improvement substrate",
+      "status": "done",
+      "shipped_at": "2026-04-30"
+    },
+    {
+      "id": "T-0151",
+      "phase_id": "phase-15",
+      "band_id": "v0.0.1",
+      "title": "Phase 15-B proposer (proposals from observations)",
+      "status": "done",
+      "shipped_at": "2026-05-11",
+      "pr": 42
+    },
+    {
+      "id": "T-0152",
+      "phase_id": "phase-15",
+      "band_id": "R2",
+      "title": "Real artifact-delta comparators (currently synthetic)",
+      "status": "pending",
+      "notes": "Needs multiple real dev cycles to compare artifact deltas"
+    },
+    {
+      "id": "T-0160",
+      "phase_id": "phase-16",
+      "band_id": "v0.0.1",
+      "title": "Phase 16-A training-gen substrate",
+      "status": "done",
+      "shipped_at": "2026-05-01"
+    },
+    {
+      "id": "T-0161",
+      "phase_id": "phase-16",
+      "band_id": "v0.0.1",
+      "title": "Phase 16-B handler — training_gen queue kind",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-16-b-tier-b",
+      "pr": 60
+    },
+    {
+      "id": "T-0162",
+      "phase_id": "phase-16",
+      "band_id": "R1+",
+      "title": "Generate first real training script (validate substrate end-to-end)",
+      "status": "pending"
+    },
+    {
+      "id": "T-0170",
+      "phase_id": "phase-17",
+      "band_id": "v0.0.1",
+      "title": "Phase 17-A training-videos substrate",
+      "status": "done",
+      "shipped_at": "2026-05-05"
+    },
+    {
+      "id": "T-0171",
+      "phase_id": "phase-17",
+      "band_id": "v0.0.1",
+      "title": "Phase 17-B handler — training_video_render with all-null providers",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-17-b-tier-b",
+      "pr": 61
+    },
+    {
+      "id": "T-0172",
+      "phase_id": "phase-17",
+      "band_id": "R2",
+      "title": "Wire real ElevenLabs + Puppeteer + ffmpeg backends",
+      "status": "pending",
+      "notes": "Needs ElevenLabs API key. Currently all-null = $0 substrate; real backends opt-in per job."
+    },
+    {
+      "id": "T-0180",
+      "phase_id": "phase-18",
+      "band_id": "v0.0.1",
+      "title": "Phase 18-A marketplace substrate",
+      "status": "done",
+      "shipped_at": "2026-05-05"
+    },
+    {
+      "id": "T-0181",
+      "phase_id": "phase-18",
+      "band_id": "v0.0.1",
+      "title": "Phase 18-B catalogue read UI",
+      "status": "done",
+      "shipped_at": "2026-05-11",
+      "pr": 42
+    },
+    {
+      "id": "T-0182",
+      "phase_id": "phase-18",
+      "band_id": "R3",
+      "title": "Remote module fetch + signature verification",
+      "status": "pending",
+      "notes": "Security-sensitive; R3 scope"
+    },
+    {
+      "id": "T-0190",
+      "phase_id": "phase-19",
+      "band_id": "v0.0.1",
+      "title": "Phase 19-A customer-portal substrate (accounts/submissions/timeline/SLA — 138 smoke assertions)",
+      "status": "done",
+      "shipped_at": "2026-04-24",
+      "git_tag": "phase-19a-closed"
+    },
+    {
+      "id": "T-0191",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D224 — project_intake queue handler",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-tier-b",
+      "pr": 66
+    },
+    {
+      "id": "T-0192",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D225 — HTTP surface (6 endpoints) + auto-enqueue",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-http-surface",
+      "pr": 67
+    },
+    {
+      "id": "T-0193",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D226 hotfix — idempotency + valid event kinds",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "pr": 68
+    },
+    {
+      "id": "T-0194",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D227 — back-feed wrapper (pre_dev → delivered transition)",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-backfeed-wrapper",
+      "pr": 70
+    },
+    {
+      "id": "T-0195",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D228 — SLA breach scanner daemon",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-sla-scanner",
+      "pr": 71
+    },
+    {
+      "id": "T-0196",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D229 hotfix — scanner injects customer_id",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "pr": 72
+    },
+    {
+      "id": "T-0197",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D230 — portal notifier + scanner Courier wiring",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-portal-notifier-scanner",
+      "pr": 73
+    },
+    {
+      "id": "T-0198",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D231 — notifier HTTP /submit + /cancel wirings",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-19-b-notifier-d231-submit-cancel",
+      "pr": 76
+    },
+    {
+      "id": "T-0199",
+      "phase_id": "phase-19",
+      "band_id": "R1",
+      "title": "D232 + D233 — notifier intake/back-feed/admin reject + UI Reject button",
+      "status": "done",
+      "shipped_at": "2026-05-19",
+      "git_tag": "phase-19-b-notifier-complete",
+      "pr": 86
+    },
+    {
+      "id": "T-0200",
+      "phase_id": "phase-19",
+      "band_id": "R2",
+      "title": "19-C — per-customer notification prefs (account.notification_prefs schema + notifier consults it)",
+      "status": "pending",
+      "notes": "Replaces stdout-everywhere routing. Substrate ready; needs schema migration + notifier read + a UI to set prefs."
+    },
+    {
+      "id": "T-0201",
+      "phase_id": "phase-19",
+      "band_id": "R2",
+      "title": "React customer dashboard (sign-up + submission form + status page)",
+      "status": "pending",
+      "notes": "Today customer-portal is curl-only. Customer needs a UI to use the factory. Substantial frontend work."
+    },
+    {
+      "id": "T-0202",
+      "phase_id": "phase-19",
+      "band_id": "R2",
+      "title": "Password auth + email verification (replace opaque bearer tokens)",
+      "status": "pending",
+      "notes": "argon2id hashing + email verify flow"
+    },
+    {
+      "id": "T-0210",
+      "phase_id": "phase-20",
+      "band_id": "v0.0.1",
+      "title": "Phase 20-A release substrate (metering + retention + GDPR primitives)",
+      "status": "done",
+      "shipped_at": "2026-05-09",
+      "git_tag": "phase-20a-closed"
+    },
+    {
+      "id": "T-0211",
+      "phase_id": "phase-20",
+      "band_id": "R4",
+      "title": "Stripe billing live + per-tenant cost visibility",
+      "status": "pending"
+    },
+    {
+      "id": "T-0212",
+      "phase_id": "phase-20",
+      "band_id": "R4",
+      "title": "S3/R2 retention + nightly backup operational",
+      "status": "pending"
+    },
+    {
+      "id": "T-0213",
+      "phase_id": "phase-20",
+      "band_id": "R5",
+      "title": "External pen test passed",
+      "status": "pending",
+      "notes": "$5-15K + 4-6 weeks; final R5 gate"
+    },
+    {
+      "id": "T-0220",
+      "phase_id": "phase-21",
+      "band_id": "v0.0.1",
+      "title": "Phase 21 — Master Architect (autonomous research + cadence daemon)",
+      "status": "done",
+      "shipped_at": "2026-05-11",
+      "git_tag": "phase-21-closed",
+      "pr": 42
+    },
+    {
+      "id": "T-0221",
+      "phase_id": "phase-21",
+      "band_id": "v0.0.1",
+      "title": "Phase 21-B.2 — architect cadence via queue (USE_ARCHITECT_QUEUE)",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "phase-21-b-2-closed",
+      "pr": 58
+    },
+    {
+      "id": "T-0222",
+      "phase_id": "phase-21",
+      "band_id": "R1",
+      "title": "Validate Master Architect on real LLM",
+      "status": "done",
+      "shipped_at": "2026-05-18",
+      "git_tag": "r1-first-real-cycle",
+      "notes": "RP-0003 sonnet dispatcher: 25 findings + 25 proposals at $0.10"
+    },
+    {
+      "id": "T-0223",
+      "phase_id": "phase-21",
+      "band_id": "R2",
+      "title": "Flip USE_ARCHITECT_QUEUE=true + Cycle 4 of runbook (queue-mode architect)",
+      "status": "pending"
+    },
+    {
+      "id": "T-0230",
+      "phase_id": "phase-22",
+      "band_id": "R3",
+      "title": "Phase 22 — admin auth + role checks (founder/ops/customer)",
+      "status": "pending",
+      "notes": "v3 hardening. Currently admin endpoints are open (single-VM single-founder model). Needs proper auth before any external exposure."
+    },
+    {
+      "id": "T-0240",
+      "phase_id": "phase-19",
+      "band_id": "R1+",
+      "title": "Fix dev_graph project naming bug (uses raw task text → / creates nested dirs)",
+      "status": "pending",
+      "notes": "Caught during R1 Cycle 3 — JOB-0008 created nested directories from / in task. Sanitize state.userRequest before setProjectDir."
+    },
+    {
+      "id": "T-0241",
+      "phase_id": "phase-19",
+      "band_id": "R1+",
+      "title": "Fix Cost Panel rollup for dev_graph runs (project_id mismatch)",
+      "status": "pending",
+      "notes": "Submit-time project_id ≠ on-disk dir name from dev_graph. Per-artifact data is there; UI aggregator misses it. Probably wants to add a project_id field to the artifact metadata."
+    }
+  ]
+}

@@ -2571,6 +2571,127 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── UI-I: Roadmap dashboard endpoints (Architecture & Roadmap tab) ────
+  // Reads/writes _roadmap/{phases,bands,tasks}.json — the structured
+  // projection of the project plan. Per-phase Status.md narratives
+  // remain in pmd/; this is the dashboard view + interactive editor.
+  if (req.url?.startsWith('/api/factory-admin/roadmap') && (req.method === 'GET' || req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE')) {
+    (async () => {
+      try {
+        const { createRoadmapStore } = await import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'roadmap', 'store.js')).href);
+        const store = createRoadmapStore();
+        const url = new URL(req.url, 'http://localhost');
+        const segments = url.pathname.replace(/^\/api\/factory-admin\/roadmap\/?/, '').split('/').filter(Boolean);
+
+        // GET /summary  → dashboard rollup
+        if (req.method === 'GET' && segments[0] === 'summary') {
+          return jsonResponse(res, 200, await store.readSummary());
+        }
+        // GET /bands    → release-band list
+        if (req.method === 'GET' && segments[0] === 'bands' && segments.length === 1) {
+          return jsonResponse(res, 200, { bands: await store.readBands() });
+        }
+        // GET /phases   → all phases
+        // GET /phases/:id → single phase + its tasks
+        if (req.method === 'GET' && segments[0] === 'phases') {
+          if (segments.length === 1) {
+            return jsonResponse(res, 200, { phases: await store.readPhases() });
+          }
+          if (segments.length === 2) {
+            const found = await store.readPhase(segments[1]);
+            if (!found) return jsonResponse(res, 404, { error: 'phase not found' });
+            return jsonResponse(res, 200, found);
+          }
+        }
+        // GET /tasks    → all tasks (optional ?phase=&status=&band= filters)
+        if (req.method === 'GET' && segments[0] === 'tasks' && segments.length === 1) {
+          const all = await store.readTasks();
+          const phaseF  = url.searchParams.get('phase');
+          const statusF = url.searchParams.get('status');
+          const bandF   = url.searchParams.get('band');
+          const filtered = all.filter(t =>
+            (!phaseF  || t.phase_id === phaseF) &&
+            (!statusF || t.status   === statusF) &&
+            (!bandF   || t.band_id  === bandF)
+          );
+          return jsonResponse(res, 200, { tasks: filtered, count: filtered.length, total_unfiltered: all.length });
+        }
+        // GET /history?limit=  → recent audit-log entries
+        if (req.method === 'GET' && segments[0] === 'history') {
+          const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 500);
+          return jsonResponse(res, 200, { history: await store.readHistory(limit) });
+        }
+        // POST /tasks  → create task { phase_id, band_id, title, status?, notes? }
+        if (req.method === 'POST' && segments[0] === 'tasks' && segments.length === 1) {
+          const body = await readRequestBody(req);
+          try {
+            const task = await store.createTask(body, body.actor || 'founder');
+            addLog('system', `📋 Roadmap: created ${task.id} "${task.title.substring(0, 60)}"`);
+            broadcast();
+            return jsonResponse(res, 201, { task });
+          } catch (err) {
+            return jsonResponse(res, 400, { error: err?.message || String(err) });
+          }
+        }
+        // PATCH /tasks/:id   → update task (partial)
+        // POST  /tasks/:id/move      → { phase_id, band_id? }
+        // POST  /tasks/:id/reenable  → status=done → in_progress
+        // DELETE /tasks/:id  → soft-delete (status=obsolete)
+        if (segments[0] === 'tasks' && segments.length >= 2) {
+          const taskId = segments[1];
+          if (req.method === 'PATCH' && segments.length === 2) {
+            const body = await readRequestBody(req);
+            try {
+              const task = await store.updateTask(taskId, body, body.actor || 'founder');
+              addLog('system', `📋 Roadmap: patched ${task.id}`);
+              broadcast();
+              return jsonResponse(res, 200, { task });
+            } catch (err) {
+              return jsonResponse(res, 400, { error: err?.message || String(err) });
+            }
+          }
+          if (req.method === 'POST' && segments[2] === 'move') {
+            const body = await readRequestBody(req);
+            try {
+              const task = await store.moveTask(taskId, body.phase_id, body.band_id, body.actor || 'founder');
+              addLog('system', `📋 Roadmap: moved ${task.id} → ${task.phase_id}${body.band_id ? ` (band: ${body.band_id})` : ''}`);
+              broadcast();
+              return jsonResponse(res, 200, { task });
+            } catch (err) {
+              return jsonResponse(res, 400, { error: err?.message || String(err) });
+            }
+          }
+          if (req.method === 'POST' && segments[2] === 'reenable') {
+            try {
+              const task = await store.reenableTask(taskId, 'founder');
+              addLog('system', `📋 Roadmap: re-enabled ${task.id} for enhancement`);
+              broadcast();
+              return jsonResponse(res, 200, { task });
+            } catch (err) {
+              return jsonResponse(res, 400, { error: err?.message || String(err) });
+            }
+          }
+          if (req.method === 'DELETE' && segments.length === 2) {
+            try {
+              const task = await store.deleteTask(taskId, 'founder');
+              addLog('system', `📋 Roadmap: soft-deleted ${task.id}`);
+              broadcast();
+              return jsonResponse(res, 200, { task });
+            } catch (err) {
+              return jsonResponse(res, 400, { error: err?.message || String(err) });
+            }
+          }
+        }
+
+        return jsonResponse(res, 404, { error: 'roadmap route not found', segments });
+      } catch (err) {
+        console.error('[factory-admin/roadmap]', err);
+        return jsonResponse(res, 500, { error: err?.message || String(err) });
+      }
+    })();
+    return;
+  }
+
   // ─── Phase 21-A: Master Architect ─────────────────────────────────────
   // All routes are namespaced under /api/architect/* and read/write the
   // factory's KB at <repo>/_kb/. The architect ships with a stub
