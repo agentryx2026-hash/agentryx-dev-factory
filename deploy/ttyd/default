@@ -1,1 +1,1 @@
-TTYD_OPTIONS="-i lo -p 7681 -W -t disableLeaveAlert=true /bin/bash -lc /home/subhash.thakur.india/Projects/claw-code-parity/claw-web-launcher.sh"
+TTYD_OPTIONS="-i lo -p 7681 -W -t disableLeaveAlert=true /bin/bash -lc /home/subhash.thakur.india/Projects/dev-hub-r0/claw-code-parity/claw-web-launcher.sh"

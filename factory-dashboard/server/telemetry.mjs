@@ -13,6 +13,9 @@ let mockInterval = null;
 // lazily (first request) so the dev-hub can boot even if architect/ is
 // missing or broken.
 const REPO_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../..');
+// Single-root: FACTORY_ROOT is the parent of the repo (holds agent-workspace, PMD, siblings).
+// Env-driven under systemd; falls back to the derived location so it works wherever the tree lives.
+const FACTORY_ROOT = process.env.FACTORY_ROOT || path.resolve(REPO_ROOT, '..');
 const ARCHITECT_KB_ROOT = REPO_ROOT;
 const ARCHITECT_DIR = path.join(REPO_ROOT, 'cognitive-engine', 'architect');
 
@@ -81,7 +84,7 @@ function pickDispatcher(A, dispatcherKey) {
 // that polls every 50ms when idle. We start it in the background and
 // don't await — telemetry server stays responsive while jobs flow.
 let queueWorkerStarted = false;
-const QUEUE_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+const QUEUE_WORKSPACE = path.join(FACTORY_ROOT, 'agent-workspace');
 
 // Phase 19-B HTTP surface — lazy-loaded shared customer portal instance.
 // Constructed on first /api/customer-portal/* request (or first queue
@@ -808,8 +811,8 @@ const server = http.createServer((req, res) => {
         if (process.env.PRE_DEV_USE_GRAPH === 'true') {
           addLog('system', `🖖 Pre-Dev Pipeline engaged via cognitive-engine graph (real LLM)`);
           broadcast();
-          const child = spawn('node', ['/home/subhash.thakur.india/Projects/agentryx-factory/cognitive-engine/pre_dev_graph.js', finalTask], {
-            cwd: '/home/subhash.thakur.india/Projects/agentryx-factory/cognitive-engine',
+          const child = spawn('node', [path.join(REPO_ROOT, 'cognitive-engine', 'pre_dev_graph.js'), finalTask], {
+            cwd: path.join(REPO_ROOT, 'cognitive-engine'),
             stdio: ['ignore', 'pipe', 'pipe'],
             env: { ...process.env },
           });
@@ -888,7 +891,7 @@ const server = http.createServer((req, res) => {
         const projNameRaw = payload.projectName || 'ingested-documentation';
         const safeName = projNameRaw.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
         const projDirName = `${datePrefix}_${safeName}`;
-        const base = path.join('/home/subhash.thakur.india/Projects/agent-workspace', projDirName);
+        const base = path.join(path.join(FACTORY_ROOT, 'agent-workspace'), projDirName);
         const pmdDir = path.join(base, 'PMD');
         const docsDir = path.join(base, 'docs');
         fs.mkdirSync(pmdDir, { recursive: true });
@@ -897,7 +900,7 @@ const server = http.createServer((req, res) => {
         fs.mkdirSync(path.join(base, 'tests'), { recursive: true });
 
         // Generate docs directly using templates + FRS content
-        const templateBase = '/home/subhash.thakur.india/Projects/PMD/Agentryx Dev Plan';
+        const templateBase = path.join(FACTORY_ROOT, 'PMD', 'Agentryx Dev Plan');
         const projectLabel = safeName.replace(/-/g, ' ');
         const frsSnippet = finalTask.substring(0, 2000);
 
@@ -977,8 +980,8 @@ const server = http.createServer((req, res) => {
         if (!project) { res.writeHead(400); res.end(JSON.stringify({ error: 'No project provided' })); return; }
         
         // Spawn dev_graph.js with the project name
-        const child = spawn('node', ['/home/subhash.thakur.india/Projects/agentryx-factory/cognitive-engine/dev_graph.js', project], {
-          cwd: '/home/subhash.thakur.india/Projects/cognitive-engine',
+        const child = spawn('node', [path.join(REPO_ROOT, 'cognitive-engine', 'dev_graph.js'), project], {
+          cwd: path.join(REPO_ROOT, 'cognitive-engine'),
           stdio: ['ignore', 'pipe', 'pipe'],
           env: { ...process.env }
         });
@@ -1021,8 +1024,8 @@ const server = http.createServer((req, res) => {
         const { project } = JSON.parse(body);
         if (!project) { res.writeHead(400); res.end(JSON.stringify({ error: 'No project provided' })); return; }
         
-        const child = spawn('node', ['/home/subhash.thakur.india/Projects/agentryx-factory/cognitive-engine/post_dev_graph.js', project], {
-          cwd: '/home/subhash.thakur.india/Projects/cognitive-engine',
+        const child = spawn('node', [path.join(REPO_ROOT, 'cognitive-engine', 'post_dev_graph.js'), project], {
+          cwd: path.join(REPO_ROOT, 'cognitive-engine'),
           stdio: ['ignore', 'pipe', 'pipe'],
           env: { ...process.env }
         });
@@ -1158,7 +1161,7 @@ const server = http.createServer((req, res) => {
   // Template count — reads the Agentryx Dev Plan directory for doc counts
   if (req.url === '/api/workspace/template-count' && req.method === 'GET') {
     try {
-      const pmdBase = '/home/subhash.thakur.india/Projects/PMD/Agentryx Dev Plan';
+      const pmdBase = path.join(FACTORY_ROOT, 'PMD', 'Agentryx Dev Plan');
       const countDir = (dir) => { try { return fs.readdirSync(path.join(pmdBase, dir)).filter(f => f.endsWith('.md') || f.endsWith('.json')).length; } catch(_) { return 0; } };
       const a = countDir('A.Solution Scope');
       const b = countDir('B.Agentryx Edge');
@@ -1178,7 +1181,7 @@ const server = http.createServer((req, res) => {
 
   // List all projects in workspace
   if (req.url === '/api/workspace/projects' && req.method === 'GET') {
-    const agentWs = '/home/subhash.thakur.india/Projects/agent-workspace';
+    const agentWs = path.join(FACTORY_ROOT, 'agent-workspace');
     try {
       const entries = fs.readdirSync(agentWs, { withFileTypes: true });
       const projects = entries
@@ -1232,7 +1235,7 @@ const server = http.createServer((req, res) => {
   const deleteMatch = req.url?.match(/^\/api\/workspace\/delete\?project=(.+)$/);
   if (deleteMatch && req.method === 'DELETE') {
     const project = decodeURIComponent(deleteMatch[1]);
-    const projPath = path.join('/home/subhash.thakur.india/Projects/agent-workspace', project);
+    const projPath = path.join(path.join(FACTORY_ROOT, 'agent-workspace'), project);
     try {
       fs.rmSync(projPath, { recursive: true, force: true });
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1248,7 +1251,7 @@ const server = http.createServer((req, res) => {
   const filesMatch = req.url?.match(/^\/api\/workspace\/files\?project=(.+)$/);
   if (filesMatch && req.method === 'GET') {
     const project = decodeURIComponent(filesMatch[1]);
-    const projPath = path.join('/home/subhash.thakur.india/Projects/agent-workspace', project);
+    const projPath = path.join(path.join(FACTORY_ROOT, 'agent-workspace'), project);
     try {
       function buildTree(dir, prefix = '') {
         const items = [];
@@ -1280,7 +1283,7 @@ const server = http.createServer((req, res) => {
     const project = params.get('project');
     const file = params.get('file');
     if (!project || !file) { res.writeHead(400); res.end(JSON.stringify({ error: 'Missing project or file' })); return; }
-    const filePath = path.join('/home/subhash.thakur.india/Projects/agent-workspace', project, file);
+    const filePath = path.join(path.join(FACTORY_ROOT, 'agent-workspace'), project, file);
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1298,7 +1301,7 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const { project, command, background } = JSON.parse(body);
-        const projPath = path.join('/home/subhash.thakur.india/Projects/agent-workspace', project || '');
+        const projPath = path.join(path.join(FACTORY_ROOT, 'agent-workspace'), project || '');
         const cmd = command || 'npm start';
         
         if (background) {
@@ -2123,7 +2126,7 @@ const server = http.createServer((req, res) => {
           import(pathToFileURL(path.join(REPO_ROOT, 'cognitive-engine', 'memory-layer', 'sync-from-artifacts.js')).href),
         ]);
         // Same agent-workspace path Replay uses
-        const AGENT_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+        const AGENT_WORKSPACE = path.join(FACTORY_ROOT, 'agent-workspace');
         const memSvc = getMemoryService();
         const result = await syncFromArtifacts({
           workspaceRoot: AGENT_WORKSPACE,
@@ -2201,7 +2204,7 @@ const server = http.createServer((req, res) => {
   // + return a single run's artifact graph for timeline rendering.
   // Workspace root for replay is the agent-workspace where Pre-Dev / Dev /
   // Post-Dev pipelines actually deposit artifacts — different from REPO_ROOT.
-  const AGENT_WORKSPACE = '/home/subhash.thakur.india/Projects/agent-workspace';
+  const AGENT_WORKSPACE = path.join(FACTORY_ROOT, 'agent-workspace');
 
   if (req.url === '/api/factory-admin/replay/runs' && req.method === 'GET') {
     (async () => {

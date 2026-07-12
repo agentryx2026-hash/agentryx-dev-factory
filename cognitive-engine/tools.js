@@ -4,9 +4,13 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 const execAsync = promisify(exec);
-const WORKSPACE_ROOT = "/home/subhash.thakur.india/Projects/agent-workspace";
+// Single-root pattern: resolve everything from FACTORY_ROOT (env-driven under systemd,
+// else derived from this file's location — works regardless of where the tree lives).
+const FACTORY_ROOT = process.env.FACTORY_ROOT || path.resolve(fileURLToPath(import.meta.url), "../../..");
+const WORKSPACE_ROOT = path.join(FACTORY_ROOT, "agent-workspace");
 
 // ═══════════════════════════════════════════════════════════
 //   PROJECT SCOPING — Each task gets its own folder
@@ -94,7 +98,7 @@ export async function broadcastWorkItem(action, id, name, room, color) {
 export async function readTemplate(docId) {
   try {
     // New structure: /PMD/Agentryx Dev Plan/{section}/{docId}*
-    const newBase = "/home/subhash.thakur.india/Projects/PMD/Agentryx Dev Plan";
+    const newBase = path.join(FACTORY_ROOT, "PMD", "Agentryx Dev Plan");
     const sectionMap = {
       'A': 'A.Solution Scope',
       'B': 'B.Agentryx Edge',
@@ -125,7 +129,7 @@ export async function readTemplate(docId) {
     }
 
     // Fallback: old structure
-    const oldBase = "/home/subhash.thakur.india/Projects/PMD/Dev Scop & Plan";
+    const oldBase = path.join(FACTORY_ROOT, "PMD", "Dev Scop & Plan");
     const oldSubfolder = docId.startsWith('A') ? "A.Project Scope" : "B.Standard Scope";
     const oldFiles = await fs.readdir(path.join(oldBase, oldSubfolder));
     const oldFile = oldFiles.find(f => f.startsWith(docId));
