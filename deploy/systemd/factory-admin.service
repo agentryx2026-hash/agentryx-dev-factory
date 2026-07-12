@@ -7,11 +7,13 @@ Documentation=https://github.com/agentryx2026-hash/agentryx-factory/tree/main/se
 Type=simple
 User=subhash.thakur.india
 Group=subhash.thakur.india
-WorkingDirectory=/home/subhash.thakur.india/Projects/agentryx-factory
+WorkingDirectory=/home/subhash.thakur.india/Projects/dev-hub-r0/agentryx-factory
 Environment=PATH=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=ADMIN_PORT=4402
-Environment=ADMIN_HOST=127.0.0.1
-EnvironmentFile=-/home/subhash.thakur.india/Projects/claw-code-parity/.env
+
+# Single-root config: provides ADMIN_PORT + ADMIN_HOST (formerly inline here).
+EnvironmentFile=/etc/factory/dev-hub-r0.env
+EnvironmentFile=-/home/subhash.thakur.india/Projects/dev-hub-r0/claw-code-parity/.env
+
 ExecStart=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin/node server/admin-keys.mjs
 Restart=on-failure
 RestartSec=10

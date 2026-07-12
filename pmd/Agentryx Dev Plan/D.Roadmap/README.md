@@ -84,6 +84,28 @@ Each `Phase_NN_*/` folder contains four files:
 
 Status / Decisions / Lessons files are created when a phase moves from sketch → active.
 
+## Phase ID naming convention (adopted 2026-05-24)
+
+The original substrate phases (`phase-01` → `phase-22`, including decimal inserts like `phase-1.5`, `phase-2.5`, `phase-2.75`, `phase-2.76`) keep their canonical, **unprefixed** identifiers. They predate the formal release-band structure and are referenced in ~24 git tags, narrative-doc folder paths, PR titles, memory files, and `_roadmap/phases.json`. Renaming them would break that history without benefit.
+
+Going forward, **new phases introduced in R2 and later get release-prefixed IDs**:
+
+| Band | New phase ID format | Example |
+|---|---|---|
+| v0.0.1, R1, R1+ | unprefixed (legacy convention) | `phase-19`, `phase-2.75` |
+| R2 | `R2.<phase>.<subphase>` | `R2.1.1`, `R2.1.2`, `R2.2.1` |
+| R3 | `R3.<phase>.<subphase>` | `R3.1.1` |
+| R4 | `R4.<phase>.<subphase>` | `R4.1.1` |
+| R5 | `R5.<phase>.<subphase>` | `R5.1.1` |
+
+**Rationale**: The release band lives in the ID so future phases are immediately readable in tabs, git tags, and audit logs without cross-referencing `phases.json`. Existing phases stay stable; new phases self-identify.
+
+**Folder naming**: `pmd/Agentryx Dev Plan/D.Roadmap/Phase_R2.1.1_<slug>/` (mirrors the ID).
+
+**Git tags**: `phase-R2.1.1-closed`, `phase-R2.1.1-a-closed`, etc.
+
+**Note**: `band_id` in `_roadmap/phases.json` and `_roadmap/tasks.json` remains the source of truth for band membership — IDs are a display/identity convenience, not the band lookup.
+
 ## Git workflow (adopted 2026-04-21 during Phase 5-A)
 
 Every phase from 5-A onwards uses PR flow, not direct-to-main.

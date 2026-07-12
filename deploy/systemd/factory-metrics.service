@@ -6,8 +6,12 @@ After=network.target
 Type=simple
 User=subhash.thakur.india
 Group=subhash.thakur.india
-WorkingDirectory=/home/subhash.thakur.india/Projects/agentryx-factory/factory-dashboard
+WorkingDirectory=/home/subhash.thakur.india/Projects/dev-hub-r0/agentryx-factory/factory-dashboard
 Environment=PATH=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Single-root config: METRICS_PORT consumed by metrics.mjs.
+EnvironmentFile=/etc/factory/dev-hub-r0.env
+
 ExecStart=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin/node server/metrics.mjs
 Restart=on-failure
 RestartSec=10

@@ -3,9 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 const execAsync = promisify(exec);
-const WORKSPACE = "/home/subhash.thakur.india/Projects/agent-workspace";
+const FACTORY_ROOT = process.env.FACTORY_ROOT || path.resolve(fileURLToPath(import.meta.url), "../../../..");
+const WORKSPACE = path.join(FACTORY_ROOT, "agent-workspace");
 
 // ═══════════════════════════════════════════════════════════
 //   TELEMETRY BRIDGE — Updates Dashboard in real-time

@@ -10,7 +10,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const PORT = 4400;
+const PORT = Number(process.env.METRICS_PORT) || 4400;
 
 function getCpuUsage() {
   try {

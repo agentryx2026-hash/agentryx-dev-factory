@@ -10,11 +10,14 @@ import React, { useEffect, useState, useCallback } from 'react';
  * Data:    _roadmap/{phases.json, bands.json, tasks.json, _history.jsonl}
  *
  * Sub-tabs:
- *   Roadmap     — band cards (v0.0.1 → R5) with % complete + open count
- *   Phases      — grid of all phases with status pills (click → detail)
- *   Phase Detail — single phase metadata + task list with inline actions
- *   All Tasks   — flat searchable + filterable view
- *   History     — recent audit-log entries (creates / patches / moves)
+ *   Roadmap        — band cards (v0.0.1 → R5) with % complete + open count
+ *   <band>         — one tab per release band (v0.0.1, R1, R1+, R2, R3, R4, R5);
+ *                    each shows band header + phases-in-band grid + tasks-in-band table
+ *   Phase Detail   — single phase metadata + task list with inline actions (drill-in)
+ *   History        — recent audit-log entries (creates / patches / moves)
+ *
+ * Naming convention for new phases (R2+): use prefixed IDs like `R2.1.1`, `R3.1.2`.
+ * Existing phases (`phase-01` → `phase-22`) keep their identifiers — band lives in `band_id`.
  *
  * Interactive actions per task:
  *   - status change (pending / in_progress / blocked / done / obsolete)
@@ -74,7 +77,7 @@ interface Summary {
   updated_at: string;
 }
 
-type TabKey = 'roadmap' | 'phases' | 'phase-detail' | 'tasks' | 'history';
+type TabKey = 'roadmap' | 'phase-detail' | 'history' | `band:${string}`;
 
 // ─── styling ────────────────────────────────────────────────────────────
 const sectionStyle: React.CSSProperties = {
@@ -296,11 +299,19 @@ const ArchitectureRoadmap: React.FC = () => {
       </div>
 
       {/* tab strip */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px' }}>
-        <button onClick={() => setTab('roadmap')} style={tabBtn(tab === 'roadmap')}>🛣️ Roadmap (Bands)</button>
-        <button onClick={() => setTab('phases')} style={tabBtn(tab === 'phases')}>📚 Phases</button>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px', flexWrap: 'wrap' }}>
+        <button onClick={() => setTab('roadmap')} style={tabBtn(tab === 'roadmap')}>🛣️ Bands Overview</button>
+        {(summary?.bands || []).map(b => {
+          const key: TabKey = `band:${b.id}`;
+          const isDone = b.status === 'done';
+          const dot = isDone ? '✅' : b.status === 'in_progress' ? '🟡' : '⚪';
+          return (
+            <button key={b.id} onClick={() => setTab(key)} style={tabBtn(tab === key)} title={b.label}>
+              {dot} {b.id}
+            </button>
+          );
+        })}
         {openPhaseId && <button onClick={() => setTab('phase-detail')} style={tabBtn(tab === 'phase-detail')}>🔍 Phase Detail · {openPhaseId}</button>}
-        <button onClick={() => setTab('tasks')} style={tabBtn(tab === 'tasks')}>✓ All Tasks</button>
         <button onClick={() => setTab('history')} style={tabBtn(tab === 'history')}>🕐 History</button>
       </div>
 
@@ -331,10 +342,16 @@ const ArchitectureRoadmap: React.FC = () => {
               {summary.bands.map(b => {
                 const isDone = b.status === 'done';
                 return (
-                  <div key={b.id} style={{
-                    background: 'rgba(2,6,23,0.6)', border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '8px', padding: '14px 16px',
-                  }}>
+                  <div key={b.id}
+                    onClick={() => setTab(`band:${b.id}`)}
+                    style={{
+                      background: 'rgba(2,6,23,0.6)', border: '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '8px', padding: '14px 16px', cursor: 'pointer',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontFamily: 'monospace', color: '#a5b4fc', fontSize: '0.85rem' }}>{b.semver}</span>
                       <span style={pill(isDone ? 'done' : (b.status === 'in_progress' ? 'in_progress' : 'pending'))}>{isDone ? 'Achieved' : b.status}</span>
@@ -362,40 +379,87 @@ const ArchitectureRoadmap: React.FC = () => {
         </div>
       )}
 
-      {/* ── PHASES tab — grid ────────────────────────────────── */}
-      {tab === 'phases' && (
-        <div style={sectionStyle}>
-          <div style={labelStyle}>All phases (click → detail)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-            {phases.map(p => {
-              const taskCount = tasks.filter(t => t.phase_id === p.id).length;
-              const doneCount = tasks.filter(t => t.phase_id === p.id && t.status === 'done').length;
-              return (
-                <div key={p.id}
-                  onClick={() => { setOpenPhaseId(p.id); setTab('phase-detail'); }}
-                  style={{
-                    background: 'rgba(2,6,23,0.6)', border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '8px', padding: '14px 16px', cursor: 'pointer',
-                    transition: 'border-color 0.15s, transform 0.1s',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'monospace', color: '#a5b4fc', fontSize: '0.8rem' }}>Phase {p.number}</span>
-                    <span style={pill(p.status, 'phase')}>{pillLabel(p.status, 'phase')}</span>
-                  </div>
-                  <div style={{ marginTop: '6px', fontSize: '0.95rem', color: '#f1f5f9', fontWeight: 500 }}>{p.name}</div>
-                  <div style={{ marginTop: '6px', fontSize: '0.72rem', color: '#94a3b8' }}>
-                    Tier {p.tier || '?'} · Band <code>{p.band_id || '-'}</code> · {doneCount}/{taskCount} tasks done
-                  </div>
-                  {p.note && <div style={{ marginTop: '6px', fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4, fontStyle: 'italic' }}>{p.note}</div>}
+      {/* ── PER-BAND tab — band header + phases-in-band + tasks-in-band ── */}
+      {tab.startsWith('band:') && summary && (() => {
+        const bandId = tab.slice('band:'.length);
+        const band = summary.bands.find(b => b.id === bandId);
+        if (!band) return <div style={sectionStyle}>Band <code>{bandId}</code> not found.</div>;
+        const bandPhases = phases.filter(p => p.band_id === bandId);
+        const bandTasks  = tasks.filter(t => t.band_id === bandId);
+        const isDone = band.status === 'done';
+        return (
+          <div>
+            {/* Band header */}
+            <div style={sectionStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: 'monospace', color: '#a5b4fc', fontSize: '0.85rem' }}>{band.semver}</div>
+                  <h2 style={{ fontSize: '1.4rem', margin: '4px 0 0 0', color: '#f1f5f9' }}>{band.label}</h2>
+                  {band.description && <div style={{ marginTop: '8px', fontSize: '0.88rem', color: '#cbd5e1', lineHeight: 1.5 }}>{band.description}</div>}
+                  {band.achieved_at && (
+                    <div style={{ marginTop: '10px', fontSize: '0.78rem', color: '#64748b' }}>
+                      Achieved: <span style={{ color: '#6ee7b7' }}>{band.achieved_at}</span>
+                      {band.achieved_tag && <> · tag <code style={{ color: '#6ee7b7' }}>{band.achieved_tag}</code></>}
+                    </div>
+                  )}
                 </div>
-              );
-            })}
+                <div style={{ minWidth: '180px', textAlign: 'right' }}>
+                  <span style={pill(isDone ? 'done' : (band.status === 'in_progress' ? 'in_progress' : 'pending'))}>
+                    {isDone ? 'Achieved' : band.status}
+                  </span>
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                      <div style={{ width: `${band.percent_done ?? 0}%`, height: '100%', background: isDone ? '#10b981' : '#fbbf24' }} />
+                    </div>
+                    <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#cbd5e1', fontFamily: 'monospace' }}>
+                      {band.task_counts?.done ?? 0}/{band.task_counts?.total ?? 0} tasks ({band.percent_done ?? 0}%)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Phases in band */}
+            <div style={sectionStyle}>
+              <div style={labelStyle}>Phases in {band.id} ({bandPhases.length})</div>
+              {bandPhases.length === 0 && <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>No phases assigned to this band yet.</div>}
+              {bandPhases.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                  {bandPhases.map(p => {
+                    const taskCount = tasks.filter(t => t.phase_id === p.id).length;
+                    const doneCount = tasks.filter(t => t.phase_id === p.id && t.status === 'done').length;
+                    return (
+                      <div key={p.id}
+                        onClick={() => { setOpenPhaseId(p.id); setTab('phase-detail'); }}
+                        style={{
+                          background: 'rgba(2,6,23,0.6)', border: '1px solid rgba(255,255,255,0.06)',
+                          borderRadius: '8px', padding: '14px 16px', cursor: 'pointer',
+                          transition: 'border-color 0.15s',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontFamily: 'monospace', color: '#a5b4fc', fontSize: '0.8rem' }}>Phase {p.number}</span>
+                          <span style={pill(p.status, 'phase')}>{pillLabel(p.status, 'phase')}</span>
+                        </div>
+                        <div style={{ marginTop: '6px', fontSize: '0.95rem', color: '#f1f5f9', fontWeight: 500 }}>{p.name}</div>
+                        <div style={{ marginTop: '6px', fontSize: '0.72rem', color: '#94a3b8' }}>
+                          Tier {p.tier || '?'} · {doneCount}/{taskCount} tasks done
+                        </div>
+                        {p.note && <div style={{ marginTop: '6px', fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4, fontStyle: 'italic' }}>{p.note}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Tasks in band */}
+            <AllTasksView tasks={bandTasks} phases={phases} bands={summary.bands} lockedBandId={bandId} onOpenPhase={(pid) => { setOpenPhaseId(pid); setTab('phase-detail'); }} />
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── PHASE DETAIL tab ───────────────────────────────────── */}
       {tab === 'phase-detail' && openPhaseId && (() => {
@@ -419,7 +483,7 @@ const ArchitectureRoadmap: React.FC = () => {
                 </div>
                 <div>
                   <button onClick={() => createTask(phase.id, phase.band_id || 'R1+')} disabled={busy === 'create'} style={primaryBtn}>+ New task</button>
-                  <button onClick={() => setOpenPhaseId(null)} style={smallBtn}>← Back</button>
+                  <button onClick={() => { const bid = phase.band_id; setOpenPhaseId(null); setTab(bid ? `band:${bid}` : 'roadmap'); }} style={smallBtn}>← Back to {phase.band_id || 'overview'}</button>
                 </div>
               </div>
             </div>
@@ -486,9 +550,6 @@ const ArchitectureRoadmap: React.FC = () => {
         );
       })()}
 
-      {/* ── ALL TASKS tab ───────────────────────────────────────── */}
-      {tab === 'tasks' && <AllTasksView tasks={tasks} phases={phases} bands={summary?.bands || []} onOpenPhase={(pid) => { setOpenPhaseId(pid); setTab('phase-detail'); }} />}
-
       {/* ── HISTORY tab ─────────────────────────────────────────── */}
       {tab === 'history' && (
         <div style={sectionStyle}>
@@ -521,7 +582,8 @@ const ArchitectureRoadmap: React.FC = () => {
 // ─── All Tasks subview ───────────────────────────────────────────────────
 const AllTasksView: React.FC<{
   tasks: Task[]; phases: Phase[]; bands: Band[]; onOpenPhase: (pid: string) => void;
-}> = ({ tasks, phases, bands, onOpenPhase }) => {
+  lockedBandId?: string;
+}> = ({ tasks, phases, bands, onOpenPhase, lockedBandId }) => {
   const [filter, setFilter] = useState({ status: '', band: '', q: '' });
   const filtered = tasks.filter(t =>
     (!filter.status || t.status === filter.status) &&
@@ -530,6 +592,7 @@ const AllTasksView: React.FC<{
   ).sort((a, b) => String(b.id).localeCompare(String(a.id)));
   return (
     <div style={sectionStyle}>
+      <div style={labelStyle}>{lockedBandId ? `Tasks in ${lockedBandId}` : 'Tasks'} ({filtered.length}{filtered.length !== tasks.length && ` of ${tasks.length}`})</div>
       <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <input placeholder="Search…" value={filter.q} onChange={(e) => setFilter(f => ({ ...f, q: e.target.value }))}
           style={{ ...selectStyle, flex: 1, minWidth: '200px', padding: '6px 10px' }} />
@@ -537,11 +600,12 @@ const AllTasksView: React.FC<{
           <option value="">all statuses</option>
           {Object.keys(TASK_STATUS_META).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={filter.band} onChange={(e) => setFilter(f => ({ ...f, band: e.target.value }))} style={selectStyle}>
-          <option value="">all bands</option>
-          {bands.map(b => <option key={b.id} value={b.id}>{b.id}</option>)}
-        </select>
-        <span style={{ alignSelf: 'center', color: '#94a3b8', fontSize: '0.78rem' }}>{filtered.length} of {tasks.length}</span>
+        {!lockedBandId && (
+          <select value={filter.band} onChange={(e) => setFilter(f => ({ ...f, band: e.target.value }))} style={selectStyle}>
+            <option value="">all bands</option>
+            {bands.map(b => <option key={b.id} value={b.id}>{b.id}</option>)}
+          </select>
+        )}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
         <thead>

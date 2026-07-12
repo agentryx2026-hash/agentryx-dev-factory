@@ -1,6 +1,9 @@
 import { connectServer, listTools, callTool, disconnectAll } from "./client.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PROJECT_DIR = process.env.PROJECT_DIR || "/home/subhash.thakur.india/Projects/agent-workspace";
+const FACTORY_ROOT = process.env.FACTORY_ROOT || path.resolve(fileURLToPath(import.meta.url), "../../../..");
+const PROJECT_DIR = process.env.PROJECT_DIR || path.join(FACTORY_ROOT, "agent-workspace");
 
 async function main() {
   console.log(`[smoke] connecting filesystem MCP server scoped to ${PROJECT_DIR}`);

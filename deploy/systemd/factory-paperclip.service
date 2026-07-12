@@ -6,8 +6,9 @@ After=network.target postgresql.service
 Type=simple
 User=subhash.thakur.india
 Group=subhash.thakur.india
-WorkingDirectory=/home/subhash.thakur.india/Projects/paperclip
-EnvironmentFile=-/home/subhash.thakur.india/Projects/paperclip/.env
+WorkingDirectory=/home/subhash.thakur.india/Projects/dev-hub-r0/paperclip
+EnvironmentFile=/etc/factory/dev-hub-r0.env
+EnvironmentFile=-/home/subhash.thakur.india/Projects/dev-hub-r0/paperclip/.env
 Environment=PATH=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/subhash.thakur.india/.nvm/versions/node/v22.22.2/bin/node scripts/dev-runner.mjs watch
 Restart=on-failure
